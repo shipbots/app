@@ -209,7 +209,7 @@ export async function POST(req: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let clientInfo: Record<string, any> = {};
   try {
-    clientInfo = await fetchClientInfo(clientBoardItemId, onboardingItemId) as Record<string, unknown>;
+    clientInfo = await fetchClientInfo(clientBoardItemId, onboardingItemId) as unknown as Record<string, unknown>;
   } catch (e) {
     console.warn('[generate-onboarding-summary] Monday.com fetch failed:', e);
   }

@@ -706,7 +706,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
               ecommercePlatforms={clientInfo?.ecommercePlatforms}
               shipHeroName={clientInfo?.shipHeroName || item.name}
               shippingDetails={item.shippingDetails}
-              clientBoardItemId={item.clientBoardItemId}
+              clientBoardItemId={item.clientBoardItemId ?? undefined}
               contactEmail={clientInfo?.contactEmail}
               clientName={item.name}
               tikTokShop={clientInfo?.tikTokShop}
@@ -773,7 +773,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
             <DocumentsTab
               clientId={item.id}
               docusignFile={clientInfo?.docusignFile}
-              clientBoardItemId={item.clientBoardItemId}
+              clientBoardItemId={item.clientBoardItemId ?? undefined}
               onboardingItemId={item.id}
               clientInfo={clientInfo}
               onDocusignExtracted={updates => {
