@@ -19,6 +19,9 @@ interface ClientInfoTabProps {
   inventoryDelivered?: string;
   /** Called after a successful rename so the parent can update its header */
   onNameChange?: (newName: string) => void;
+  /** Called after the delivery date saves successfully — keeps the kanban /
+   *  calendar views in sync without a full server reload. */
+  onDeliveredDateSaved?: (newValue: string) => void;
 }
 
 // ─── Copyable + Editable field (for portal login credentials) ────────────────
@@ -332,6 +335,7 @@ function DateField({
   icon,
   highlight,
   patchUrl,
+  onSaved,
 }: {
   label: string;
   value: string;
@@ -341,6 +345,8 @@ function DateField({
   highlight?: boolean;
   /** Override the PATCH endpoint (defaults to /api/client/{clientId}) */
   patchUrl?: string;
+  /** Called with the new value after a successful save (for parent sync) */
+  onSaved?: (newValue: string) => void;
 }) {
   const [value, setValue] = useState(initialValue);
   const [savedValue, setSavedValue] = useState(initialValue);
@@ -366,6 +372,7 @@ function DateField({
       if (!res.ok) throw new Error();
       setValue(newValue);
       setSavedValue(newValue);
+      onSaved?.(newValue);
       setFlash('saved');
     } catch {
       setFlash('error');
@@ -373,7 +380,7 @@ function DateField({
       setSaving(false);
       setTimeout(() => setFlash(null), 2000);
     }
-  }, [savedValue, columnId, clientId, patchUrl]);
+  }, [savedValue, columnId, clientId, patchUrl, onSaved]);
 
   const [expanded, setExpanded] = useState(!!initialValue);
   const inputRef2 = useRef<HTMLInputElement>(null);
@@ -986,7 +993,7 @@ function FileField({
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
-export function ClientInfoTab({ client, fullscreen, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange }: ClientInfoTabProps) {
+export function ClientInfoTab({ client, fullscreen, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange, onDeliveredDateSaved }: ClientInfoTabProps) {
   const id = client.id;
   const maxH = fullscreen ? 'max-h-[calc(100vh-140px)]' : 'max-h-[calc(100vh-200px)]';
 
@@ -1413,6 +1420,7 @@ export function ClientInfoTab({ client, fullscreen, onboardingItemId, deliveredD
             clientId={id}
             icon={<Calendar className="w-3.5 h-3.5" />}
             patchUrl={`/api/onboarding/${onboardingItemId}`}
+            onSaved={onDeliveredDateSaved}
           />
         )}
         {onboardingItemId && (

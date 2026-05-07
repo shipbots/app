@@ -39,6 +39,9 @@ interface OnboardingTabProps {
   tikTokShop?: string;
   /** Lot Code / Expiration Needed? field from client board — drives N/A or Send Email button */
   lotCodeExpiration?: string;
+  /** Called after the kickoff date saves successfully — lets the kanban /
+   *  calendar views update without a full server reload. */
+  onKickoffDateSaved?: (newValue: string) => void;
 }
 
 // Per-step icons keyed by Monday column ID
@@ -554,6 +557,7 @@ export function OnboardingTab({
   clientName,
   tikTokShop,
   lotCodeExpiration,
+  onKickoffDateSaved,
 }: OnboardingTabProps) {
   const [steps, setSteps] = useState<ChecklistStep[]>(initialSteps);
   const [shippingDetails, setShippingDetails] = useState(initialShippingDetails);
@@ -579,6 +583,7 @@ export function OnboardingTab({
       });
       if (!res.ok) throw new Error();
       setLocalKickoffDate(value);
+      onKickoffDateSaved?.(value);
       setKickoffFlash('saved');
     } catch {
       setKickoffFlash('error');

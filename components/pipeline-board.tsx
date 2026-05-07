@@ -68,6 +68,14 @@ export function PipelineBoard({ items, alerts }: PipelineBoardProps) {
   const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
   // Optimistic status overrides: itemId → newStatus
   const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({});
+  // Optimistic item field overrides (kickoff/delivery dates, etc.) — keeps the
+  // calendar and other in-app views in sync after edits in the detail panel,
+  // without a full server round-trip.
+  const [itemOverrides, setItemOverrides] = useState<Record<string, Partial<OnboardingItem>>>({});
+  const handleItemUpdate = (itemId: string, patch: Partial<OnboardingItem>) => {
+    setItemOverrides(prev => ({ ...prev, [itemId]: { ...prev[itemId], ...patch } }));
+    setSelectedItem(prev => prev && prev.id === itemId ? { ...prev, ...patch } : prev);
+  };
 
   useEffect(() => {
     fetch('/api/agent-emails')
@@ -101,12 +109,16 @@ export function PipelineBoard({ items, alerts }: PipelineBoardProps) {
     );
   }, [allItems, searchQuery]);
 
-  // Apply optimistic status overrides
+  // Apply optimistic overrides (status changes + arbitrary field edits)
   const effectiveItems = useMemo(() =>
-    filteredItems.map(item =>
-      statusOverrides[item.id] ? { ...item, status: statusOverrides[item.id] } : item
-    ),
-    [filteredItems, statusOverrides]
+    filteredItems.map(item => {
+      const fieldPatch = itemOverrides[item.id];
+      const merged = fieldPatch ? { ...item, ...fieldPatch } : item;
+      return statusOverrides[item.id]
+        ? { ...merged, status: statusOverrides[item.id] }
+        : merged;
+    }),
+    [filteredItems, statusOverrides, itemOverrides]
   );
 
   const groupedItems = useMemo(() => {
@@ -282,7 +294,7 @@ export function PipelineBoard({ items, alerts }: PipelineBoardProps) {
         {/* ── Calendar view ── */}
         {viewMode === 'calendar' && (
           <CalendarView
-            items={items}
+            items={effectiveItems}
             agentEmailMap={agentEmailMap}
             onSelectItem={setSelectedItem}
           />
@@ -291,7 +303,7 @@ export function PipelineBoard({ items, alerts }: PipelineBoardProps) {
         {/* ── Tasks view ── */}
         {viewMode === 'tasks' && (
           <TasksView
-            items={items}
+            items={effectiveItems}
             allTasks={allTasks}
             loadingTasks={loadingTasks}
             onSelectClient={item => { setSelectedItem(item); }}
@@ -405,6 +417,7 @@ export function PipelineBoard({ items, alerts }: PipelineBoardProps) {
           onStatusChanged={(itemId, newStatus) =>
             setStatusOverrides(prev => ({ ...prev, [itemId]: newStatus }))
           }
+          onItemUpdate={handleItemUpdate}
           onNavigate={newItem => setSelectedItem(newItem)}
         />
       )}

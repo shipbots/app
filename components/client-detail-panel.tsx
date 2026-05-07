@@ -385,12 +385,16 @@ interface ClientDetailPanelProps {
   onClose: () => void;
   onAgentAssigned?: (clientBoardItemId: string, email: string) => void;
   onStatusChanged?: (itemId: string, newStatus: string) => void;
+  /** Called after a field on the onboarding item was successfully saved.
+   *  Lets the parent (PipelineBoard) keep the kanban / calendar / tasks
+   *  views in sync without a full server round-trip. */
+  onItemUpdate?: (itemId: string, patch: Partial<OnboardingItem>) => void;
   onNavigate?: (item: OnboardingItem) => void;
 }
 
 type Tab = 'info' | 'onboarding' | 'meetings' | 'emails' | 'pos' | 'tasks' | 'docs';
 
-export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onNavigate }: ClientDetailPanelProps) {
+export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onItemUpdate, onNavigate }: ClientDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('onboarding');
   const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null);
   const [meetings, setMeetings] = useState<FirefliesMeeting[]>([]);
@@ -711,6 +715,9 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
               clientName={item.name}
               tikTokShop={clientInfo?.tikTokShop}
               lotCodeExpiration={clientInfo?.lotCodeExpiration}
+              onKickoffDateSaved={(newValue) =>
+                onItemUpdate?.(item.id, { kickoffDate: newValue || null })
+              }
             />
           )}
           {/* Info tab — always mounted to preserve in-progress edits across tab switches */}
@@ -728,6 +735,9 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
                 deliveredDate={item.deliveredDate}
                 inventoryDelivered={item.inventoryDelivered}
                 onNameChange={newName => setDisplayName(newName)}
+                onDeliveredDateSaved={(newValue) =>
+                  onItemUpdate?.(item.id, { deliveredDate: newValue || null })
+                }
               />
             ) : (
               <div className="p-8 text-center text-gray-500">
