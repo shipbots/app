@@ -186,16 +186,11 @@ export function PipelineBoard({ items, alerts }: PipelineBoardProps) {
         <header className="px-6 py-3 flex-shrink-0" style={{ background: 'var(--brand-navy)' }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2.5">
-                {/* ShipBots robot icon */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/shipbots-icon.png" alt="ShipBots" className="w-10 h-10 object-contain flex-shrink-0" />
-                <div>
-                  <h1 className="text-xl font-semibold text-white tracking-tight leading-tight">
-                    Ship<span style={{ color: 'var(--brand-cyan)' }}>bots</span>
-                  </h1>
-                  <p className="text-[11px] font-medium text-white/60">{items.length} clients in pipeline</p>
-                </div>
+              <div className="flex flex-col">
+                <h1 className="text-sm font-semibold text-white tracking-tight leading-tight">
+                  Onboarding Pipeline
+                </h1>
+                <p className="text-[11px] font-medium text-white/60">{items.length} clients</p>
               </div>
               {/* Pipeline / Calendar / Tasks view toggle */}
               <div className="flex items-center rounded-lg overflow-hidden text-sm font-medium ml-2" style={{ border: '1px solid rgba(255,255,255,0.2)' }}>

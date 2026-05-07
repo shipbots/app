@@ -556,7 +556,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
     {/* ── Close strip — sits just to the left of the panel, click to dismiss ── */}
     {!fullscreen && (
       <div
-        className="fixed right-0 top-0 h-full z-40 flex items-center"
+        className="fixed right-0 top-12 h-[calc(100vh-48px)] z-40 flex items-center"
         style={{ right: panelWidth === 'w-full' ? '100vw' : 'min(100vw, 36rem)' }}
         title="Close panel (or press Escape)"
         onClick={onClose}
@@ -567,7 +567,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
       </div>
     )}
     {/* ── Panel — fixed to the right edge, kanban board stays interactive ── */}
-    <div className={`fixed right-0 top-0 h-full z-40 ${panelWidth} bg-white shadow-2xl flex flex-col animate-slide-in border-l border-gray-200`}>
+    <div className={`fixed right-0 top-12 h-[calc(100vh-48px)] z-40 ${panelWidth} bg-white shadow-2xl flex flex-col animate-slide-in border-l border-gray-200`}>
         {/* Header */}
         <div className="p-4 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-start justify-between gap-2">
