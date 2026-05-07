@@ -1,0 +1,425 @@
+'use client';
+
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { OnboardingItem, Alert, SubItem } from '@/lib/types';
+import { PIPELINE_STAGES } from '@/lib/constants';
+import { ClientCard } from './client-card';
+import { ClientDetailPanel } from './client-detail-panel';
+import { AlertsPanel } from './alerts-panel';
+import { ChecklistBarLegend } from './checklist-bar';
+import { CalendarView } from './calendar-view';
+import { TasksView } from './tasks-view';
+import { Search, Bell, RefreshCw, ChevronDown, ChevronRight, LayoutGrid, CalendarDays, CheckSquare, UserPlus } from 'lucide-react';
+import { AddClientModal, CreatedClientResult } from './add-client-modal';
+import { CHECKLIST_STEPS } from '@/lib/constants';
+
+interface PipelineBoardProps {
+  items: OnboardingItem[];
+  alerts: Alert[];
+}
+
+export function PipelineBoard({ items, alerts }: PipelineBoardProps) {
+  const [selectedItem, setSelectedItem] = useState<OnboardingItem | null>(null);
+  const [viewMode, setViewMode] = useState<'pipeline' | 'calendar' | 'tasks'>('pipeline');
+  const [allTasks, setAllTasks] = useState<SubItem[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [tasksFetched, setTasksFetched] = useState(false);
+  const [taskClientFilter, setTaskClientFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showAlerts, setShowAlerts] = useState(false);
+  // Collapse terminal/noise columns by default
+  const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(new Set(['Completed', 'Abandoned', 'N/A', 'ZAP ERROR']));
+  const [refreshing, setRefreshing] = useState(false);
+  const [agentEmailMap, setAgentEmailMap] = useState<Record<string, string>>({});
+  const [showAddClient, setShowAddClient] = useState(false);
+  // Locally injected items (newly created clients before next server reload)
+  const [localItems, setLocalItems] = useState<OnboardingItem[]>([]);
+
+  const handleClientCreated = (result: CreatedClientResult) => {
+    const now = new Date().toISOString();
+    const stub: OnboardingItem = {
+      id: result.onboardingItemId,
+      name: result.name,
+      url: result.url,
+      createdAt: now,
+      updatedAt: now,
+      status: 'Not Started',
+      inventoryDelivered: '',
+      kickoffDate: null,
+      kickoffTime: null,
+      deliveredDate: null,
+      deliveredTime: null,
+      shippingDetails: '',
+      onboarder: null,
+      clientBoardItemId: result.clientItemId,
+      clientBoardItemName: result.name,
+      supportAgentEmail: null,
+      progress: 0,
+      checklist: CHECKLIST_STEPS.map(s => ({ ...s, value: null })),
+      subitemCount: 0,
+    };
+    setLocalItems(prev => [stub, ...prev]);
+    setShowAddClient(false);
+    setSelectedItem(stub);
+  };
+
+  // Drag state
+  const draggingItemRef = useRef<OnboardingItem | null>(null);
+  const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
+  // Optimistic status overrides: itemId → newStatus
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    fetch('/api/agent-emails')
+      .then(r => r.json())
+      .then((map: Record<string, string>) => setAgentEmailMap(map))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (viewMode === 'tasks' && !tasksFetched) {
+      setLoadingTasks(true);
+      fetch('/api/subitems')
+        .then(r => r.json())
+        .then((data: SubItem[]) => setAllTasks(Array.isArray(data) ? data : []))
+        .catch(console.error)
+        .finally(() => { setLoadingTasks(false); setTasksFetched(true); });
+    }
+  }, [viewMode, tasksFetched]);
+
+  // Merge server items with any locally created stubs (dedup by id)
+  const allItems = useMemo(() => {
+    const serverIds = new Set(items.map(i => i.id));
+    return [...localItems.filter(i => !serverIds.has(i.id)), ...items];
+  }, [items, localItems]);
+
+  const filteredItems = useMemo(() => {
+    if (!searchQuery) return allItems;
+    const q = searchQuery.toLowerCase();
+    return allItems.filter(
+      item => item.name.toLowerCase().includes(q) || item.onboarder?.toLowerCase().includes(q)
+    );
+  }, [allItems, searchQuery]);
+
+  // Apply optimistic status overrides
+  const effectiveItems = useMemo(() =>
+    filteredItems.map(item =>
+      statusOverrides[item.id] ? { ...item, status: statusOverrides[item.id] } : item
+    ),
+    [filteredItems, statusOverrides]
+  );
+
+  const groupedItems = useMemo(() => {
+    const groups: Record<string, OnboardingItem[]> = {};
+    for (const stage of PIPELINE_STAGES) groups[stage.status] = [];
+    for (const item of effectiveItems) {
+      if (groups[item.status]) groups[item.status].push(item);
+    }
+    return groups;
+  }, [effectiveItems]);
+
+  const handleRefresh = () => { setRefreshing(true); window.location.reload(); };
+  const toggleColumn = (status: string) => {
+    setCollapsedColumns(prev => {
+      const next = new Set(prev);
+      next.has(status) ? next.delete(status) : next.add(status);
+      return next;
+    });
+  };
+  const handleAlertClick = (clientId: string) => {
+    const item = items.find(i => i.id === clientId);
+    if (item) setSelectedItem(item);
+  };
+
+  // ── Drag handlers ──
+  const handleDragStart = (item: OnboardingItem) => {
+    draggingItemRef.current = item;
+  };
+  const handleDragEnd = () => {
+    draggingItemRef.current = null;
+    setDragOverStatus(null);
+  };
+  const handleDragOver = (e: React.DragEvent, status: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverStatus(status);
+  };
+  const handleDragLeave = (e: React.DragEvent) => {
+    // Only clear if leaving the column entirely (not a child)
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDragOverStatus(null);
+    }
+  };
+  const handleDrop = async (e: React.DragEvent, newStatus: string) => {
+    e.preventDefault();
+    setDragOverStatus(null);
+    const item = draggingItemRef.current;
+    if (!item || item.status === newStatus) return;
+    draggingItemRef.current = null;
+
+    // Optimistic update
+    setStatusOverrides(prev => ({ ...prev, [item.id]: newStatus }));
+    if (selectedItem?.id === item.id) {
+      setSelectedItem(prev => prev ? { ...prev, status: newStatus } : prev);
+    }
+
+    try {
+      const res = await fetch(`/api/onboarding/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ columnId: 'estado', value: newStatus }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      // Revert on failure
+      setStatusOverrides(prev => {
+        const next = { ...prev };
+        delete next[item.id];
+        return next;
+      });
+    }
+  };
+
+  return (
+    <div className="flex h-full bg-gray-50">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <header className="px-6 py-3 flex-shrink-0" style={{ background: 'var(--brand-navy)' }}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2.5">
+                {/* ShipBots robot icon */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/shipbots-icon.png" alt="ShipBots" className="w-10 h-10 object-contain flex-shrink-0" />
+                <div>
+                  <h1 className="text-xl font-semibold text-white tracking-tight leading-tight">
+                    Ship<span style={{ color: 'var(--brand-cyan)' }}>bots</span>
+                  </h1>
+                  <p className="text-[11px] font-medium text-white/60">{items.length} clients in pipeline</p>
+                </div>
+              </div>
+              {/* Pipeline / Calendar / Tasks view toggle */}
+              <div className="flex items-center rounded-lg overflow-hidden text-sm font-medium ml-2" style={{ border: '1px solid rgba(255,255,255,0.2)' }}>
+                <button
+                  onClick={() => setViewMode('pipeline')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
+                    viewMode === 'pipeline'
+                      ? 'text-[#015280] font-semibold'
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                  style={viewMode === 'pipeline' ? { background: 'var(--brand-cyan)' } : {}}
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  Pipeline
+                </button>
+                <button
+                  onClick={() => setViewMode('calendar')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
+                    viewMode === 'calendar'
+                      ? 'text-[#015280] font-semibold'
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                  style={{
+                    borderLeft: '1px solid rgba(255,255,255,0.2)',
+                    ...(viewMode === 'calendar' ? { background: 'var(--brand-cyan)' } : {}),
+                  }}
+                >
+                  <CalendarDays className="w-3.5 h-3.5" />
+                  Calendar
+                </button>
+                <button
+                  onClick={() => setViewMode('tasks')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
+                    viewMode === 'tasks'
+                      ? 'text-[#015280] font-semibold'
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                  style={{
+                    borderLeft: '1px solid rgba(255,255,255,0.2)',
+                    ...(viewMode === 'tasks' ? { background: 'var(--brand-cyan)' } : {}),
+                  }}
+                >
+                  <CheckSquare className="w-3.5 h-3.5" />
+                  Tasks
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              {/* Add new client button */}
+              <button
+                onClick={() => setShowAddClient(true)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 shadow-sm"
+                style={{ background: 'var(--brand-cyan)', color: 'var(--brand-navy)' }}
+              >
+                <UserPlus className="w-4 h-4" />
+                Add new client
+              </button>
+
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50" />
+                <input
+                  type="text"
+                  placeholder="Search clients..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="pl-9 pr-4 py-2 rounded-lg text-sm text-white placeholder-white/50 focus:outline-none focus:ring-2 w-64"
+                  style={{
+                    background: 'rgba(255,255,255,0.12)',
+                    border: '1px solid rgba(255,255,255,0.25)',
+                    '--tw-ring-color': 'var(--brand-cyan)',
+                  } as React.CSSProperties}
+                />
+              </div>
+              <button onClick={handleRefresh} className="p-2 rounded-lg transition-colors hover:bg-white/10" title="Refresh">
+                <RefreshCw className={`w-4 h-4 text-white/80 ${refreshing ? 'animate-spin' : ''}`} />
+              </button>
+              <button onClick={() => setShowAlerts(!showAlerts)} className="relative p-2 rounded-lg hover:bg-white/10 transition-colors">
+                <Bell className="w-4 h-4 text-white/80" />
+                {alerts.length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                    {alerts.length}
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* ── Calendar view ── */}
+        {viewMode === 'calendar' && (
+          <CalendarView
+            items={items}
+            agentEmailMap={agentEmailMap}
+            onSelectItem={setSelectedItem}
+          />
+        )}
+
+        {/* ── Tasks view ── */}
+        {viewMode === 'tasks' && (
+          <TasksView
+            items={items}
+            allTasks={allTasks}
+            loadingTasks={loadingTasks}
+            onSelectClient={item => { setSelectedItem(item); }}
+            taskClientFilter={taskClientFilter}
+            onFilterChange={setTaskClientFilter}
+            onTaskCreated={task => setAllTasks(prev => [task, ...prev])}
+            onTaskUpdated={updated => setAllTasks(prev => prev.map(t => t.id === updated.id ? updated : t))}
+          />
+        )}
+
+        {/* ── Pipeline / Kanban view ── */}
+        {viewMode === 'pipeline' && (
+        <div className="flex-1 overflow-x-auto p-6">
+          <div className="flex gap-4 h-full min-w-max">
+            {PIPELINE_STAGES.map(stage => {
+              const stageItems = groupedItems[stage.status] || [];
+              const isCollapsed = collapsedColumns.has(stage.status);
+              const isDragTarget = dragOverStatus === stage.status;
+
+              return (
+                <div
+                  key={stage.status}
+                  className="flex flex-col w-72 flex-shrink-0"
+                  onDragOver={e => handleDragOver(e, stage.status)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={e => handleDrop(e, stage.status)}
+                >
+                  <button
+                    onClick={() => toggleColumn(stage.status)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-t-lg mb-2"
+                    style={{ backgroundColor: stage.bgColor }}
+                  >
+                    {isCollapsed ? <ChevronRight className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
+                    <span className="text-sm font-medium text-gray-700 truncate">{stage.status}</span>
+                    <span className="ml-auto text-xs font-bold text-gray-500 bg-white/80 px-1.5 py-0.5 rounded">
+                      {stageItems.length}
+                    </span>
+                  </button>
+
+                  {isCollapsed ? (
+                    /* ── Collapsed: show a slim drop zone so cards can still be dragged in ── */
+                    <div
+                      className={`rounded-lg transition-all duration-150 flex items-center justify-center text-xs font-medium ${
+                        isDragTarget
+                          ? 'min-h-12 ring-2 ring-[#43c7ff] ring-inset text-[#015280] bg-[#e6f8ff]'
+                          : 'min-h-4 text-transparent'
+                      }`}
+                    >
+                      {isDragTarget ? 'Drop to complete' : ''}
+                    </div>
+                  ) : (
+                    <div
+                      className={`flex-1 space-y-2 overflow-y-auto pr-1 pb-4 rounded-lg transition-colors min-h-16 ${
+                        isDragTarget ? 'bg-[#e6f8ff] ring-2 ring-[#43c7ff] ring-inset' : ''
+                      }`}
+                    >
+                      {stageItems.map(item => (
+                        <div
+                          key={item.id}
+                          draggable
+                          onDragStart={() => handleDragStart(item)}
+                          onDragEnd={handleDragEnd}
+                          className="cursor-grab active:cursor-grabbing active:opacity-50 transition-opacity"
+                        >
+                          <ClientCard
+                            item={item}
+                            agentEmail={item.clientBoardItemId ? (agentEmailMap[item.clientBoardItemId] ?? null) : null}
+                            onClick={() => setSelectedItem(item)}
+                          />
+                        </div>
+                      ))}
+                      {stageItems.length === 0 && !isDragTarget && (
+                        <div className="text-center py-8 text-gray-400 text-sm">No clients</div>
+                      )}
+                      {isDragTarget && stageItems.length === 0 && (
+                        <div className="text-center py-8 text-blue-400 text-sm font-medium">Drop here</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        )}
+      </div>
+
+      {showAlerts && (
+        <div className="w-80 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-700">Alerts & Action Items</h2>
+            <span className="text-xs text-gray-500">{alerts.length}</span>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2">
+            <AlertsPanel alerts={alerts} onClientClick={handleAlertClick} />
+          </div>
+        </div>
+      )}
+
+      {selectedItem && (
+        <ClientDetailPanel
+          key={selectedItem.id}
+          item={selectedItem}
+          items={effectiveItems}
+          initialAgentEmail={selectedItem.clientBoardItemId ? (agentEmailMap[selectedItem.clientBoardItemId] ?? '') : ''}
+          onClose={() => setSelectedItem(null)}
+          onAgentAssigned={(clientBoardItemId, email) =>
+            setAgentEmailMap(prev => ({ ...prev, [clientBoardItemId]: email }))
+          }
+          onStatusChanged={(itemId, newStatus) =>
+            setStatusOverrides(prev => ({ ...prev, [itemId]: newStatus }))
+          }
+          onNavigate={newItem => setSelectedItem(newItem)}
+        />
+      )}
+
+      {showAddClient && (
+        <AddClientModal
+          onClose={() => setShowAddClient(false)}
+          onCreated={handleClientCreated}
+        />
+      )}
+    </div>
+  );
+}
