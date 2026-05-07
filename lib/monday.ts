@@ -464,16 +464,21 @@ export async function updateClientField(
   valueType: ColumnValueType = 'text'
 ): Promise<void> {
   // Format the column value based on Monday.com column type requirements:
-  //   text     → plain string
-  //   status   → {"label": "Done"}
-  //   dropdown → {"labels": ["Option"]}
-  //   date     → {"date": "YYYY-MM-DD"}
-  let colValue: string | { label: string } | { labels: string[] } | { date: string };
+  //   text/long_text → {"text": "..."} (long_text REQUIRES this object form)
+  //   status         → {"label": "Done"}
+  //   dropdown       → {"labels": ["Option"]}
+  //   date           → {"date": "YYYY-MM-DD"}
+  let colValue: string | { label: string } | { labels: string[] } | { date: string } | { text: string };
   switch (valueType) {
     case 'status':   colValue = value ? { label: value } : ''; break;
     case 'dropdown': colValue = value ? { labels: [value] } : { labels: [] }; break;
     case 'date':     colValue = value ? { date: value } : ''; break;
-    default:         colValue = value;
+    default:
+      // Both text and long_text columns accept the {"text": "..."} form.
+      // long_text columns reject plain strings via change_multiple_column_values.
+      colValue = columnId.startsWith('long_text') || columnId.startsWith('text')
+        ? { text: value }
+        : value;
   }
   const columnValues = JSON.stringify({ [columnId]: colValue }).replace(/"/g, '\\"');
   const query = `mutation {
@@ -523,11 +528,15 @@ export async function updateOnboardingField(
   value: string,
   valueType: ColumnValueType = 'status'
 ): Promise<void> {
-  let colValue: string | { label: string } | { date: string };
+  let colValue: string | { label: string } | { date: string } | { text: string };
   switch (valueType) {
     case 'status': colValue = value ? { label: value } : ''; break;
     case 'date':   colValue = value ? { date: value } : ''; break;
-    default:       colValue = value;
+    default:
+      // long_text columns require {"text": "..."}; plain text accepts both.
+      colValue = columnId.startsWith('long_text') || columnId.startsWith('text')
+        ? { text: value }
+        : value;
   }
   const columnValues = JSON.stringify({ [columnId]: colValue }).replace(/"/g, '\\"');
   const query = `mutation {

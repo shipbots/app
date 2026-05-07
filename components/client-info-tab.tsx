@@ -343,14 +343,18 @@ function DateField({
   patchUrl?: string;
 }) {
   const [value, setValue] = useState(initialValue);
+  const [savedValue, setSavedValue] = useState(initialValue);
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState<'saved' | 'error' | null>(null);
 
   // Sync state when the client changes (navigating between clients)
-  useEffect(() => { setValue(initialValue); }, [initialValue]);
+  useEffect(() => { setValue(initialValue); setSavedValue(initialValue); }, [initialValue]);
 
   const save = useCallback(async (newValue: string) => {
-    if (newValue === value) return;
+    // Compare against the last *persisted* value, not the local input value.
+    // The input's onChange updates `value` synchronously, so comparing to
+    // `value` here would always short-circuit and skip the save.
+    if (newValue === savedValue) return;
     setSaving(true);
     try {
       const url = patchUrl ?? `/api/client/${clientId}`;
@@ -361,6 +365,7 @@ function DateField({
       });
       if (!res.ok) throw new Error();
       setValue(newValue);
+      setSavedValue(newValue);
       setFlash('saved');
     } catch {
       setFlash('error');
@@ -368,7 +373,7 @@ function DateField({
       setSaving(false);
       setTimeout(() => setFlash(null), 2000);
     }
-  }, [value, columnId, clientId, patchUrl]);
+  }, [savedValue, columnId, clientId, patchUrl]);
 
   const [expanded, setExpanded] = useState(!!initialValue);
   const inputRef2 = useRef<HTMLInputElement>(null);
