@@ -532,11 +532,10 @@ export async function updateClientField(
     case 'dropdown': colValue = value ? { labels: [value] } : { labels: [] }; break;
     case 'date':     colValue = value ? { date: value } : ''; break;
     default:
-      // Both text and long_text columns accept the {"text": "..."} form.
-      // long_text columns reject plain strings via change_multiple_column_values.
-      colValue = columnId.startsWith('long_text') || columnId.startsWith('text')
-        ? { text: value }
-        : value;
+      // long_text columns require {"text": "..."} via change_multiple_column_values.
+      // Plain text columns must use a raw string — Monday rejects/blanks them
+      // when given an object form here.
+      colValue = columnId.startsWith('long_text') ? { text: value } : value;
   }
   const columnValues = JSON.stringify({ [columnId]: colValue }).replace(/"/g, '\\"');
   const query = `mutation {
@@ -591,10 +590,8 @@ export async function updateOnboardingField(
     case 'status': colValue = value ? { label: value } : ''; break;
     case 'date':   colValue = value ? { date: value } : ''; break;
     default:
-      // long_text columns require {"text": "..."}; plain text accepts both.
-      colValue = columnId.startsWith('long_text') || columnId.startsWith('text')
-        ? { text: value }
-        : value;
+      // long_text columns require {"text": "..."}; plain text takes a string.
+      colValue = columnId.startsWith('long_text') ? { text: value } : value;
   }
   const columnValues = JSON.stringify({ [columnId]: colValue }).replace(/"/g, '\\"');
   const query = `mutation {
