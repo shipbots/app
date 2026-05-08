@@ -224,11 +224,15 @@ async function fetchEstimatedDeliveryDates(
     const items: Array<{ id: string; column_values: Array<{ id: string; text: string | null; value: string | null }> }> = data.items ?? [];
     for (const it of items) {
       const cv = it.column_values?.[0];
-      const date = cv?.text || null;
+      // Parse the raw JSON value to get canonical YYYY-MM-DD — cv.text returns
+      // a locale-formatted string ("May 31, 2026") that won't match the
+      // calendar's ISO date keys.
+      let date: string | null = null;
       let time: string | null = null;
       if (cv?.value) {
         try {
           const parsed = JSON.parse(cv.value);
+          date = parsed?.date || null;
           time = parsed?.time && parsed.time !== '00:00:00' ? parsed.time : null;
         } catch { /* ignore */ }
       }
