@@ -210,8 +210,10 @@ async function fetchEstimatedDeliveryDates(
   itemIds: string[]
 ): Promise<Record<string, { date: string | null; time: string | null }>> {
   const result: Record<string, { date: string | null; time: string | null }> = {};
-  // Monday's items() query supports up to ~100 ids per call; chunk for safety.
-  const CHUNK = 100;
+  // Monday's items() query silently truncates the response on larger batches —
+  // empirically anything above ~25 IDs starts dropping items without error.
+  // Keep this small to ensure every client is returned.
+  const CHUNK = 25;
   for (let i = 0; i < itemIds.length; i += CHUNK) {
     const chunk = itemIds.slice(i, i + CHUNK);
     const query = `query {
