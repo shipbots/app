@@ -738,6 +738,9 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
                 onDeliveredDateSaved={(newValue) =>
                   onItemUpdate?.(item.id, { deliveredDate: newValue || null })
                 }
+                onEstimatedDeliveryDateSaved={(newValue) =>
+                  onItemUpdate?.(item.id, { estimatedDeliveryDate: newValue || null })
+                }
               />
             ) : (
               <div className="p-8 text-center text-gray-500">

@@ -49,6 +49,8 @@ export function PipelineBoard({ items, alerts }: PipelineBoardProps) {
       kickoffTime: null,
       deliveredDate: null,
       deliveredTime: null,
+      estimatedDeliveryDate: null,
+      estimatedDeliveryTime: null,
       shippingDetails: '',
       onboarder: null,
       clientBoardItemId: result.clientItemId,

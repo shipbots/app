@@ -157,6 +157,8 @@ export async function fetchOnboardingItems(): Promise<OnboardingItem[]> {
         kickoffTime,
         deliveredDate: cols['date__1'] || null,
         deliveredTime,
+        estimatedDeliveryDate: null, // joined in below from Clients board
+        estimatedDeliveryTime: null,
         shippingDetails: cols['text_mkw94440'] || '',
         onboarder,
         clientBoardItemId,
@@ -177,7 +179,63 @@ export async function fetchOnboardingItems(): Promise<OnboardingItem[]> {
     cursor = page.cursor;
   } while (cursor);
 
+  // ── Join Initial Inventory Est. Delivery Date from the Clients board ──
+  // Calendar "Expected Delivery" pulls from this field (date_mktrzhyk on the
+  // Clients board), not from the actual-received date_…1 on Onboarding.
+  const clientIds = Array.from(
+    new Set(allItems.map(i => i.clientBoardItemId).filter((id): id is string => !!id))
+  );
+  if (clientIds.length > 0) {
+    try {
+      const estByClient = await fetchEstimatedDeliveryDates(clientIds);
+      for (const item of allItems) {
+        if (item.clientBoardItemId && estByClient[item.clientBoardItemId]) {
+          const { date, time } = estByClient[item.clientBoardItemId];
+          item.estimatedDeliveryDate = date;
+          item.estimatedDeliveryTime = time;
+        }
+      }
+    } catch (err) {
+      console.error('[fetchOnboardingItems] estimated delivery date join failed:', err);
+      // non-fatal: items just won't have estimatedDeliveryDate set
+    }
+  }
+
   return allItems;
+}
+
+// Fetch date_mktrzhyk (Initial Inventory Est. Delivery Date) for a batch of
+// Client board item IDs. Returns { itemId → { date, time } }.
+async function fetchEstimatedDeliveryDates(
+  itemIds: string[]
+): Promise<Record<string, { date: string | null; time: string | null }>> {
+  const result: Record<string, { date: string | null; time: string | null }> = {};
+  // Monday's items() query supports up to ~100 ids per call; chunk for safety.
+  const CHUNK = 100;
+  for (let i = 0; i < itemIds.length; i += CHUNK) {
+    const chunk = itemIds.slice(i, i + CHUNK);
+    const query = `query {
+      items(ids: [${chunk.join(',')}]) {
+        id
+        column_values(ids: ["date_mktrzhyk"]) { id text value }
+      }
+    }`;
+    const data = await mondayQuery(query);
+    const items: Array<{ id: string; column_values: Array<{ id: string; text: string | null; value: string | null }> }> = data.items ?? [];
+    for (const it of items) {
+      const cv = it.column_values?.[0];
+      const date = cv?.text || null;
+      let time: string | null = null;
+      if (cv?.value) {
+        try {
+          const parsed = JSON.parse(cv.value);
+          time = parsed?.time && parsed.time !== '00:00:00' ? parsed.time : null;
+        } catch { /* ignore */ }
+      }
+      result[it.id] = { date, time };
+    }
+  }
+  return result;
 }
 
 // Fetches a map of { clientBoardItemId -> agentEmail } for all clients.

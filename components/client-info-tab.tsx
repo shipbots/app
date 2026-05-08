@@ -19,9 +19,13 @@ interface ClientInfoTabProps {
   inventoryDelivered?: string;
   /** Called after a successful rename so the parent can update its header */
   onNameChange?: (newName: string) => void;
-  /** Called after the delivery date saves successfully — keeps the kanban /
-   *  calendar views in sync without a full server reload. */
+  /** Called after the delivery date (date__1) saves — kanban "delivered"
+   *  badge sync only; the calendar uses the estimated date below. */
   onDeliveredDateSaved?: (newValue: string) => void;
+  /** Called after the Initial Inventory Est. Delivery Date (date_mktrzhyk
+   *  on the Clients board) saves — drives the calendar "Expected Delivery"
+   *  event in real time. */
+  onEstimatedDeliveryDateSaved?: (newValue: string) => void;
 }
 
 // ─── Copyable + Editable field (for portal login credentials) ────────────────
@@ -993,7 +997,7 @@ function FileField({
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
-export function ClientInfoTab({ client, fullscreen, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange, onDeliveredDateSaved }: ClientInfoTabProps) {
+export function ClientInfoTab({ client, fullscreen, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange, onDeliveredDateSaved, onEstimatedDeliveryDateSaved }: ClientInfoTabProps) {
   const id = client.id;
   const maxH = fullscreen ? 'max-h-[calc(100vh-140px)]' : 'max-h-[calc(100vh-200px)]';
 
@@ -1411,7 +1415,14 @@ export function ClientInfoTab({ client, fullscreen, onboardingItemId, deliveredD
 
       {/* ── Receiving ── */}
       <Section title="Receiving">
-        <DateField label="📅 Initial Inventory Est. Delivery Date" value={localClient.initialInventoryDate} columnId="date_mktrzhyk" clientId={id} icon={<Calendar className="w-3.5 h-3.5" />} />
+        <DateField
+          label="📅 Initial Inventory Est. Delivery Date"
+          value={localClient.initialInventoryDate}
+          columnId="date_mktrzhyk"
+          clientId={id}
+          icon={<Calendar className="w-3.5 h-3.5" />}
+          onSaved={onEstimatedDeliveryDateSaved}
+        />
         {onboardingItemId && (
           <DateField
             label="✅ Delivered Date"

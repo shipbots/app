@@ -261,12 +261,14 @@ export function CalendarView({ items, agentEmailMap, onSelectItem }: CalendarVie
           item,
         });
       }
-      if (item.deliveredDate) {
+      // "Expected Delivery" = the Initial Inventory Est. Delivery Date from
+      // the Clients board (date_mktrzhyk), NOT the received-on date__1.
+      if (item.estimatedDeliveryDate) {
         result.push({
           id: `${item.id}-delivery`,
           type: 'delivery',
-          date: item.deliveredDate,
-          time: item.deliveredTime ?? null,
+          date: item.estimatedDeliveryDate,
+          time: item.estimatedDeliveryTime ?? null,
           item,
         });
       }

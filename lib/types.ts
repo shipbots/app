@@ -10,6 +10,11 @@ export interface OnboardingItem {
   kickoffTime: string | null;    // "HH:MM:SS" from Monday.com date column, null if no time set
   deliveredDate: string | null;
   deliveredTime: string | null;  // "HH:MM:SS" from Monday.com date column, null if no time set
+  // "Initial Inventory Est. Delivery Date" — joined from the linked Clients
+  // board item (column date_mktrzhyk). Drives the calendar's "Expected
+  // Delivery" event; deliveredDate above is the actual receive date.
+  estimatedDeliveryDate: string | null;
+  estimatedDeliveryTime: string | null;
   shippingDetails: string;       // free-text from "Shipping Details" column (text_mkw94440)
   onboarder: string | null;
   clientBoardItemId: string | null;
