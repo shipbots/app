@@ -999,7 +999,6 @@ function FileField({
 // ─── Main Component ──────────────────────────────────────────────────────────
 export function ClientInfoTab({ client, fullscreen, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange, onDeliveredDateSaved, onEstimatedDeliveryDateSaved }: ClientInfoTabProps) {
   const id = client.id;
-  const maxH = fullscreen ? 'max-h-[calc(100vh-140px)]' : 'max-h-[calc(100vh-200px)]';
 
   // Column options fetched once from Monday.com (status/dropdown labels)
   const [colOptions, setColOptions] = useState<Record<string, string[]>>({});
@@ -1218,7 +1217,7 @@ export function ClientInfoTab({ client, fullscreen, onboardingItemId, deliveredD
   }, [id, localClient.docusignFile]);
 
   return (
-    <div className={`p-4 overflow-y-auto ${maxH}`}>
+    <div className="p-4 overflow-y-auto h-full">
 
       {/* ── Client Name (editable — renames both boards) ── */}
       <div className="mb-3 px-1">

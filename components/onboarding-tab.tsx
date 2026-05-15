@@ -704,7 +704,7 @@ export function OnboardingTab({
   const progressColor = progress === 100 ? '#00c875' : progress > 50 ? '#579bfc' : '#fdab3d';
 
   return (
-    <div className="p-4 overflow-y-auto max-h-[calc(100vh-200px)]">
+    <div className="p-4 overflow-y-auto h-full">
       {/* Progress header */}
       <div className="mb-4">
         <div className="flex items-center justify-between mb-1.5">
