@@ -69,10 +69,15 @@ function CopyableEditField({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ columnId, value }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        console.error(`[CopyableEditField] save failed: ${columnId} status=${res.status}`, body);
+        throw new Error(`${res.status}`);
+      }
       setSavedValue(value);
       setFlash('saved');
-    } catch {
+    } catch (err) {
+      console.error(`[CopyableEditField] save error: ${columnId}`, err);
       setValue(savedValue);
       setFlash('error');
     } finally {
@@ -264,10 +269,15 @@ function SelectField({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ columnId, value: newValue, valueType }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        console.error(`[SelectField] save failed: ${columnId} status=${res.status}`, body);
+        throw new Error(`${res.status}`);
+      }
       setValue(newValue);
       setFlash('saved');
-    } catch {
+    } catch (err) {
+      console.error(`[SelectField] save error: ${columnId}`, err);
       setFlash('error');
     } finally {
       setSaving(false);
@@ -373,12 +383,17 @@ function DateField({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ columnId, value: newValue, valueType: 'date' }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        console.error(`[DateField] save failed: ${columnId} status=${res.status}`, body);
+        throw new Error(`${res.status}`);
+      }
       setValue(newValue);
       setSavedValue(newValue);
       onSaved?.(newValue);
       setFlash('saved');
-    } catch {
+    } catch (err) {
+      console.error(`[DateField] save error: ${columnId}`, err);
       setFlash('error');
     } finally {
       setSaving(false);
@@ -485,10 +500,15 @@ function EditField({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ columnId, value }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        console.error(`[EditField] save failed: ${columnId} status=${res.status}`, body);
+        throw new Error(`${res.status}`);
+      }
       setSavedValue(value);
       setFlash('saved');
-    } catch {
+    } catch (err) {
+      console.error(`[EditField] save error: ${columnId}`, err);
       setValue(savedValue);
       setFlash('error');
     } finally {
