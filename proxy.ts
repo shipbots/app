@@ -8,6 +8,10 @@ export default auth((req) => {
   // Always allow NextAuth's own endpoints
   if (pathname.startsWith('/api/auth')) return NextResponse.next();
 
+  // Always allow health-check endpoints so Vercel cron can hit them
+  // (and so external monitors can probe without a session).
+  if (pathname.startsWith('/api/health')) return NextResponse.next();
+
   // Always allow public static assets
   if (pathname.startsWith('/_next') || pathname === '/favicon.ico' || pathname === '/shipbots-icon.png') {
     return NextResponse.next();
