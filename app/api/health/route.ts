@@ -61,7 +61,8 @@ async function checkGmail(): Promise<ServiceResult> {
   }
   const start = Date.now();
   try {
-    const res = await fetch('https://oauth2.googleapis.com/token', {
+    // 1) Refresh the access token (catches revoked / wrong-client refresh tokens)
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -72,9 +73,33 @@ async function checkGmail(): Promise<ServiceResult> {
       }),
       signal: AbortSignal.timeout(8000),
     });
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      return { ok: false, latencyMs: Date.now() - start, error: data.error_description || data.error };
+    const tokenData = await tokenRes.json();
+    if (!tokenRes.ok || tokenData.error || !tokenData.access_token) {
+      return { ok: false, latencyMs: Date.now() - start, error: tokenData.error_description || tokenData.error || 'no access_token returned' };
+    }
+
+    // 2) Verify the token actually grants gmail.send scope. Scope is on the
+    //    introspection endpoint — checking here catches consent screens where
+    //    the user previously approved readonly but not send.
+    const tokenInfoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${tokenData.access_token}`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    const info = await tokenInfoRes.json();
+    const scope: string = info?.scope || '';
+    if (!scope.includes('gmail.send')) {
+      return { ok: false, latencyMs: Date.now() - start, error: `missing gmail.send scope — got "${scope}"` };
+    }
+
+    // 3) Confirm the token can hit Gmail. getProfile is read-only but proves
+    //    auth works end-to-end and surfaces account-level issues (suspended,
+    //    quota exhausted, etc).
+    const profileRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!profileRes.ok) {
+      const body = await profileRes.text().catch(() => '');
+      return { ok: false, latencyMs: Date.now() - start, error: `getProfile ${profileRes.status}: ${body.slice(0, 200)}` };
     }
     return { ok: true, latencyMs: Date.now() - start };
   } catch (e) {

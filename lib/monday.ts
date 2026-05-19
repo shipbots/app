@@ -521,28 +521,64 @@ export async function updateOnboardingStatus(
 
 export type ColumnValueType = 'text' | 'status' | 'dropdown' | 'date';
 
+// ─── Column type cache (auto-detect format) ──────────────────────────────────
+// Caches column types per board so save mutations always format the value
+// correctly — even when the frontend forgets / passes the wrong valueType.
+// Cache TTL is 1 hour; new columns added in Monday will be picked up on the
+// next save after expiry.
+type MondayColumnType = string; // 'status'|'color'|'dropdown'|'date'|'long_text'|'text'|'numbers'|...
+const columnTypeCache: Record<string, { types: Record<string, MondayColumnType>; fetchedAt: number }> = {};
+const COLUMN_TYPE_TTL_MS = 60 * 60 * 1000;
+
+async function getColumnTypeMap(boardId: string): Promise<Record<string, MondayColumnType>> {
+  const cached = columnTypeCache[boardId];
+  if (cached && Date.now() - cached.fetchedAt < COLUMN_TYPE_TTL_MS) return cached.types;
+  const data = await mondayQuery(`query { boards(ids: [${boardId}]) { columns { id type } } }`);
+  const types: Record<string, MondayColumnType> = {};
+  for (const c of (data.boards?.[0]?.columns ?? []) as Array<{ id: string; type: string }>) {
+    types[c.id] = c.type;
+  }
+  columnTypeCache[boardId] = { types, fetchedAt: Date.now() };
+  return types;
+}
+
+// Format a value for change_multiple_column_values based on actual column type
+// from Monday's metadata. This is the single source of truth for save formats —
+// every save path goes through here. Adding support for a new Monday column
+// type means adding one case in this function and nowhere else.
+function formatColumnValue(
+  type: MondayColumnType,
+  value: string
+): string | { label: string } | { labels: string[] } | { date: string } | { text: string } {
+  switch (type) {
+    case 'status':
+    case 'color': // legacy alias for status
+      return value ? { label: value } : '';
+    case 'dropdown':
+      return value ? { labels: [value] } : { labels: [] };
+    case 'date':
+      return value ? { date: value } : '';
+    case 'long_text':
+      return { text: value ?? '' };
+    case 'text':
+    default:
+      return value ?? '';
+  }
+}
+
 export async function updateClientField(
   itemId: string,
   columnId: string,
   value: string,
-  valueType: ColumnValueType = 'text'
+  // valueType is accepted for backwards compatibility but ignored — the actual
+  // column type is fetched from Monday and used to format. This means a wrong
+  // valueType from the frontend can't silently corrupt the save anymore.
+  _valueType: ColumnValueType = 'text'
 ): Promise<void> {
-  // Format the column value based on Monday.com column type requirements:
-  //   text/long_text → {"text": "..."} (long_text REQUIRES this object form)
-  //   status         → {"label": "Done"}
-  //   dropdown       → {"labels": ["Option"]}
-  //   date           → {"date": "YYYY-MM-DD"}
-  let colValue: string | { label: string } | { labels: string[] } | { date: string } | { text: string };
-  switch (valueType) {
-    case 'status':   colValue = value ? { label: value } : ''; break;
-    case 'dropdown': colValue = value ? { labels: [value] } : { labels: [] }; break;
-    case 'date':     colValue = value ? { date: value } : ''; break;
-    default:
-      // long_text columns require {"text": "..."} via change_multiple_column_values.
-      // Plain text columns must use a raw string — Monday rejects/blanks them
-      // when given an object form here.
-      colValue = columnId.startsWith('long_text') ? { text: value } : value;
-  }
+  const typeMap = await getColumnTypeMap(CLIENTS_BOARD_ID);
+  const colType = typeMap[columnId];
+  if (!colType) throw new Error(`Unknown column ${columnId} on Clients board`);
+  const colValue = formatColumnValue(colType, value);
   const columnValues = JSON.stringify({ [columnId]: colValue }).replace(/"/g, '\\"');
   const query = `mutation {
     change_multiple_column_values(
@@ -554,7 +590,7 @@ export async function updateClientField(
       id
     }
   }`;
-  console.log(`[updateClientField] item=${itemId} col=${columnId} type=${valueType} value="${typeof colValue === 'string' ? colValue : JSON.stringify(colValue)}"`);
+  console.log(`[updateClientField] item=${itemId} col=${columnId} type=${colType} value="${typeof colValue === 'string' ? colValue : JSON.stringify(colValue)}"`);
   await mondayQuery(query);
   console.log(`[updateClientField] saved OK`);
 }
@@ -584,32 +620,33 @@ export async function renameItem(
   console.log(`[renameItem] renamed OK`);
 }
 
-// ─── Update a field on the Onboarding board (status or date columns) ─────────
+// ─── Update a field on the Onboarding board ──────────────────────────────────
+// Type is auto-detected from Monday metadata — see updateClientField for the
+// design rationale.
 export async function updateOnboardingField(
   itemId: string,
   columnId: string,
   value: string,
-  valueType: ColumnValueType = 'status'
+  _valueType: ColumnValueType = 'status'
 ): Promise<void> {
-  let colValue: string | { label: string } | { date: string } | { text: string };
-  switch (valueType) {
-    case 'status': colValue = value ? { label: value } : ''; break;
-    case 'date':   colValue = value ? { date: value } : ''; break;
-    default:
-      // long_text columns require {"text": "..."}; plain text takes a string.
-      colValue = columnId.startsWith('long_text') ? { text: value } : value;
-  }
+  const typeMap = await getColumnTypeMap(ONBOARDING_BOARD_ID);
+  const colType = typeMap[columnId];
+  if (!colType) throw new Error(`Unknown column ${columnId} on Onboarding board`);
+  const colValue = formatColumnValue(colType, value);
   const columnValues = JSON.stringify({ [columnId]: colValue }).replace(/"/g, '\\"');
   const query = `mutation {
     change_multiple_column_values(
       board_id: ${ONBOARDING_BOARD_ID},
       item_id: ${itemId},
-      column_values: "${columnValues}"
+      column_values: "${columnValues}",
+      create_labels_if_missing: true
     ) {
       id
     }
   }`;
+  console.log(`[updateOnboardingField] item=${itemId} col=${columnId} type=${colType} value="${typeof colValue === 'string' ? colValue : JSON.stringify(colValue)}"`);
   await mondayQuery(query);
+  console.log(`[updateOnboardingField] saved OK`);
 }
 
 // ─── Fetch subitem board column metadata ─────────────────────────────────────
