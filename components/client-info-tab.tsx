@@ -430,7 +430,18 @@ function DateField({
             ref={inputRef2}
             type="date"
             value={value || ''}
-            onChange={e => setValue(e.target.value)}
+            onChange={e => {
+              const next = e.target.value;
+              setValue(next);
+              // Native date input fires change with the final value once the
+              // picker closes (or once the user types a complete YYYY-MM-DD).
+              // Save immediately — onBlur is unreliable: in some browsers the
+              // picker closes without the input losing focus, so users would
+              // see their date "not save" until they clicked elsewhere.
+              // The save() function dedupes against savedValue, so spurious
+              // re-fires don't double-write.
+              if (!next || /^\d{4}-\d{2}-\d{2}$/.test(next)) save(next);
+            }}
             onBlur={e => save(e.target.value)}
             className="text-sm border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#43c7ff] focus:border-[#43c7ff] text-gray-900 cursor-pointer hover:border-[#43c7ff] transition-colors"
           />
