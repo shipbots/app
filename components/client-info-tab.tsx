@@ -502,8 +502,8 @@ function EditField({
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
   const save = useCallback(async () => {
-    setEditing(false);
-    if (value === savedValue) return;
+    // No-op if nothing changed — still exit edit mode so blur behaves normally.
+    if (value === savedValue) { setEditing(false); return; }
     setSaving(true);
     try {
       const res = await fetch(`/api/client/${clientId}`, {
@@ -518,13 +518,17 @@ function EditField({
       }
       setSavedValue(value);
       setFlash('saved');
+      // Brief "Saved ✓" pause on the button before closing edit mode, so the
+      // user actually sees the confirmation.
+      setTimeout(() => setEditing(false), 600);
     } catch (err) {
       console.error(`[EditField] save error: ${columnId}`, err);
-      setValue(savedValue);
+      // Don't revert — keep the user's typing in the textarea so they can
+      // retry. The error message and red "!" tell them it didn't persist.
       setFlash('error');
     } finally {
       setSaving(false);
-      setTimeout(() => setFlash(null), 2000);
+      setTimeout(() => setFlash(null), 3000);
     }
   }, [value, savedValue, columnId, clientId]);
 
@@ -533,6 +537,8 @@ function EditField({
 
   if (editing) {
     const baseClass = 'w-full text-sm border border-[#43c7ff] rounded px-2 py-1 mt-0.5 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] bg-white';
+    const dirty = value !== savedValue;
+    const cancel = () => { setValue(savedValue); setEditing(false); };
     return (
       <div className={`flex items-start gap-2 px-1 py-1.5 ${isHighlighted ? HL : ''}`}>
         {icon && <span className="text-gray-400 mt-0.5 flex-shrink-0">{icon}</span>}
@@ -543,10 +549,17 @@ function EditField({
               ref={inputRef as React.RefObject<HTMLTextAreaElement>}
               value={value}
               onChange={e => setValue(e.target.value)}
+              // Auto-save on blur is the convenience path; the explicit Save
+              // button is the guaranteed path. Both go through the same
+              // dedupe so users get one save per change.
               onBlur={save}
               autoFocus
               rows={3}
               className={baseClass + ' resize-y'}
+              onKeyDown={e => {
+                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); }
+                if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+              }}
             />
           ) : (
             <input
@@ -559,10 +572,37 @@ function EditField({
               className={baseClass}
               onKeyDown={e => {
                 if (e.key === 'Enter') save();
-                if (e.key === 'Escape') { setValue(savedValue); setEditing(false); }
+                if (e.key === 'Escape') { e.preventDefault(); cancel(); }
               }}
             />
           )}
+          {/* Explicit Save / Cancel — users asked for a clear save button so
+              they don't have to rely on focus-blur behavior, which is brittle
+              in side panels, modals, and on touch devices. */}
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <button
+              type="button"
+              onMouseDown={e => e.preventDefault()} // keep textarea focused so save reads latest value
+              onClick={save}
+              disabled={saving || !dirty}
+              className="px-2.5 py-1 text-[11px] font-semibold rounded bg-[#015280] text-white hover:bg-[#013d60] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {saving ? 'Saving…' : flash === 'saved' ? 'Saved ✓' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onMouseDown={e => e.preventDefault()}
+              onClick={cancel}
+              disabled={saving}
+              className="px-2.5 py-1 text-[11px] font-medium rounded text-gray-500 hover:bg-gray-100 transition-colors"
+            >
+              Cancel
+            </button>
+            {flash === 'error' && <span className="text-[11px] text-red-600 font-medium">Save failed — check console</span>}
+            <span className="text-[10px] text-gray-400 ml-auto">
+              {multiline ? '⌘+Enter to save' : 'Enter to save'} · Esc to cancel
+            </span>
+          </div>
         </div>
       </div>
     );
