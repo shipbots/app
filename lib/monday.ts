@@ -503,7 +503,7 @@ export async function updateOnboardingStatus(
   // extra id-presence check here — Monday.com can legitimately return null for
   // `id` on status-column mutations even when the save succeeded.
   const colValue = label ? { label } : '';
-  const columnValues = JSON.stringify({ [columnId]: colValue }).replace(/"/g, '\\"');
+  const columnValues = encodeColumnValuesArg(columnId, colValue);
   const query = `mutation {
     change_multiple_column_values(
       board_id: ${ONBOARDING_BOARD_ID},
@@ -566,6 +566,26 @@ function formatColumnValue(
   }
 }
 
+// Build the `column_values` argument string for change_multiple_column_values.
+// The argument is a GraphQL string that itself contains JSON, so any special
+// characters need to round-trip through TWO escape passes:
+//   1. JSON.stringify produces JSON with backslash-escaped specials (e.g. `\n`)
+//   2. Embedding it inside a GraphQL string literal requires escaping the
+//      backslashes again (so the JSON `\n` reaches Monday intact) and the
+//      double-quotes. Without the backslash escape, GraphQL un-escapes `\n`
+//      into a literal newline character — which then makes the JSON payload
+//      invalid and Monday rejects it with "Syntax error in JSON input."
+//
+// This was the root cause of "Save failed — check console" on long_text fields
+// like Notes for Packing: the moment a user typed a multi-line note, the save
+// payload broke. The bug only hit text-with-newlines, which is why most fields
+// kept working and only the notes columns appeared broken.
+function encodeColumnValuesArg(columnId: string, colValue: unknown): string {
+  return JSON.stringify({ [columnId]: colValue })
+    .replace(/\\/g, '\\\\') // escape backslashes first (\ → \\)
+    .replace(/"/g, '\\"');  // then escape double-quotes (" → \")
+}
+
 export async function updateClientField(
   itemId: string,
   columnId: string,
@@ -579,7 +599,7 @@ export async function updateClientField(
   const colType = typeMap[columnId];
   if (!colType) throw new Error(`Unknown column ${columnId} on Clients board`);
   const colValue = formatColumnValue(colType, value);
-  const columnValues = JSON.stringify({ [columnId]: colValue }).replace(/"/g, '\\"');
+  const columnValues = encodeColumnValuesArg(columnId, colValue);
   const query = `mutation {
     change_multiple_column_values(
       board_id: ${CLIENTS_BOARD_ID},
@@ -633,7 +653,7 @@ export async function updateOnboardingField(
   const colType = typeMap[columnId];
   if (!colType) throw new Error(`Unknown column ${columnId} on Onboarding board`);
   const colValue = formatColumnValue(colType, value);
-  const columnValues = JSON.stringify({ [columnId]: colValue }).replace(/"/g, '\\"');
+  const columnValues = encodeColumnValuesArg(columnId, colValue);
   const query = `mutation {
     change_multiple_column_values(
       board_id: ${ONBOARDING_BOARD_ID},

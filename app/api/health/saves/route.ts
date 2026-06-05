@@ -128,23 +128,63 @@ async function checkColumn(c: typeof CHECKS[number], key: string): Promise<Check
   }
 }
 
+// Canary check: writes a tricky multi-line string (newlines, quotes,
+// backslashes, unicode) to a long_text column and verifies the saved value
+// round-trips byte-for-byte. Catches escape bugs in the column_values payload
+// — the kind that silently broke Notes for Packing every time the user typed
+// a multi-line note. Save bug history shows escaping regressions are the most
+// common cause of "save failed", so this canary runs every day.
+async function escapeCanary(key: string): Promise<CheckResult> {
+  const start = Date.now();
+  const columnId = 'long_text_mkxfv1hr'; // Notes for Packing
+  const label = 'Escape canary (long_text w/ newlines & quotes)';
+  const sentinel =
+    'Health canary — do not edit.\n' +
+    'Line 2 with "double quotes" and \'apostrophes\'.\n' +
+    'Line 3 with a backslash: C:\\folder\\file.txt\n' +
+    'Line 4 unicode: ✓ ✗ → ←';
+  try {
+    const before = await readColumn(columnId, key);
+    await updateClientField(TEST_CLIENT_ID, columnId, sentinel);
+    const after = await readColumn(columnId, key);
+    if ((after.text ?? '') !== sentinel) {
+      // Restore best-effort before reporting failure
+      const restoreVal = extractAppValue('long_text', before) ?? '';
+      try { await updateClientField(TEST_CLIENT_ID, columnId, restoreVal); } catch { /* swallow */ }
+      return {
+        columnId, label, ok: false, latencyMs: Date.now() - start,
+        error: `round-trip mismatch — sent ${JSON.stringify(sentinel)} got ${JSON.stringify(after.text)}`,
+      };
+    }
+    // Restore whatever was there before so the canary doesn't permanently
+    // squat in the field. If restore fails, leave the sentinel — it's
+    // recognizable and harmless.
+    const restoreVal = extractAppValue('long_text', before) ?? '';
+    await updateClientField(TEST_CLIENT_ID, columnId, restoreVal);
+    return { columnId, label, ok: true, latencyMs: Date.now() - start };
+  } catch (e) {
+    return { columnId, label, ok: false, latencyMs: Date.now() - start, error: String(e) };
+  }
+}
+
 export async function GET() {
   const key = process.env.MONDAY_API_KEY;
   if (!key) {
     return NextResponse.json({ ok: false, error: 'MONDAY_API_KEY not set' }, { status: 500 });
   }
 
-  const results = await Promise.all(CHECKS.map(c => checkColumn(c, key)));
-  const allOk = results.every(r => r.ok);
+  const [canary, ...results] = await Promise.all([escapeCanary(key), ...CHECKS.map(c => checkColumn(c, key))]);
+  const allResults = [canary, ...results];
+  const allOk = allResults.every(r => r.ok);
   const checkedAt = new Date().toISOString();
 
   console.log(
     `[health/saves] ${checkedAt} — ` +
-    results.map(r => r.ok ? `${r.label}:OK(${r.latencyMs}ms)` : `${r.label}:FAIL(${r.error})`).join(' | ')
+    allResults.map(r => r.ok ? `${r.label}:OK(${r.latencyMs}ms)` : `${r.label}:FAIL(${r.error})`).join(' | ')
   );
 
   return NextResponse.json(
-    { ok: allOk, checkedAt, results },
+    { ok: allOk, checkedAt, results: allResults },
     { status: allOk ? 200 : 207 }
   );
 }
