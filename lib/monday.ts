@@ -214,33 +214,42 @@ async function fetchEstimatedDeliveryDates(
   // empirically anything above ~25 IDs starts dropping items without error.
   // Keep this small to ensure every client is returned.
   const CHUNK = 25;
+  const chunks: string[][] = [];
   for (let i = 0; i < itemIds.length; i += CHUNK) {
-    const chunk = itemIds.slice(i, i + CHUNK);
-    const query = `query {
-      items(ids: [${chunk.join(',')}]) {
-        id
-        column_values(ids: ["date_mktrzhyk"]) { id text value }
-      }
-    }`;
-    const data = await mondayQuery(query);
-    const items: Array<{ id: string; column_values: Array<{ id: string; text: string | null; value: string | null }> }> = data.items ?? [];
-    for (const it of items) {
-      const cv = it.column_values?.[0];
-      // Parse the raw JSON value to get canonical YYYY-MM-DD — cv.text returns
-      // a locale-formatted string ("May 31, 2026") that won't match the
-      // calendar's ISO date keys.
-      let date: string | null = null;
-      let time: string | null = null;
-      if (cv?.value) {
-        try {
-          const parsed = JSON.parse(cv.value);
-          date = parsed?.date || null;
-          time = parsed?.time && parsed.time !== '00:00:00' ? parsed.time : null;
-        } catch { /* ignore */ }
-      }
-      result[it.id] = { date, time };
-    }
+    chunks.push(itemIds.slice(i, i + CHUNK));
   }
+  // Run the chunks in parallel — previously this was a sequential for-loop,
+  // which meant 12 round-trips for 300 clients (~3-4s on top of the page
+  // render). Monday's per-minute rate limit is way above 12 simultaneous
+  // small queries; this brings the join down to roughly one round-trip.
+  await Promise.all(
+    chunks.map(async chunk => {
+      const query = `query {
+        items(ids: [${chunk.join(',')}]) {
+          id
+          column_values(ids: ["date_mktrzhyk"]) { id text value }
+        }
+      }`;
+      const data = await mondayQuery(query);
+      const items: Array<{ id: string; column_values: Array<{ id: string; text: string | null; value: string | null }> }> = data.items ?? [];
+      for (const it of items) {
+        const cv = it.column_values?.[0];
+        // Parse the raw JSON value to get canonical YYYY-MM-DD — cv.text
+        // returns a locale-formatted string ("May 31, 2026") that won't
+        // match the calendar's ISO date keys.
+        let date: string | null = null;
+        let time: string | null = null;
+        if (cv?.value) {
+          try {
+            const parsed = JSON.parse(cv.value);
+            date = parsed?.date || null;
+            time = parsed?.time && parsed.time !== '00:00:00' ? parsed.time : null;
+          } catch { /* ignore */ }
+        }
+        result[it.id] = { date, time };
+      }
+    })
+  );
   return result;
 }
 
