@@ -29,6 +29,18 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { OnboardingItem, SubItem, ClientInfo } from '@/lib/types';
 import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search } from 'lucide-react';
 
+// Shape returned by /api/clients/search-index — denormalized for cross-field search.
+type ClientIndexEntry = {
+  id: string;
+  name: string;
+  legalEntity: string;
+  storeName: string;
+  shipHeroName: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+};
+
 interface ClientsViewProps {
   items: OnboardingItem[];
   allTasks: SubItem[];
@@ -452,11 +464,62 @@ export function ClientsView({
   const [query, setQuery] = useState('');
   const me = (currentUserEmail ?? '').toLowerCase();
 
+  // Lazily fetch the cross-field search index (legal name, store name,
+  // ShipHero name, contact name/email/phone) and keep it keyed by Clients
+  // board item id for O(1) lookup during filtering.
+  const [searchIndex, setSearchIndex] = useState<Record<string, ClientIndexEntry> | null>(null);
+  const [indexStatus, setIndexStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+
+  useEffect(() => {
+    let cancelled = false;
+    setIndexStatus('loading');
+    fetch('/api/clients/search-index')
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`${r.status}`)))
+      .then((rows: ClientIndexEntry[]) => {
+        if (cancelled) return;
+        const map: Record<string, ClientIndexEntry> = {};
+        for (const r of rows) map[r.id] = r;
+        setSearchIndex(map);
+        setIndexStatus('ready');
+      })
+      .catch(err => {
+        if (cancelled) return;
+        console.error('[clients-view] search index fetch failed:', err);
+        setIndexStatus('error');
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   const filtered = useMemo(() => {
     if (!query) return items;
     const q = query.toLowerCase();
-    return items.filter(i => i.name.toLowerCase().includes(q));
-  }, [items, query]);
+    const digits = q.replace(/\D+/g, '');
+
+    return items.filter(i => {
+      // Always match against the working client name we already have in
+      // memory — works even before the search index loads.
+      if (i.name.toLowerCase().includes(q)) return true;
+
+      // Cross-field search needs the lazy index. Until it loads, fall back
+      // to name-only and let the loading indicator explain.
+      const entry = i.clientBoardItemId ? searchIndex?.[i.clientBoardItemId] : undefined;
+      if (!entry) return false;
+
+      if (entry.legalEntity.toLowerCase().includes(q)) return true;
+      if (entry.storeName.toLowerCase().includes(q)) return true;
+      if (entry.shipHeroName.toLowerCase().includes(q)) return true;
+      if (entry.contactName.toLowerCase().includes(q)) return true;
+      if (entry.contactEmail.toLowerCase().includes(q)) return true;
+
+      // Phone: also try a digits-only comparison so "555 123-4567" matches
+      // "+1 (555) 123-4567" etc.
+      const phone = entry.contactPhone.toLowerCase();
+      if (phone.includes(q)) return true;
+      if (digits && phone.replace(/\D+/g, '').includes(digits)) return true;
+
+      return false;
+    });
+  }, [items, query, searchIndex]);
 
   const myClients = useMemo(() => {
     if (!me) return [];
@@ -478,11 +541,26 @@ export function ClientsView({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
           <input
             type="text"
-            placeholder="Filter clients…"
+            placeholder="Search name, email, phone, contact, store, ShipHero, legal name…"
             value={query}
             onChange={e => setQuery(e.target.value)}
             className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#43c7ff] bg-white"
           />
+          {indexStatus !== 'ready' && (
+            <p className="absolute top-full mt-1 text-[10px] text-gray-400 flex items-center gap-1">
+              {indexStatus === 'loading' && (
+                <>
+                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                  Loading search index — only client name searchable until ready
+                </>
+              )}
+              {indexStatus === 'error' && (
+                <span className="text-red-500">
+                  Search index unavailable — falling back to client name only
+                </span>
+              )}
+            </p>
+          )}
         </div>
       </div>
 
