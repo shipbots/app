@@ -236,6 +236,21 @@ function ContactCell({
     hideTimer.current = setTimeout(() => setAnchor(null), 120);
   }, []);
 
+  // Pick what to render in the cell:
+  //   • Real contact name once it's cached (the common path after the search
+  //     index lands).
+  //   • "View contact" before the cache loads — encourages hover, which then
+  //     triggers the per-client fetch as a fallback.
+  //   • "No name on file" when there's a Clients board link but the contact
+  //     field is empty — tells the rep there's nothing to look up.
+  //   • "No contact" when there's no Clients board link at all (rare; stub).
+  const label = (() => {
+    if (!clientBoardItemId) return 'No contact';
+    if (cachedData) return cachedData.contactName || 'No name on file';
+    return 'View contact';
+  })();
+  const isPlaceholder = label === 'View contact' || label === 'No name on file' || label === 'No contact';
+
   return (
     <>
       <div
@@ -246,8 +261,8 @@ function ContactCell({
         className="inline-flex items-center gap-1.5 cursor-default px-1.5 py-0.5 rounded hover:bg-gray-100"
       >
         <User className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-        <span className="text-sm text-gray-700 truncate max-w-[200px]">
-          {cachedData?.contactName || (clientBoardItemId ? 'View contact' : 'No contact')}
+        <span className={`text-sm truncate max-w-[220px] ${isPlaceholder ? 'text-gray-400 italic' : 'text-gray-800'}`}>
+          {label}
         </span>
       </div>
       {anchor && clientBoardItemId && (
@@ -478,7 +493,21 @@ export function ClientsView({
       .then((rows: ClientIndexEntry[]) => {
         if (cancelled) return;
         const map: Record<string, ClientIndexEntry> = {};
-        for (const r of rows) map[r.id] = r;
+        for (const r of rows) {
+          map[r.id] = r;
+          // Pre-warm the contact hover cache so the cell can show the real
+          // contact name immediately, and hovering doesn't trigger a second
+          // fetch. The full /api/client/{id} payload has extra fields we
+          // don't use here, but contact name/email/phone is everything the
+          // hover card actually renders.
+          if (!contactCache[r.id]) {
+            contactCache[r.id] = {
+              contactName: r.contactName,
+              contactEmail: r.contactEmail,
+              contactPhone: r.contactPhone,
+            };
+          }
+        }
         setSearchIndex(map);
         setIndexStatus('ready');
       })
