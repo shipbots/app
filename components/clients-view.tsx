@@ -36,9 +36,17 @@ type ClientIndexEntry = {
   legalEntity: string;
   storeName: string;
   shipHeroName: string;
+  // Primary / secondary / tertiary contacts — search spans all three so reps
+  // can find a client by any contact's name, email, or phone.
   contactName: string;
   contactEmail: string;
   contactPhone: string;
+  contact2Name: string;
+  contact2Email: string;
+  contact2Phone: string;
+  contact3Name: string;
+  contact3Email: string;
+  contact3Phone: string;
 };
 
 interface ClientsViewProps {
@@ -524,6 +532,14 @@ export function ClientsView({
     const q = query.toLowerCase();
     const digits = q.replace(/\D+/g, '');
 
+    const phoneMatches = (raw: string) => {
+      if (!raw) return false;
+      const phone = raw.toLowerCase();
+      if (phone.includes(q)) return true;
+      // Strip non-digits on both sides so "555 123" finds "+1 (555) 123-4567".
+      return Boolean(digits && phone.replace(/\D+/g, '').includes(digits));
+    };
+
     return items.filter(i => {
       // Always match against the working client name we already have in
       // memory — works even before the search index loads.
@@ -534,17 +550,25 @@ export function ClientsView({
       const entry = i.clientBoardItemId ? searchIndex?.[i.clientBoardItemId] : undefined;
       if (!entry) return false;
 
+      // Business-name fields
       if (entry.legalEntity.toLowerCase().includes(q)) return true;
       if (entry.storeName.toLowerCase().includes(q)) return true;
       if (entry.shipHeroName.toLowerCase().includes(q)) return true;
+
+      // Primary contact
       if (entry.contactName.toLowerCase().includes(q)) return true;
       if (entry.contactEmail.toLowerCase().includes(q)) return true;
+      if (phoneMatches(entry.contactPhone)) return true;
 
-      // Phone: also try a digits-only comparison so "555 123-4567" matches
-      // "+1 (555) 123-4567" etc.
-      const phone = entry.contactPhone.toLowerCase();
-      if (phone.includes(q)) return true;
-      if (digits && phone.replace(/\D+/g, '').includes(digits)) return true;
+      // Secondary contact
+      if (entry.contact2Name.toLowerCase().includes(q)) return true;
+      if (entry.contact2Email.toLowerCase().includes(q)) return true;
+      if (phoneMatches(entry.contact2Phone)) return true;
+
+      // Tertiary contact
+      if (entry.contact3Name.toLowerCase().includes(q)) return true;
+      if (entry.contact3Email.toLowerCase().includes(q)) return true;
+      if (phoneMatches(entry.contact3Phone)) return true;
 
       return false;
     });
@@ -570,7 +594,7 @@ export function ClientsView({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
           <input
             type="text"
-            placeholder="Search name, email, phone, contact, store, ShipHero, legal name…"
+            placeholder="Search name, email, phone, any contact, store, ShipHero, legal name…"
             value={query}
             onChange={e => setQuery(e.target.value)}
             className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#43c7ff] bg-white"

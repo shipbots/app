@@ -30,9 +30,18 @@ const COLUMN_IDS = [
   'text_mktp4fvk', // Legal Entity Name
   'text_mkx5b9b4', // Quickbooks Company Name (store / business display name)
   'text_mkw9n26z', // ShipHero Name (QB Display Name)
+  // Primary contact
   'text_mktqq7h6', // Person of Contact (name)
   'text_mktq6sr5', // Person of Contact Email
   'text_mktqabcm', // Phone Number
+  // Secondary contact
+  'text_mktr1evd', // Person of Contact 2 Name
+  'text_mktr2xmm', // Person of Contact 2 Email
+  'text_mktr8kve', // Person of Contact 2 Phone Number
+  // Tertiary contact
+  'text_mktr4v7q', // Person of Contact 3 Name
+  'text_mktrt74r', // Person of Contact 3 Email
+  'text_mktrw0tb', // Person of Contact 3 Phone Number
 ];
 
 type ColumnValue = { id: string; text: string | null };
@@ -47,6 +56,12 @@ export type ClientIndexEntry = {
   contactName: string;
   contactEmail: string;
   contactPhone: string;
+  contact2Name: string;
+  contact2Email: string;
+  contact2Phone: string;
+  contact3Name: string;
+  contact3Email: string;
+  contact3Phone: string;
 };
 
 async function mondayQuery(query: string, variables: Record<string, unknown> | undefined, key: string) {
@@ -73,6 +88,12 @@ function entryFromItem(it: Item): ClientIndexEntry {
     contactName:  cols['text_mktqq7h6'] ?? '',
     contactEmail: cols['text_mktq6sr5'] ?? '',
     contactPhone: cols['text_mktqabcm'] ?? '',
+    contact2Name:  cols['text_mktr1evd'] ?? '',
+    contact2Email: cols['text_mktr2xmm'] ?? '',
+    contact2Phone: cols['text_mktr8kve'] ?? '',
+    contact3Name:  cols['text_mktr4v7q'] ?? '',
+    contact3Email: cols['text_mktrt74r'] ?? '',
+    contact3Phone: cols['text_mktrw0tb'] ?? '',
   };
 }
 
