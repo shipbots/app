@@ -1,5 +1,6 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
+import { isAdminEmail } from '@/lib/admins';
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -40,9 +41,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return allowedEmails.includes(email);
     },
 
-    // Expose the user's email in the session so the UI can show it
+    // Stamp the JWT with isAdmin so we don't re-check the env on every request.
+    // Re-computed on token refresh (next sign-in or session refresh).
+    jwt({ token }) {
+      token.isAdmin = isAdminEmail(token.email as string | undefined);
+      return token;
+    },
+
+    // Surface email + isAdmin on the session so the UI and route guards can
+    // branch on them.
     session({ session, token }) {
       if (token?.email) session.user.email = token.email as string;
+      session.user.isAdmin = Boolean(token?.isAdmin);
       return session;
     },
   },

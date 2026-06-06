@@ -26,16 +26,27 @@ export default auth((req) => {
     if (pathname !== '/login') {
       return NextResponse.redirect(new URL('/login', req.url));
     }
+    return NextResponse.next();
   }
+
+  // From here on we know the user is authenticated.
+  const isAdmin = Boolean((req.auth?.user as { isAdmin?: boolean } | undefined)?.isAdmin);
+  const homeForRole = isAdmin ? '/onboarding' : '/customer-service';
 
   // If already logged in, redirect away from login page
-  if (isAuthenticated && pathname === '/login') {
-    return NextResponse.redirect(new URL('/onboarding', req.url));
+  if (pathname === '/login') {
+    return NextResponse.redirect(new URL(homeForRole, req.url));
   }
 
-  // Root → onboarding
-  if (isAuthenticated && pathname === '/') {
-    return NextResponse.redirect(new URL('/onboarding', req.url));
+  // Root → role-aware landing page
+  if (pathname === '/') {
+    return NextResponse.redirect(new URL(homeForRole, req.url));
+  }
+
+  // Admin-only sections — bounce non-admins back to Customer Service so they
+  // get a friendly route instead of a 404.
+  if (!isAdmin && (pathname.startsWith('/onboarding') || pathname.startsWith('/settings'))) {
+    return NextResponse.redirect(new URL('/customer-service', req.url));
   }
 
   return NextResponse.next();

@@ -1,0 +1,120 @@
+/* ShipBots Customer Service — popup styles */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  width: 320px;
+  background: #f9fafb;
+  color: #111827;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: #015280;
+  color: #fff;
+}
+.title { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .02em; }
+.subtitle { margin: 2px 0 0 0; font-size: 11px; color: rgba(255,255,255,.65); }
+
+.body { padding: 14px 16px 16px; }
+
+.hint { margin: 0 0 8px; font-size: 12px; color: #6b7280; }
+
+.search-form {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.search-form input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+}
+.search-form input:focus {
+  border-color: #43c7ff;
+  box-shadow: 0 0 0 2px rgba(67,199,255,.25);
+}
+.search-form button {
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: #015280;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.search-form button:hover { background: #013d60; }
+
+.actions { display: flex; flex-direction: column; gap: 8px; }
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  cursor: pointer;
+  transition: all .12s;
+}
+.action-btn:hover { border-color: #43c7ff; background: #f0fbff; }
+.action-icon { font-size: 18px; line-height: 1; }
+.action-label { display: block; font-size: 13px; font-weight: 600; color: #111827; }
+.action-desc { display: block; font-size: 11px; color: #6b7280; margin-top: 1px; }
+
+.settings-link {
+  margin: 16px 0 0;
+  font-size: 11px;
+  color: #9ca3af;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.settings-link button {
+  background: none;
+  border: none;
+  color: #015280;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+}
+.settings-link button:hover { text-decoration: underline; }
+#base-url { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #6b7280; }
+
+.url-form {
+  margin-top: 10px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.url-form input {
+  flex: 1 1 100%;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 11px;
+}
+.url-form button {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.url-form button[type="submit"] {
+  background: #015280;
+  color: #fff;
+  border-color: #015280;
+}

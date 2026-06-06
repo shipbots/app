@@ -1,10 +1,17 @@
 import { fetchOnboardingItems } from '@/lib/monday';
 import { computeAlerts } from '@/lib/alerts';
 import { PipelineBoard } from '@/components/pipeline-board';
+import { auth } from '@/auth';
+import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 
 export default async function OnboardingPage() {
+  // Belt-and-suspenders: the proxy already redirects non-admins, but if the
+  // proxy is ever misconfigured we still don't render onboarding to them.
+  const session = await auth();
+  if (!session?.user?.isAdmin) redirect('/customer-service');
+
   let items;
   let alerts;
 

@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "ShipBots Customer Service",
+  "short_name": "ShipBots CS",
+  "version": "0.1.0",
+  "description": "Quick access to the ShipBots Customer Service dashboard — client info, tasks, docs, and calendar.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ShipBots Customer Service",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "permissions": ["tabs", "storage"],
+  "host_permissions": [
+    "https://app-snowy-eight-64.vercel.app/*"
+  ]
+}

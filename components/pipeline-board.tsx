@@ -13,19 +13,43 @@ import { Search, Bell, RefreshCw, ChevronDown, ChevronRight, LayoutGrid, Calenda
 import { AddClientModal, CreatedClientResult } from './add-client-modal';
 import { CHECKLIST_STEPS } from '@/lib/constants';
 
+export type AppMode = 'onboarding' | 'customer-service';
+
 interface PipelineBoardProps {
   items: OnboardingItem[];
   alerts: Alert[];
+  /**
+   * Which surface this board powers. 'onboarding' (default) shows the full
+   * board: Pipeline / Calendar / Tasks toggle + every side-panel tab. The
+   * 'customer-service' mode is a slimmed-down read-mostly view that hides
+   * the Kanban pipeline (CS reps don't drive pipeline status) and limits
+   * the side panel to Client Info, Tasks, Docs, and Calendar context.
+   */
+  appMode?: AppMode;
 }
 
-export function PipelineBoard({ items, alerts }: PipelineBoardProps) {
+export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: PipelineBoardProps) {
+  const isCustomerService = appMode === 'customer-service';
   const [selectedItem, setSelectedItem] = useState<OnboardingItem | null>(null);
-  const [viewMode, setViewMode] = useState<'pipeline' | 'calendar' | 'tasks'>('pipeline');
+  // Lets the Chrome extension deep-link directly into a view via ?view=tasks.
+  // Only honored on first mount; subsequent toggle clicks set state normally.
+  const initialView = (() => {
+    if (typeof window === 'undefined') return isCustomerService ? 'calendar' : 'pipeline';
+    const v = new URLSearchParams(window.location.search).get('view');
+    if (v === 'tasks' || v === 'calendar' || v === 'pipeline') return v;
+    return isCustomerService ? 'calendar' : 'pipeline';
+  })();
+  const [viewMode, setViewMode] = useState<'pipeline' | 'calendar' | 'tasks'>(initialView);
   const [allTasks, setAllTasks] = useState<SubItem[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [tasksFetched, setTasksFetched] = useState(false);
   const [taskClientFilter, setTaskClientFilter] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
+  // Initial search prefilled from ?q= — same Chrome-extension deep-link path
+  // as the view param above.
+  const [searchQuery, setSearchQuery] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('q') ?? '';
+  });
   const [showAlerts, setShowAlerts] = useState(false);
   // Collapse terminal/noise columns by default
   const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(new Set(['Completed', 'Abandoned', 'N/A', 'ZAP ERROR']));
@@ -202,24 +226,28 @@ export function PipelineBoard({ items, alerts }: PipelineBoardProps) {
             <div className="flex items-center gap-4">
               <div className="flex flex-col">
                 <h1 className="text-sm font-semibold text-white tracking-tight leading-tight">
-                  Onboarding Pipeline
+                  {isCustomerService ? 'Customer Service' : 'Onboarding Pipeline'}
                 </h1>
                 <p className="text-[11px] font-medium text-white/60">{items.length} clients</p>
               </div>
-              {/* Pipeline / Calendar / Tasks view toggle */}
+              {/* View toggle. Customer Service hides the Pipeline kanban — CS
+                  reps don't drive pipeline status; they need scheduling and
+                  task context. */}
               <div className="flex items-center rounded-lg overflow-hidden text-sm font-medium ml-2" style={{ border: '1px solid rgba(255,255,255,0.2)' }}>
-                <button
-                  onClick={() => setViewMode('pipeline')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
-                    viewMode === 'pipeline'
-                      ? 'text-[#015280] font-semibold'
-                      : 'text-white/80 hover:text-white hover:bg-white/10'
-                  }`}
-                  style={viewMode === 'pipeline' ? { background: 'var(--brand-cyan)' } : {}}
-                >
-                  <LayoutGrid className="w-3.5 h-3.5" />
-                  Pipeline
-                </button>
+                {!isCustomerService && (
+                  <button
+                    onClick={() => setViewMode('pipeline')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
+                      viewMode === 'pipeline'
+                        ? 'text-[#015280] font-semibold'
+                        : 'text-white/80 hover:text-white hover:bg-white/10'
+                    }`}
+                    style={viewMode === 'pipeline' ? { background: 'var(--brand-cyan)' } : {}}
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    Pipeline
+                  </button>
+                )}
                 <button
                   onClick={() => setViewMode('calendar')}
                   className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
@@ -228,7 +256,7 @@ export function PipelineBoard({ items, alerts }: PipelineBoardProps) {
                       : 'text-white/80 hover:text-white hover:bg-white/10'
                   }`}
                   style={{
-                    borderLeft: '1px solid rgba(255,255,255,0.2)',
+                    borderLeft: isCustomerService ? undefined : '1px solid rgba(255,255,255,0.2)',
                     ...(viewMode === 'calendar' ? { background: 'var(--brand-cyan)' } : {}),
                   }}
                 >
@@ -253,15 +281,18 @@ export function PipelineBoard({ items, alerts }: PipelineBoardProps) {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              {/* Add new client button */}
-              <button
-                onClick={() => setShowAddClient(true)}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 shadow-sm"
-                style={{ background: 'var(--brand-cyan)', color: 'var(--brand-navy)' }}
-              >
-                <UserPlus className="w-4 h-4" />
-                Add new client
-              </button>
+              {/* Add new client button — Customer Service reps don't add
+                  clients (admins/onboarders do), so hide it in CS mode. */}
+              {!isCustomerService && (
+                <button
+                  onClick={() => setShowAddClient(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 shadow-sm"
+                  style={{ background: 'var(--brand-cyan)', color: 'var(--brand-navy)' }}
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Add new client
+                </button>
+              )}
 
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50" />
@@ -411,6 +442,7 @@ export function PipelineBoard({ items, alerts }: PipelineBoardProps) {
           key={selectedItem.id}
           item={selectedItem}
           items={effectiveItems}
+          appMode={appMode}
           initialAgentEmail={selectedItem.clientBoardItemId ? (agentEmailMap[selectedItem.clientBoardItemId] ?? '') : ''}
           onClose={() => setSelectedItem(null)}
           onAgentAssigned={(clientBoardItemId, email) =>

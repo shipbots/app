@@ -1,25 +1,33 @@
-import { Headphones, Clock } from 'lucide-react';
+import { fetchOnboardingItems } from '@/lib/monday';
+import { computeAlerts } from '@/lib/alerts';
+import { PipelineBoard } from '@/components/pipeline-board';
 
-export default function CustomerServicePage() {
-  return (
-    <div className="flex flex-col items-center justify-center h-full text-center px-6">
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 max-w-md w-full">
-        <div
-          className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5"
-          style={{ background: 'var(--brand-cyan-light)' }}
-        >
-          <Headphones className="w-7 h-7" style={{ color: 'var(--brand-navy)' }} />
-        </div>
-        <h1 className="text-xl font-bold text-gray-900 mb-2">Customer Service</h1>
-        <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-          This section is under development. It will give the customer service team a
-          dedicated view of client data, tickets, and communication history.
-        </p>
-        <div className="flex items-center justify-center gap-2 text-xs text-gray-400">
-          <Clock className="w-3.5 h-3.5" />
-          Coming soon
+// Customer Service surface — shared client/task data, hides the onboarding
+// pipeline kanban and the admin-only side-panel tabs. The PipelineBoard
+// component branches on appMode='customer-service' for the trims.
+export const dynamic = 'force-dynamic';
+
+export default async function CustomerServicePage() {
+  let items;
+  let alerts;
+
+  try {
+    items = await fetchOnboardingItems();
+    alerts = computeAlerts(items);
+  } catch (error) {
+    console.error('Failed to load data:', error);
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Connection Error</h1>
+          <p className="text-gray-600 mb-4">Could not connect to Monday.com API.</p>
+          <p className="text-sm text-gray-500">
+            Check that <code className="bg-gray-100 px-1 py-0.5 rounded">MONDAY_API_KEY</code> is set in your environment.
+          </p>
         </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  return <PipelineBoard items={items} alerts={alerts} appMode="customer-service" />;
 }

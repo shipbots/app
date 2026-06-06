@@ -37,6 +37,7 @@ export default async function RootLayout({
               userEmail={session.user?.email}
               userName={session.user?.name}
               userImage={session.user?.image}
+              isAdmin={session.user?.isAdmin}
             />
           )}
           <main className={showNav ? 'flex-1 overflow-hidden' : 'flex-1'}>

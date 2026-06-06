@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ShipBots Customer Service</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="header">
+    <img src="icons/icon-48.png" alt="ShipBots" width="28" height="28" />
+    <div>
+      <p class="title">ShipBots</p>
+      <p class="subtitle">Customer Service</p>
+    </div>
+  </header>
+
+  <main class="body">
+    <p class="hint">Search a client to open them in the dashboard:</p>
+    <form id="search-form" class="search-form">
+      <input
+        id="search-input"
+        type="search"
+        placeholder="iMusti, Alvara, Terra…"
+        autocomplete="off"
+        autofocus
+      />
+      <button type="submit" aria-label="Search">→</button>
+    </form>
+
+    <div class="actions">
+      <button id="open-calendar" class="action-btn">
+        <span class="action-icon" aria-hidden="true">📅</span>
+        <span>
+          <span class="action-label">Calendar</span>
+          <span class="action-desc">Upcoming kickoffs &amp; deliveries</span>
+        </span>
+      </button>
+      <button id="open-tasks" class="action-btn">
+        <span class="action-icon" aria-hidden="true">✅</span>
+        <span>
+          <span class="action-label">Tasks</span>
+          <span class="action-desc">Open work across all clients</span>
+        </span>
+      </button>
+    </div>
+
+    <p class="settings-link">
+      <span id="base-url-label">Connected to <span id="base-url"></span></span>
+      <button id="edit-url" type="button">Change…</button>
+    </p>
+
+    <form id="url-form" class="url-form" hidden>
+      <input id="url-input" type="url" placeholder="https://your-deploy.vercel.app" />
+      <button type="submit">Save</button>
+      <button type="button" id="url-cancel">Cancel</button>
+    </form>
+  </main>
+
+  <script src="popup.js"></script>
+</body>
+</html>

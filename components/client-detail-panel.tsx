@@ -443,6 +443,8 @@ function ClientNavigator({
 }
 
 // ─── Main Panel ──────────────────────────────────────────────────────────────
+type AppMode = 'onboarding' | 'customer-service';
+
 interface ClientDetailPanelProps {
   item: OnboardingItem;
   items?: OnboardingItem[];
@@ -455,12 +457,23 @@ interface ClientDetailPanelProps {
    *  views in sync without a full server round-trip. */
   onItemUpdate?: (itemId: string, patch: Partial<OnboardingItem>) => void;
   onNavigate?: (item: OnboardingItem) => void;
+  /**
+   * Which app surface this panel is mounted in. 'customer-service' hides the
+   * onboarding-specific tabs (Onboarding, Meetings, Emails, ShipHero POs)
+   * and lands the user on Client Info by default. Defaults to 'onboarding'.
+   */
+  appMode?: AppMode;
 }
 
 type Tab = 'info' | 'onboarding' | 'meetings' | 'emails' | 'pos' | 'tasks' | 'docs';
 
-export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onItemUpdate, onNavigate }: ClientDetailPanelProps) {
-  const [activeTab, setActiveTab] = useState<Tab>('onboarding');
+// Tabs visible in the Customer Service surface — the focus is reference
+// material (client info + docs), task work, and shared calendar context.
+const CUSTOMER_SERVICE_TABS: ReadonlyArray<Tab> = ['info', 'tasks', 'docs'];
+
+export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onItemUpdate, onNavigate, appMode = 'onboarding' }: ClientDetailPanelProps) {
+  const isCustomerService = appMode === 'customer-service';
+  const [activeTab, setActiveTab] = useState<Tab>(isCustomerService ? 'info' : 'onboarding');
   const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null);
   const [meetings, setMeetings] = useState<FirefliesMeeting[]>([]);
   const [emails, setEmails] = useState<GmailThread[]>([]);
@@ -603,7 +616,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
       }).length
     : item.subitemCount;
 
-  const tabs: { id: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
+  const allTabs: { id: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: 'onboarding', label: 'Onboarding', icon: <ClipboardList className="w-4 h-4" /> },
     { id: 'info', label: 'Client Info', icon: <FileText className="w-4 h-4" /> },
     { id: 'meetings', label: 'Meetings', icon: <Video className="w-4 h-4" /> },
@@ -617,6 +630,12 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
     },
     { id: 'docs', label: 'Docs', icon: <FolderOpen className="w-4 h-4" /> },
   ];
+
+  // Customer Service surface only shows Client Info, Tasks, and Docs — keep
+  // the onboarding-specific tabs hidden so CS reps don't see / edit them.
+  const tabs = isCustomerService
+    ? allTabs.filter(t => CUSTOMER_SERVICE_TABS.includes(t.id))
+    : allTabs;
 
   const panelWidth = fullscreen ? 'w-full' : 'w-full max-w-xl';
 
