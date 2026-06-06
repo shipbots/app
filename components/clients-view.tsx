@@ -1,0 +1,523 @@
+'use client';
+
+/**
+ * "Browse by Client" view for the Customer Service surface.
+ *
+ * Layout:
+ *   ┌────────────────────────────────────────┬─────────────┐
+ *   │ My Clients  (assigned to me)           │             │
+ *   │ ┌────────────────────────────────────┐ │ My Tasks    │
+ *   │ │ Client | Account Mgr | Main Contact│ │             │
+ *   │ └────────────────────────────────────┘ │ (subitems   │
+ *   │                                        │  assigned   │
+ *   │ All Clients                            │  to me)     │
+ *   │ ┌────────────────────────────────────┐ │             │
+ *   │ │ Client | Account Mgr | Main Contact│ │             │
+ *   │ └────────────────────────────────────┘ │             │
+ *   └────────────────────────────────────────┴─────────────┘
+ *
+ * Top table = clients where the signed-in CS agent is the assigned account
+ * manager (agentEmailMap[clientId] matches session email).
+ * Bottom table = every client, so reps can still cover for each other.
+ *
+ * Hovering the "Main Contact" cell opens a popover with full name, email,
+ * and phone — each with a copy-to-clipboard button. Contact details are
+ * fetched lazily via /api/client/[clientBoardItemId] and cached per session.
+ */
+
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { OnboardingItem, SubItem, ClientInfo } from '@/lib/types';
+import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search } from 'lucide-react';
+
+interface ClientsViewProps {
+  items: OnboardingItem[];
+  allTasks: SubItem[];
+  loadingTasks: boolean;
+  agentEmailMap: Record<string, string>;
+  onSelectItem: (item: OnboardingItem) => void;
+  /** Signed-in CS agent — used to filter "My Clients" and "My Tasks". */
+  currentUserEmail: string | null;
+  currentUserName: string | null;
+}
+
+// ── Contact cache (module-level so navigating between tabs reuses it) ────────
+const contactCache: Record<string, Pick<ClientInfo, 'contactName' | 'contactEmail' | 'contactPhone'> | 'loading' | 'error'> = {};
+
+function useClientContact(clientBoardItemId: string | null, enabled: boolean) {
+  const [, force] = useState(0);
+
+  useEffect(() => {
+    if (!enabled || !clientBoardItemId) return;
+    if (contactCache[clientBoardItemId]) return;
+    contactCache[clientBoardItemId] = 'loading';
+    force(n => n + 1);
+    fetch(`/api/client/${clientBoardItemId}`)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`${r.status}`)))
+      .then((data: ClientInfo) => {
+        contactCache[clientBoardItemId] = {
+          contactName: data.contactName ?? '',
+          contactEmail: data.contactEmail ?? '',
+          contactPhone: data.contactPhone ?? '',
+        };
+        force(n => n + 1);
+      })
+      .catch(() => {
+        contactCache[clientBoardItemId] = 'error';
+        force(n => n + 1);
+      });
+  }, [clientBoardItemId, enabled]);
+
+  return clientBoardItemId ? contactCache[clientBoardItemId] : undefined;
+}
+
+// ── Copyable inline field ────────────────────────────────────────────────────
+function CopyField({ icon, value, href, label }: { icon: React.ReactNode; value: string; href?: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  if (!value) {
+    return (
+      <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-gray-400">
+        <span className="flex-shrink-0">{icon}</span>
+        <span>No {label.toLowerCase()}</span>
+      </div>
+    );
+  }
+  const copy = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <div className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-gray-50 group">
+      <span className="flex-shrink-0 text-gray-400">{icon}</span>
+      {href ? (
+        <a
+          href={href}
+          className="text-xs text-gray-700 truncate flex-1 hover:text-[#015280] hover:underline"
+          onClick={e => e.stopPropagation()}
+        >
+          {value}
+        </a>
+      ) : (
+        <span className="text-xs text-gray-700 truncate flex-1">{value}</span>
+      )}
+      <button
+        type="button"
+        onClick={copy}
+        title={`Copy ${label.toLowerCase()}`}
+        className="flex-shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-gray-100 transition-opacity"
+      >
+        {copied ? (
+          <Check className="w-3 h-3 text-green-600" />
+        ) : (
+          <Copy className="w-3 h-3 text-gray-400" />
+        )}
+      </button>
+    </div>
+  );
+}
+
+// ── Hover card showing the main contact details ─────────────────────────────
+function ContactHoverCard({
+  clientBoardItemId,
+  clientName,
+  anchor,
+}: {
+  clientBoardItemId: string | null;
+  clientName: string;
+  anchor: { top: number; left: number };
+}) {
+  const contact = useClientContact(clientBoardItemId, true);
+  const loading = contact === 'loading' || contact === undefined;
+  const error = contact === 'error';
+  const data = loading || error ? null : contact;
+
+  return (
+    <div
+      // Render in a portal-ish fixed overlay so it escapes any overflow:hidden
+      // parent in the table.
+      style={{ position: 'fixed', top: anchor.top, left: anchor.left, zIndex: 60 }}
+      className="w-72 bg-white border border-gray-200 rounded-xl shadow-xl p-3 pointer-events-auto"
+      // Prevent the card from disappearing when the cursor moves over it.
+      onMouseEnter={e => e.stopPropagation()}
+    >
+      <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-100">
+        <div className="w-7 h-7 rounded-full bg-[#e6f8ff] flex items-center justify-center text-[#015280] flex-shrink-0">
+          <User className="w-3.5 h-3.5" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-xs text-gray-400 leading-tight">Main contact for</p>
+          <p className="text-sm font-semibold text-gray-900 truncate">{clientName}</p>
+        </div>
+      </div>
+
+      {loading && (
+        <div className="flex items-center gap-2 text-xs text-gray-400 py-3 justify-center">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          Loading contact…
+        </div>
+      )}
+
+      {error && (
+        <p className="text-xs text-red-500 py-3 text-center">
+          Could not load contact details
+        </p>
+      )}
+
+      {data && (
+        <div className="space-y-0.5">
+          <div className="px-2 py-1.5 flex items-center gap-2">
+            <User className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+            {data.contactName ? (
+              <span className="text-xs font-medium text-gray-900 truncate">{data.contactName}</span>
+            ) : (
+              <span className="text-xs text-gray-400">No name on file</span>
+            )}
+          </div>
+          <CopyField
+            icon={<Mail className="w-3.5 h-3.5" />}
+            value={data.contactEmail}
+            href={data.contactEmail ? `mailto:${data.contactEmail}` : undefined}
+            label="Email"
+          />
+          <CopyField
+            icon={<Phone className="w-3.5 h-3.5" />}
+            value={data.contactPhone}
+            href={data.contactPhone ? `tel:${data.contactPhone.replace(/[^\d+]/g, '')}` : undefined}
+            label="Phone"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Cell that shows just the name and pops the hover card ───────────────────
+function ContactCell({
+  clientBoardItemId,
+  clientName,
+}: {
+  clientBoardItemId: string | null;
+  clientName: string;
+}) {
+  // Pre-warm cached contact so the cell can show the name without hovering.
+  const cached = clientBoardItemId ? contactCache[clientBoardItemId] : undefined;
+  const cachedData = cached && cached !== 'loading' && cached !== 'error' ? cached : null;
+
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
+  const cellRef = useRef<HTMLDivElement>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const show = useCallback(() => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    const r = cellRef.current?.getBoundingClientRect();
+    if (!r) return;
+    // Position below the cell; clamp to viewport.
+    const top = Math.min(r.bottom + 4, window.innerHeight - 240);
+    const left = Math.min(r.left, window.innerWidth - 296);
+    setAnchor({ top, left });
+  }, []);
+
+  const hide = useCallback(() => {
+    hideTimer.current = setTimeout(() => setAnchor(null), 120);
+  }, []);
+
+  return (
+    <>
+      <div
+        ref={cellRef}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onClick={e => e.stopPropagation()}
+        className="inline-flex items-center gap-1.5 cursor-default px-1.5 py-0.5 rounded hover:bg-gray-100"
+      >
+        <User className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+        <span className="text-sm text-gray-700 truncate max-w-[200px]">
+          {cachedData?.contactName || (clientBoardItemId ? 'View contact' : 'No contact')}
+        </span>
+      </div>
+      {anchor && clientBoardItemId && (
+        <div onMouseEnter={() => { if (hideTimer.current) clearTimeout(hideTimer.current); }} onMouseLeave={hide}>
+          <ContactHoverCard
+            clientBoardItemId={clientBoardItemId}
+            clientName={clientName}
+            anchor={anchor}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Client row in the table ─────────────────────────────────────────────────
+function ClientRow({
+  item,
+  agentEmail,
+  onSelect,
+}: {
+  item: OnboardingItem;
+  agentEmail: string;
+  onSelect: () => void;
+}) {
+  return (
+    <tr
+      onClick={onSelect}
+      className="hover:bg-[#f0fbff] cursor-pointer transition-colors border-b border-gray-100"
+    >
+      <td className="px-4 py-2.5">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-medium text-sm text-gray-900 truncate">{item.name}</span>
+        </div>
+      </td>
+      <td className="px-4 py-2.5">
+        {agentEmail ? (
+          <span className="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-gray-100 rounded-full px-2 py-0.5">
+            <User className="w-3 h-3 text-gray-400" />
+            <span className="truncate max-w-[180px]">{agentEmail}</span>
+          </span>
+        ) : (
+          <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+            Unassigned
+          </span>
+        )}
+      </td>
+      <td className="px-4 py-2.5">
+        <ContactCell
+          clientBoardItemId={item.clientBoardItemId}
+          clientName={item.name}
+        />
+      </td>
+    </tr>
+  );
+}
+
+// ── Client table ────────────────────────────────────────────────────────────
+function ClientTable({
+  title,
+  subtitle,
+  emptyMessage,
+  items,
+  agentEmailMap,
+  onSelectItem,
+}: {
+  title: string;
+  subtitle?: string;
+  emptyMessage: string;
+  items: OnboardingItem[];
+  agentEmailMap: Record<string, string>;
+  onSelectItem: (item: OnboardingItem) => void;
+}) {
+  return (
+    <section className="flex flex-col bg-white border border-gray-200 rounded-xl overflow-hidden flex-1 min-h-0">
+      <header className="px-4 py-2.5 border-b border-gray-200 bg-gray-50 flex items-center justify-between flex-shrink-0">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+          {subtitle && <p className="text-[11px] text-gray-500">{subtitle}</p>}
+        </div>
+        <span className="text-xs text-gray-500 font-medium">{items.length} client{items.length === 1 ? '' : 's'}</span>
+      </header>
+      <div className="overflow-auto flex-1">
+        {items.length === 0 ? (
+          <div className="px-4 py-12 text-center text-sm text-gray-400">{emptyMessage}</div>
+        ) : (
+          <table className="w-full text-left">
+            <thead className="sticky top-0 bg-white border-b border-gray-200 z-10">
+              <tr className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                <th className="px-4 py-2">Client</th>
+                <th className="px-4 py-2">Account Manager</th>
+                <th className="px-4 py-2">Main Contact</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(item => (
+                <ClientRow
+                  key={item.id}
+                  item={item}
+                  agentEmail={item.clientBoardItemId ? (agentEmailMap[item.clientBoardItemId] ?? '') : ''}
+                  onSelect={() => onSelectItem(item)}
+                />
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// ── Right sidebar: My Tasks ─────────────────────────────────────────────────
+function MyTasksPanel({
+  tasks,
+  loading,
+  currentUserName,
+  items,
+  onSelectClient,
+}: {
+  tasks: SubItem[];
+  loading: boolean;
+  currentUserName: string | null;
+  items: OnboardingItem[];
+  onSelectClient: (item: OnboardingItem) => void;
+}) {
+  const myTasks = useMemo(() => {
+    if (!currentUserName) return [];
+    const me = currentUserName.toLowerCase();
+    return tasks.filter(t => {
+      const a = (t.assignee ?? '').toLowerCase();
+      // Monday returns assignees as comma-separated names — match on substring
+      // so "Andres Mejia, Karina ..." still matches "andres".
+      return a.includes(me);
+    });
+  }, [tasks, currentUserName]);
+
+  const itemsById = useMemo(() => {
+    const m: Record<string, OnboardingItem> = {};
+    for (const it of items) m[it.id] = it;
+    return m;
+  }, [items]);
+
+  return (
+    <aside className="w-80 flex-shrink-0 bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col min-h-0">
+      <header className="px-4 py-2.5 border-b border-gray-200 bg-gray-50 flex items-center gap-2 flex-shrink-0">
+        <CheckSquare className="w-4 h-4 text-[#015280]" />
+        <div className="flex-1 min-w-0">
+          <h2 className="text-sm font-semibold text-gray-900">My Tasks</h2>
+          <p className="text-[11px] text-gray-500 truncate">
+            {currentUserName ? `Assigned to ${currentUserName}` : 'No user signed in'}
+          </p>
+        </div>
+        <span className="text-xs text-gray-500 font-medium">{myTasks.length}</span>
+      </header>
+      <div className="overflow-y-auto flex-1">
+        {loading && (
+          <div className="flex items-center gap-2 px-4 py-6 text-xs text-gray-400 justify-center">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            Loading tasks…
+          </div>
+        )}
+        {!loading && myTasks.length === 0 && (
+          <div className="px-4 py-8 text-center">
+            <CheckSquare className="w-6 h-6 text-gray-300 mx-auto mb-2" />
+            <p className="text-xs text-gray-500">No tasks assigned to you</p>
+          </div>
+        )}
+        {!loading && myTasks.length > 0 && (
+          <ul className="divide-y divide-gray-100">
+            {myTasks.map(task => {
+              const client = itemsById[task.parentItemId];
+              const overdue = task.dueDate && new Date(task.dueDate) < new Date(new Date().toDateString());
+              const done = task.status.toLowerCase().includes('done') || task.status.toLowerCase().includes('complete');
+              return (
+                <li
+                  key={task.id}
+                  onClick={() => client && onSelectClient(client)}
+                  className="px-4 py-2.5 hover:bg-[#f0fbff] cursor-pointer transition-colors"
+                >
+                  <p className={`text-xs font-medium leading-snug ${done ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+                    {task.name}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1 text-[11px] text-gray-500 flex-wrap">
+                    <span className="truncate max-w-[160px]">{task.parentItemName}</span>
+                    {task.dueDate && (
+                      <span className={`px-1.5 py-0.5 rounded font-medium ${overdue ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
+                        {task.dueDate}
+                      </span>
+                    )}
+                    {!done && (
+                      <span className="px-1.5 py-0.5 rounded bg-gray-50 text-gray-500">{task.status}</span>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+// ── Main view ───────────────────────────────────────────────────────────────
+export function ClientsView({
+  items,
+  allTasks,
+  loadingTasks,
+  agentEmailMap,
+  onSelectItem,
+  currentUserEmail,
+  currentUserName,
+}: ClientsViewProps) {
+  const [query, setQuery] = useState('');
+  const me = (currentUserEmail ?? '').toLowerCase();
+
+  const filtered = useMemo(() => {
+    if (!query) return items;
+    const q = query.toLowerCase();
+    return items.filter(i => i.name.toLowerCase().includes(q));
+  }, [items, query]);
+
+  const myClients = useMemo(() => {
+    if (!me) return [];
+    return filtered.filter(i => {
+      const agent = i.clientBoardItemId ? (agentEmailMap[i.clientBoardItemId] ?? '').toLowerCase() : '';
+      return agent === me;
+    });
+  }, [filtered, agentEmailMap, me]);
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden bg-gray-50 p-4 gap-3">
+      {/* Sub-header: search */}
+      <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="flex items-center gap-2 text-sm text-gray-700">
+          <Users className="w-4 h-4 text-[#015280]" />
+          <span className="font-semibold">Browse by Client</span>
+        </div>
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Filter clients…"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#43c7ff] bg-white"
+          />
+        </div>
+      </div>
+
+      {/* Two-column layout: stacked client tables on the left, tasks on the right */}
+      <div className="flex-1 flex gap-3 min-h-0">
+        <div className="flex-1 flex flex-col gap-3 min-w-0">
+          <ClientTable
+            title="My Clients"
+            subtitle={me ? `Account Manager: ${currentUserEmail}` : 'Sign in to see your assigned clients'}
+            emptyMessage={
+              me
+                ? 'No clients currently assigned to you. The bottom table shows everyone else.'
+                : 'Sign in to see clients assigned to you.'
+            }
+            items={myClients}
+            agentEmailMap={agentEmailMap}
+            onSelectItem={onSelectItem}
+          />
+          <ClientTable
+            title="All Clients"
+            subtitle="Every client — for browsing and covering for other reps"
+            emptyMessage={query ? 'No clients match your filter.' : 'No clients found.'}
+            items={filtered}
+            agentEmailMap={agentEmailMap}
+            onSelectItem={onSelectItem}
+          />
+        </div>
+        <MyTasksPanel
+          tasks={allTasks}
+          loading={loadingTasks}
+          currentUserName={currentUserName}
+          items={items}
+          onSelectClient={onSelectItem}
+        />
+      </div>
+    </div>
+  );
+}

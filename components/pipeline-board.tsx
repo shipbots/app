@@ -9,7 +9,9 @@ import { AlertsPanel } from './alerts-panel';
 import { ChecklistBarLegend } from './checklist-bar';
 import { CalendarView } from './calendar-view';
 import { TasksView } from './tasks-view';
-import { Search, Bell, RefreshCw, ChevronDown, ChevronRight, LayoutGrid, CalendarDays, CheckSquare, UserPlus } from 'lucide-react';
+import { ClientsView } from './clients-view';
+import { useSession } from 'next-auth/react';
+import { Search, Bell, RefreshCw, ChevronDown, ChevronRight, LayoutGrid, CalendarDays, CheckSquare, UserPlus, Users } from 'lucide-react';
 import { AddClientModal, CreatedClientResult } from './add-client-modal';
 import { CHECKLIST_STEPS } from '@/lib/constants';
 
@@ -30,16 +32,19 @@ interface PipelineBoardProps {
 
 export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: PipelineBoardProps) {
   const isCustomerService = appMode === 'customer-service';
+  const { data: session } = useSession();
   const [selectedItem, setSelectedItem] = useState<OnboardingItem | null>(null);
   // Lets the Chrome extension deep-link directly into a view via ?view=tasks.
   // Only honored on first mount; subsequent toggle clicks set state normally.
   const initialView = (() => {
-    if (typeof window === 'undefined') return isCustomerService ? 'calendar' : 'pipeline';
+    if (typeof window === 'undefined') return isCustomerService ? 'clients' : 'pipeline';
     const v = new URLSearchParams(window.location.search).get('view');
-    if (v === 'tasks' || v === 'calendar' || v === 'pipeline') return v;
-    return isCustomerService ? 'calendar' : 'pipeline';
+    if (v === 'tasks' || v === 'calendar' || v === 'pipeline' || v === 'clients') return v;
+    // CS reps land on the per-client browser by default — their primary
+    // workflow is "look up a client" rather than "see the kanban".
+    return isCustomerService ? 'clients' : 'pipeline';
   })();
-  const [viewMode, setViewMode] = useState<'pipeline' | 'calendar' | 'tasks'>(initialView);
+  const [viewMode, setViewMode] = useState<'pipeline' | 'calendar' | 'tasks' | 'clients'>(initialView);
   const [allTasks, setAllTasks] = useState<SubItem[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [tasksFetched, setTasksFetched] = useState(false);
@@ -111,7 +116,9 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
   }, []);
 
   useEffect(() => {
-    if (viewMode === 'tasks' && !tasksFetched) {
+    // Tasks are needed for both the dedicated Tasks view and the "My Tasks"
+    // sidebar on the Browse-by-Client view.
+    if ((viewMode === 'tasks' || viewMode === 'clients') && !tasksFetched) {
       setLoadingTasks(true);
       fetch('/api/subitems')
         .then(r => r.json())
@@ -248,6 +255,20 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
                     Pipeline
                   </button>
                 )}
+                {isCustomerService && (
+                  <button
+                    onClick={() => setViewMode('clients')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
+                      viewMode === 'clients'
+                        ? 'text-[#015280] font-semibold'
+                        : 'text-white/80 hover:text-white hover:bg-white/10'
+                    }`}
+                    style={viewMode === 'clients' ? { background: 'var(--brand-cyan)' } : {}}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    Clients
+                  </button>
+                )}
                 <button
                   onClick={() => setViewMode('calendar')}
                   className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
@@ -256,7 +277,7 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
                       : 'text-white/80 hover:text-white hover:bg-white/10'
                   }`}
                   style={{
-                    borderLeft: isCustomerService ? undefined : '1px solid rgba(255,255,255,0.2)',
+                    borderLeft: '1px solid rgba(255,255,255,0.2)',
                     ...(viewMode === 'calendar' ? { background: 'var(--brand-cyan)' } : {}),
                   }}
                 >
@@ -323,6 +344,19 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
             </div>
           </div>
         </header>
+
+        {/* ── Browse-by-Client view (Customer Service surface) ── */}
+        {viewMode === 'clients' && (
+          <ClientsView
+            items={effectiveItems}
+            allTasks={allTasks}
+            loadingTasks={loadingTasks}
+            agentEmailMap={agentEmailMap}
+            onSelectItem={setSelectedItem}
+            currentUserEmail={session?.user?.email ?? null}
+            currentUserName={session?.user?.name ?? null}
+          />
+        )}
 
         {/* ── Calendar view ── */}
         {viewMode === 'calendar' && (
