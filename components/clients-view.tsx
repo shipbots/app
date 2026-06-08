@@ -27,7 +27,24 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { OnboardingItem, SubItem, ClientInfo } from '@/lib/types';
-import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search } from 'lucide-react';
+import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search, ChevronsUpDown, ChevronUp, ChevronDown, Filter, X } from 'lucide-react';
+
+// ── Sort config used by both client tables ──────────────────────────────────
+type SortColumn = 'client' | 'manager' | 'contact';
+type SortDir = 'asc' | 'desc';
+type SortConfig = { column: SortColumn; dir: SortDir };
+
+const UNASSIGNED_KEY = '__unassigned__';
+
+function compareStrings(a: string, b: string, dir: SortDir): number {
+  // Empty strings go to the bottom in ASC, top in DESC — so unassigned /
+  // missing values aren't interleaved with real names.
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  const r = a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true });
+  return dir === 'asc' ? r : -r;
+}
 
 // Shape returned by /api/clients/search-index — denormalized for cross-field search.
 type ClientIndexEntry = {
@@ -328,6 +345,162 @@ function ClientRow({
   );
 }
 
+// ── Sortable column header ──────────────────────────────────────────────────
+function SortHeader({
+  label,
+  column,
+  sort,
+  onChange,
+}: {
+  label: string;
+  column: SortColumn;
+  sort: SortConfig;
+  onChange: (next: SortConfig) => void;
+}) {
+  const active = sort.column === column;
+  const Icon = !active ? ChevronsUpDown : sort.dir === 'asc' ? ChevronUp : ChevronDown;
+  const toggle = () => {
+    if (!active) onChange({ column, dir: 'asc' });
+    else if (sort.dir === 'asc') onChange({ column, dir: 'desc' });
+    else onChange({ column: 'client', dir: 'asc' }); // third click resets to default
+  };
+  return (
+    <th className="px-4 py-2">
+      <button
+        type="button"
+        onClick={toggle}
+        title={active ? `Sorted ${sort.dir === 'asc' ? 'A→Z' : 'Z→A'} — click to ${sort.dir === 'asc' ? 'reverse' : 'reset'}` : 'Sort by ' + label}
+        className={`inline-flex items-center gap-1 select-none uppercase tracking-wider text-[11px] font-semibold transition-colors ${
+          active ? 'text-[#015280]' : 'text-gray-500 hover:text-gray-700'
+        }`}
+      >
+        {label}
+        <Icon className={`w-3 h-3 ${active ? 'text-[#015280]' : 'text-gray-400'}`} />
+      </button>
+    </th>
+  );
+}
+
+// ── Account Manager multi-select dropdown ───────────────────────────────────
+function ManagerFilterButton({
+  managers,
+  selected,
+  onChange,
+}: {
+  /** Display name → email (or UNASSIGNED_KEY). Empty email shows as "Unassigned". */
+  managers: string[];
+  selected: Set<string>;
+  onChange: (next: Set<string>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const filteredManagers = useMemo(() => {
+    if (!query) return managers;
+    const q = query.toLowerCase();
+    return managers.filter(m => m.toLowerCase().includes(q) || (m === UNASSIGNED_KEY && 'unassigned'.includes(q)));
+  }, [managers, query]);
+
+  const toggle = (m: string) => {
+    const next = new Set(selected);
+    if (next.has(m)) next.delete(m);
+    else next.add(m);
+    onChange(next);
+  };
+
+  const selectAll = () => onChange(new Set(managers));
+  const clearAll = () => onChange(new Set());
+
+  const activeCount = selected.size;
+  const isActive = activeCount > 0 && activeCount < managers.length;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
+          isActive
+            ? 'border-[#43c7ff] bg-[#e6f8ff] text-[#015280]'
+            : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+        }`}
+      >
+        <Filter className="w-3 h-3" />
+        Account Manager
+        {isActive && (
+          <span className="ml-0.5 text-[10px] font-bold bg-[#015280] text-white rounded-full px-1.5 py-0.5 leading-none">
+            {activeCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-xl shadow-xl w-72 flex flex-col overflow-hidden">
+          <div className="p-2 border-b border-gray-100">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Filter managers…"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#43c7ff]"
+              />
+            </div>
+            <div className="flex items-center gap-2 mt-2 text-[11px]">
+              <button type="button" onClick={selectAll} className="text-[#015280] hover:underline font-medium">
+                Select all
+              </button>
+              <span className="text-gray-300">·</span>
+              <button type="button" onClick={clearAll} className="text-gray-500 hover:underline">
+                Clear
+              </button>
+              <span className="ml-auto text-gray-400">{activeCount} of {managers.length}</span>
+            </div>
+          </div>
+          <div className="overflow-y-auto max-h-72">
+            {filteredManagers.length === 0 ? (
+              <p className="px-4 py-3 text-sm text-gray-400 text-center">No managers found</p>
+            ) : (
+              filteredManagers.map(m => {
+                const isSelected = selected.has(m);
+                return (
+                  <label
+                    key={m}
+                    className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggle(m)}
+                      className="rounded border-gray-300 text-[#015280] focus:ring-[#43c7ff]"
+                    />
+                    {m === UNASSIGNED_KEY ? (
+                      <span className="text-amber-600 italic">Unassigned</span>
+                    ) : (
+                      <span className="truncate text-gray-700">{m}</span>
+                    )}
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Client table ────────────────────────────────────────────────────────────
 function ClientTable({
   title,
@@ -336,6 +509,9 @@ function ClientTable({
   items,
   agentEmailMap,
   onSelectItem,
+  sort,
+  onSortChange,
+  headerExtra,
 }: {
   title: string;
   subtitle?: string;
@@ -343,15 +519,42 @@ function ClientTable({
   items: OnboardingItem[];
   agentEmailMap: Record<string, string>;
   onSelectItem: (item: OnboardingItem) => void;
+  sort: SortConfig;
+  onSortChange: (next: SortConfig) => void;
+  /** Optional extra controls rendered next to the count (e.g. Account
+   *  Manager filter on the All Clients table). */
+  headerExtra?: React.ReactNode;
 }) {
+  // Map each item to a tuple of sort keys so we don't recompute strings per
+  // comparison call.
+  const sorted = useMemo(() => {
+    const contactNameFor = (clientBoardItemId: string | null) => {
+      if (!clientBoardItemId) return '';
+      const cached = contactCache[clientBoardItemId];
+      if (!cached || cached === 'loading' || cached === 'error') return '';
+      return cached.contactName ?? '';
+    };
+    const decorated = items.map(item => ({
+      item,
+      client: item.name ?? '',
+      manager: item.clientBoardItemId ? (agentEmailMap[item.clientBoardItemId] ?? '') : '',
+      contact: contactNameFor(item.clientBoardItemId),
+    }));
+    decorated.sort((a, b) => compareStrings(a[sort.column], b[sort.column], sort.dir));
+    return decorated.map(d => d.item);
+  }, [items, sort, agentEmailMap]);
+
   return (
     <section className="flex flex-col bg-white border border-gray-200 rounded-xl overflow-hidden flex-1 min-h-0">
-      <header className="px-4 py-2.5 border-b border-gray-200 bg-gray-50 flex items-center justify-between flex-shrink-0">
-        <div>
+      <header className="px-4 py-2.5 border-b border-gray-200 bg-gray-50 flex items-center justify-between flex-shrink-0 gap-3">
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
-          {subtitle && <p className="text-[11px] text-gray-500">{subtitle}</p>}
+          {subtitle && <p className="text-[11px] text-gray-500 truncate">{subtitle}</p>}
         </div>
-        <span className="text-xs text-gray-500 font-medium">{items.length} client{items.length === 1 ? '' : 's'}</span>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {headerExtra}
+          <span className="text-xs text-gray-500 font-medium">{items.length} client{items.length === 1 ? '' : 's'}</span>
+        </div>
       </header>
       <div className="overflow-auto flex-1">
         {items.length === 0 ? (
@@ -359,14 +562,14 @@ function ClientTable({
         ) : (
           <table className="w-full text-left">
             <thead className="sticky top-0 bg-white border-b border-gray-200 z-10">
-              <tr className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                <th className="px-4 py-2">Client</th>
-                <th className="px-4 py-2">Account Manager</th>
-                <th className="px-4 py-2">Main Contact</th>
+              <tr>
+                <SortHeader label="Client" column="client" sort={sort} onChange={onSortChange} />
+                <SortHeader label="Account Manager" column="manager" sort={sort} onChange={onSortChange} />
+                <SortHeader label="Main Contact" column="contact" sort={sort} onChange={onSortChange} />
               </tr>
             </thead>
             <tbody>
-              {items.map(item => (
+              {sorted.map(item => (
                 <ClientRow
                   key={item.id}
                   item={item}
@@ -582,6 +785,38 @@ export function ClientsView({
     });
   }, [filtered, agentEmailMap, me]);
 
+  // ── Sort state — independent per table so a rep can leave 'My Clients'
+  //    sorted by main contact while reordering 'All Clients' by manager.
+  const [mySort, setMySort] = useState<SortConfig>({ column: 'client', dir: 'asc' });
+  const [allSort, setAllSort] = useState<SortConfig>({ column: 'client', dir: 'asc' });
+
+  // ── All Clients: Account Manager multi-select ──
+  // Every unique email that appears as an account manager, plus a sentinel
+  // for unassigned clients. Sorted alphabetically with Unassigned pinned
+  // at the bottom for easy scanning.
+  const managers = useMemo(() => {
+    const set = new Set<string>();
+    let hasUnassigned = false;
+    for (const i of items) {
+      const email = i.clientBoardItemId ? (agentEmailMap[i.clientBoardItemId] ?? '') : '';
+      if (email) set.add(email);
+      else hasUnassigned = true;
+    }
+    const list = Array.from(set).sort((a, b) => a.localeCompare(b));
+    if (hasUnassigned) list.push(UNASSIGNED_KEY);
+    return list;
+  }, [items, agentEmailMap]);
+
+  const [selectedManagers, setSelectedManagers] = useState<Set<string>>(new Set());
+
+  const filteredForAll = useMemo(() => {
+    if (selectedManagers.size === 0) return filtered;
+    return filtered.filter(i => {
+      const email = i.clientBoardItemId ? (agentEmailMap[i.clientBoardItemId] ?? '') : '';
+      return selectedManagers.has(email || UNASSIGNED_KEY);
+    });
+  }, [filtered, selectedManagers, agentEmailMap]);
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-gray-50 p-4 gap-3">
       {/* Sub-header: search */}
@@ -631,14 +866,38 @@ export function ClientsView({
             items={myClients}
             agentEmailMap={agentEmailMap}
             onSelectItem={onSelectItem}
+            sort={mySort}
+            onSortChange={setMySort}
           />
           <ClientTable
             title="All Clients"
             subtitle="Every client — for browsing and covering for other reps"
             emptyMessage={query ? 'No clients match your filter.' : 'No clients found.'}
-            items={filtered}
+            items={filteredForAll}
             agentEmailMap={agentEmailMap}
             onSelectItem={onSelectItem}
+            sort={allSort}
+            onSortChange={setAllSort}
+            headerExtra={
+              <div className="flex items-center gap-2">
+                {selectedManagers.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedManagers(new Set())}
+                    title="Clear manager filter"
+                    className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-red-600 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                    Clear
+                  </button>
+                )}
+                <ManagerFilterButton
+                  managers={managers}
+                  selected={selectedManagers}
+                  onChange={setSelectedManagers}
+                />
+              </div>
+            }
           />
         </div>
         <MyTasksPanel
