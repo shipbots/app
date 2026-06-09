@@ -17,10 +17,10 @@ import { fetchClientInfo } from '@/lib/monday';
 
 const FIREFLIES_API_URL = 'https://api.fireflies.ai/graphql';
 
-const TEAM_TO = 'support@shipbots.com, allen@shipbots.com, payam@shipbots.com, carmen@shipbots.com, karina@shipbots.com, alex@shipbots.com, nancy@shipbots.com, robert@shipbots.com';
-const TEAM_BCC = 'andres@shipbots.com';
-
-export { TEAM_TO, TEAM_BCC };
+// Recipient lists for the team-summary email live in
+// components/internal-summary-modal.tsx (TEAM_TO / TEAM_BCC). They were
+// duplicated and re-exported here, but Next.js 16 only allows GET/POST/etc.
+// from a route file, so the export broke the Vercel build under webpack.
 
 async function firefliesQuery(query: string, variables?: Record<string, unknown>) {
   const key = process.env.FIREFLIES_API_KEY;
