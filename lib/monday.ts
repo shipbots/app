@@ -678,12 +678,29 @@ export async function updateOnboardingField(
   console.log(`[updateOnboardingField] saved OK`);
 }
 
+// ─── Helpers shared by every subitem parser ──────────────────────────────────
+// The subitem board's "Assigned" column is a dropdown whose labels are
+// teammate emails. Pulling them out of `text` (Monday's already-rendered
+// comma-separated list) keeps us agnostic to the specific column id and
+// works even after rename or board id changes.
+function parseAssigneeEmails(cv: { type: string; text: string | null }): string[] {
+  if (cv.type !== 'dropdown' || !cv.text) return [];
+  return cv.text
+    .split(',')
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 // ─── Fetch subitem board column metadata ─────────────────────────────────────
 export async function fetchSubitemBoardInfo(): Promise<{
   boardId: string | null;
   statusColumnId: string | null;
   statusOptions: string[];
   dateColumnId: string | null;
+  /** Dropdown column the team uses to assign a task to a user (by email). */
+  assigneeColumnId: string | null;
+  /** Existing dropdown options (emails) — UI seeds its picker from this. */
+  assigneeOptions: string[];
 }> {
   // We need at least one subitem to discover the subitem board's column schema.
   const query = `query {
@@ -710,6 +727,8 @@ export async function fetchSubitemBoardInfo(): Promise<{
     let statusColumnId: string | null = null;
     let statusOptions: string[] = [];
     let dateColumnId: string | null = null;
+    let assigneeColumnId: string | null = null;
+    let assigneeOptions: string[] = [];
 
     for (const col of cols) {
       if ((col.type === 'color' || col.type === 'status') && !statusColumnId) {
@@ -723,11 +742,28 @@ export async function fetchSubitemBoardInfo(): Promise<{
       if (col.type === 'date' && !dateColumnId) {
         dateColumnId = col.id;
       }
+      // The "Assigned" column is a dropdown of emails. Match by title so a
+      // future rename to "Assignee" or "Assigned To" still resolves; first
+      // dropdown column wins as a safe fallback.
+      if (col.type === 'dropdown') {
+        const titleLower = col.title.toLowerCase();
+        const looksLikeAssignee = titleLower.includes('assign') || titleLower.includes('owner');
+        if (looksLikeAssignee || !assigneeColumnId) {
+          assigneeColumnId = col.id;
+          try {
+            const settings = JSON.parse(col.settings_str);
+            const labels: Array<{ name?: string }> = settings.labels || [];
+            assigneeOptions = labels
+              .map(l => (l?.name ?? '').trim().toLowerCase())
+              .filter(Boolean);
+          } catch { /* ignore */ }
+        }
+      }
     }
-    return { boardId, statusColumnId, statusOptions, dateColumnId };
+    return { boardId, statusColumnId, statusOptions, dateColumnId, assigneeColumnId, assigneeOptions };
   }
 
-  return { boardId: null, statusColumnId: null, statusOptions: [], dateColumnId: null };
+  return { boardId: null, statusColumnId: null, statusOptions: [], dateColumnId: null, assigneeColumnId: null, assigneeOptions: [] };
 }
 
 // ─── Update an existing subitem ───────────────────────────────────────────────
@@ -740,6 +776,14 @@ export async function updateSubitem(
     status?: string;
     dateColumnId?: string | null;
     dueDate?: string;
+    /** ID of the dropdown column used to assign the task. */
+    assigneeColumnId?: string | null;
+    /**
+     * Email(s) to assign. Empty array clears the column; values are written
+     * with create_labels_if_missing so a brand-new email auto-adds as a
+     * dropdown option.
+     */
+    assignees?: string[];
   }
 ): Promise<void> {
   // Rename if name provided
@@ -750,7 +794,7 @@ export async function updateSubitem(
     }`);
   }
 
-  // Update column values (status, date)
+  // Update column values (status, date, assignee)
   const colObj: Record<string, unknown> = {};
   if (opts.statusColumnId) {
     colObj[opts.statusColumnId] = opts.status ? { label: opts.status } : '';
@@ -758,10 +802,19 @@ export async function updateSubitem(
   if (opts.dateColumnId) {
     colObj[opts.dateColumnId] = opts.dueDate ? { date: opts.dueDate } : '';
   }
+  if (opts.assigneeColumnId && opts.assignees) {
+    // Dropdown columns take {"labels": [...]}; an empty array clears the value.
+    const labels = opts.assignees
+      .map(e => (e ?? '').trim().toLowerCase())
+      .filter(Boolean);
+    colObj[opts.assigneeColumnId] = labels.length > 0 ? { labels } : { labels: [] };
+  }
   if (Object.keys(colObj).length) {
     const colValuesStr = JSON.stringify(JSON.stringify(colObj));
+    // create_labels_if_missing: lets the UI add a new teammate by typing
+    // their email without first opening Monday to create the dropdown option.
     await mondayQuery(`mutation {
-      change_multiple_column_values(board_id: ${boardId}, item_id: ${itemId}, column_values: ${colValuesStr}) { id }
+      change_multiple_column_values(board_id: ${boardId}, item_id: ${itemId}, column_values: ${colValuesStr}, create_labels_if_missing: true) { id }
     }`);
   }
 }
@@ -770,11 +823,23 @@ export async function updateSubitem(
 export async function createSubitem(
   parentItemId: string,
   name: string,
-  opts?: { statusColumnId?: string; status?: string; dateColumnId?: string; dueDate?: string; notes?: string }
+  opts?: {
+    statusColumnId?: string;
+    status?: string;
+    dateColumnId?: string;
+    dueDate?: string;
+    notes?: string;
+    assigneeColumnId?: string;
+    assignees?: string[];
+  }
 ): Promise<SubItem> {
   const colObj: Record<string, unknown> = {};
   if (opts?.statusColumnId && opts.status) colObj[opts.statusColumnId] = { label: opts.status };
   if (opts?.dateColumnId && opts.dueDate)    colObj[opts.dateColumnId]  = { date: opts.dueDate };
+  if (opts?.assigneeColumnId && opts.assignees && opts.assignees.length > 0) {
+    const labels = opts.assignees.map(e => (e ?? '').trim().toLowerCase()).filter(Boolean);
+    if (labels.length > 0) colObj[opts.assigneeColumnId] = { labels };
+  }
 
   const colValuesStr = Object.keys(colObj).length
     ? JSON.stringify(JSON.stringify(colObj))   // double-encoded for inline GraphQL string
@@ -785,7 +850,8 @@ export async function createSubitem(
     create_subitem(
       parent_item_id: ${parentItemId},
       item_name: "${safeName}",
-      column_values: ${colValuesStr}
+      column_values: ${colValuesStr},
+      create_labels_if_missing: true
     ) {
       id
       name
@@ -797,15 +863,22 @@ export async function createSubitem(
 
   let status = '';
   let assignee = '';
+  let assigneeEmails: string[] = [];
   let dueDate = '';
   for (const cv of sub.column_values) {
     if ((cv.type === 'color' || cv.type === 'status') && !status && cv.text) status = cv.text;
     if ((cv.type === 'multiple-person' || cv.type === 'people' || cv.id === 'person') && !assignee && cv.text) assignee = cv.text;
+    if (cv.type === 'dropdown') {
+      assigneeEmails = parseAssigneeEmails(cv);
+      // If no people-column assignee was set, fall back to the dropdown text
+      // so the legacy `assignee` field still reads sensibly.
+      if (!assignee && cv.text) assignee = cv.text;
+    }
     if ((cv.type === 'date' || cv.id.startsWith('date')) && !dueDate && cv.value) {
       try { dueDate = JSON.parse(cv.value).date || ''; } catch { /* ignore */ }
     }
   }
-  const result: SubItem = { id: sub.id, name: sub.name, status, assignee, dueDate, parentItemId, parentItemName: '' };
+  const result: SubItem = { id: sub.id, name: sub.name, status, assignee, assigneeEmails, dueDate, parentItemId, parentItemName: '' };
 
   // Post notes as a Monday.com update on the new subitem
   if (opts?.notes?.trim()) {
@@ -842,6 +915,7 @@ export async function fetchSubitems(onboardingItemId: string): Promise<SubItem[]
   return raw.map((sub: { id: string; name: string; column_values: { id: string; text: string | null; value: string | null; type: string }[] }) => {
     let status = '';
     let assignee = '';
+    let assigneeEmails: string[] = [];
     let dueDate = '';
 
     for (const cv of sub.column_values) {
@@ -851,6 +925,11 @@ export async function fetchSubitems(onboardingItemId: string): Promise<SubItem[]
       }
       // Person/assignee columns
       if (cv.type === 'multiple-person' || cv.type === 'people' || cv.id === 'person') {
+        if (!assignee && cv.text) assignee = cv.text;
+      }
+      // Assignee dropdown (the team's "Assigned" column stores emails)
+      if (cv.type === 'dropdown') {
+        assigneeEmails = parseAssigneeEmails(cv);
         if (!assignee && cv.text) assignee = cv.text;
       }
       // Date columns
@@ -866,6 +945,7 @@ export async function fetchSubitems(onboardingItemId: string): Promise<SubItem[]
       name: sub.name,
       status,
       assignee,
+      assigneeEmails,
       dueDate,
       parentItemId: onboardingItemId,
       parentItemName: '', // filled by caller if needed
@@ -923,11 +1003,16 @@ export async function fetchAllSubitems(): Promise<SubItem[]> {
       for (const sub of (parent.subitems ?? [])) {
         let status = '';
         let assignee = '';
+        let assigneeEmails: string[] = [];
         let dueDate = '';
 
         for (const cv of sub.column_values) {
           if ((cv.type === 'color' || cv.type === 'status') && !status && cv.text) status = cv.text;
           if ((cv.type === 'multiple-person' || cv.type === 'people' || cv.id === 'person') && !assignee && cv.text) assignee = cv.text;
+          if (cv.type === 'dropdown') {
+            assigneeEmails = parseAssigneeEmails(cv);
+            if (!assignee && cv.text) assignee = cv.text;
+          }
           if ((cv.type === 'date' || cv.id.startsWith('date')) && !dueDate && cv.value) {
             try { dueDate = JSON.parse(cv.value).date || ''; } catch { /* ignore */ }
           }
@@ -938,6 +1023,7 @@ export async function fetchAllSubitems(): Promise<SubItem[]> {
           name: sub.name,
           status,
           assignee,
+          assigneeEmails,
           dueDate,
           parentItemId: parent.id,
           parentItemName: parent.name,

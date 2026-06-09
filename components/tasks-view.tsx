@@ -6,7 +6,8 @@ import {
   CheckSquare, Square, Plus, X, User, Calendar, AlertCircle,
   ChevronDown, ChevronRight, Filter, Loader2, Search, Pencil,
 } from 'lucide-react';
-import { EditTaskModal } from './edit-task-modal';
+import { EditTaskModal, AssigneePicker } from './edit-task-modal';
+import { useSession } from 'next-auth/react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function isDone(status: string): boolean {
@@ -161,6 +162,10 @@ export interface BoardInfo {
   statusColumnId: string | null;
   statusOptions: string[];
   dateColumnId: string | null;
+  /** ID of the dropdown column the team uses to assign a task (by email). */
+  assigneeColumnId: string | null;
+  /** Existing emails the dropdown has seen; UI seeds its picker from these. */
+  assigneeOptions: string[];
 }
 
 export function CreateTaskModal({
@@ -186,12 +191,24 @@ export function CreateTaskModal({
   const [error, setError] = useState('');
   const clientListRef = useRef<HTMLDivElement>(null);
 
+  // Pre-fill the assignee with the signed-in user so the most common case
+  // (rep creates a task they're going to do) is one click.
+  const { data: session } = useSession();
+  const [assignees, setAssignees] = useState<string[]>([]);
+  useEffect(() => {
+    const me = session?.user?.email?.toLowerCase();
+    if (me && assignees.length === 0) setAssignees([me]);
+    // We only want to seed once on first session load; explicit changes in the
+    // picker are intentional and shouldn't be re-stomped.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.email]);
+
   // Fetch board column info once
   useEffect(() => {
     fetch('/api/subitems/board-info')
       .then(r => r.json())
       .then((d: BoardInfo) => setBoardInfo(d))
-      .catch(() => setBoardInfo({ boardId: null, statusColumnId: null, statusOptions: [], dateColumnId: null }));
+      .catch(() => setBoardInfo({ boardId: null, statusColumnId: null, statusOptions: [], dateColumnId: null, assigneeColumnId: null, assigneeOptions: [] }));
   }, []);
 
   // Close client list on outside click
@@ -219,7 +236,7 @@ export function CreateTaskModal({
     setError('');
     setSaving(true);
     try {
-      const body: Record<string, string> = {
+      const body: Record<string, unknown> = {
         parentItemId: selectedClientId,
         parentItemName: selectedClient?.name ?? '',
         name: taskName.trim(),
@@ -233,6 +250,10 @@ export function CreateTaskModal({
         body.dueDate = dueDate;
       }
       if (notes.trim()) body.notes = notes.trim();
+      if (boardInfo?.assigneeColumnId && assignees.length > 0) {
+        body.assigneeColumnId = boardInfo.assigneeColumnId;
+        body.assignees = assignees;
+      }
 
       const res = await fetch('/api/subitems', {
         method: 'POST',
@@ -385,6 +406,29 @@ export function CreateTaskModal({
                 className="w-full px-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#43c7ff] hover:border-[#43c7ff] transition-colors"
               />
             </div>
+          </div>
+
+          {/* Assignee */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+              Assigned To
+            </label>
+            {boardInfo === null ? (
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-400">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Loading…
+              </div>
+            ) : !boardInfo.assigneeColumnId ? (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Assignment column not configured on the subitem board.
+              </p>
+            ) : (
+              <AssigneePicker
+                value={assignees}
+                options={boardInfo.assigneeOptions}
+                onChange={setAssignees}
+              />
+            )}
           </div>
 
           {/* Notes */}

@@ -24,6 +24,8 @@ export async function POST(req: NextRequest) {
       dateColumnId?: string;
       dueDate?: string;
       notes?: string;
+      assigneeColumnId?: string;
+      assignees?: string[];
     };
 
     if (!body.parentItemId || !body.name?.trim()) {
@@ -36,6 +38,8 @@ export async function POST(req: NextRequest) {
       dateColumnId: body.dateColumnId,
       dueDate: body.dueDate,
       notes: body.notes,
+      assigneeColumnId: body.assigneeColumnId,
+      assignees: body.assignees,
     });
 
     return NextResponse.json({ ...task, parentItemName: body.parentItemName });

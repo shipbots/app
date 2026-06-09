@@ -29,7 +29,18 @@ export interface SubItem {
   id: string;
   name: string;
   status: string;
+  /**
+   * Human-readable assignee text (typically comma-separated emails or names
+   * as Monday renders them). Kept for backward compatibility — UI should
+   * prefer assigneeEmails when present.
+   */
   assignee: string;
+  /**
+   * Structured list of assignee email addresses pulled from the subitem
+   * board's "Assigned" dropdown column (dropdown_mm44hv8s). Always
+   * lowercased so email-based filtering is straightforward.
+   */
+  assigneeEmails: string[];
   dueDate: string;      // "YYYY-MM-DD" or ""
   parentItemId: string;
   parentItemName: string;

@@ -28,6 +28,9 @@ export async function PATCH(
       statusColumnId?: string;
       dueDate?: string;
       dateColumnId?: string;
+      assigneeColumnId?: string;
+      /** New assignee emails. Send an empty array to clear the assignment. */
+      assignees?: string[];
     };
     if (!body.boardId) {
       return NextResponse.json({ error: 'boardId is required' }, { status: 400 });
@@ -38,6 +41,8 @@ export async function PATCH(
       status: body.status,
       dateColumnId: body.dateColumnId,
       dueDate: body.dueDate,
+      assigneeColumnId: body.assigneeColumnId,
+      assignees: body.assignees,
     });
     return NextResponse.json({ ok: true });
   } catch (err) {

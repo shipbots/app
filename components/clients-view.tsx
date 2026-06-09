@@ -590,25 +590,36 @@ function MyTasksPanel({
   tasks,
   loading,
   currentUserName,
+  currentUserEmail,
   items,
   onSelectClient,
 }: {
   tasks: SubItem[];
   loading: boolean;
   currentUserName: string | null;
+  currentUserEmail: string | null;
   items: OnboardingItem[];
   onSelectClient: (item: OnboardingItem) => void;
 }) {
   const myTasks = useMemo(() => {
-    if (!currentUserName) return [];
-    const me = currentUserName.toLowerCase();
+    const meEmail = (currentUserEmail ?? '').toLowerCase();
+    const meName = (currentUserName ?? '').toLowerCase();
+    if (!meEmail && !meName) return [];
     return tasks.filter(t => {
+      // Prefer structured assignee email match — that's what the new "Assigned"
+      // dropdown writes.
+      if (meEmail && (t.assigneeEmails ?? []).some(e => e.toLowerCase() === meEmail)) {
+        return true;
+      }
+      // Fall back to substring on the legacy assignee text field so tasks
+      // assigned via Monday's people column (or before this feature) still
+      // surface for the right person.
       const a = (t.assignee ?? '').toLowerCase();
-      // Monday returns assignees as comma-separated names — match on substring
-      // so "Andres Mejia, Karina ..." still matches "andres".
-      return a.includes(me);
+      if (meEmail && a.includes(meEmail)) return true;
+      if (meName && a.includes(meName)) return true;
+      return false;
     });
-  }, [tasks, currentUserName]);
+  }, [tasks, currentUserName, currentUserEmail]);
 
   const itemsById = useMemo(() => {
     const m: Record<string, OnboardingItem> = {};
@@ -904,6 +915,7 @@ export function ClientsView({
           tasks={allTasks}
           loading={loadingTasks}
           currentUserName={currentUserName}
+          currentUserEmail={currentUserEmail}
           items={items}
           onSelectClient={onSelectItem}
         />
