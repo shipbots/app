@@ -6,7 +6,8 @@ import {
   CheckSquare, Square, Plus, X, User, Calendar, AlertCircle,
   ChevronDown, ChevronRight, Filter, Loader2, Search, Pencil,
 } from 'lucide-react';
-import { EditTaskModal, AssigneePicker } from './edit-task-modal';
+import { EditTaskModal } from './edit-task-modal';
+import { AssigneePicker } from './assignee-picker';
 import { useSession } from 'next-auth/react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
