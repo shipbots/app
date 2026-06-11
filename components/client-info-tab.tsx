@@ -1335,6 +1335,7 @@ export function ClientInfoTab({ client, fullscreen, onboardingItemId, deliveredD
           <div>
             <EditField label="🚢 ShipHero Name" value={localClient.shipHeroName} columnId="text_mkw9n26z" clientId={id} highlight />
             <EditField label="🆔 ShipHero Customer Account ID" value={localClient.shipHeroId} columnId="text_mktmf2yw" clientId={id} highlight />
+            <SelectField label="💳 Payment on File?" value={localClient.paymentOnFile} columnId="dropdown_mm47xxjv" clientId={id} options={colOptions['dropdown_mm47xxjv'] ?? ['Yes', 'No']} valueType="dropdown" highlight />
             <SelectField label="⭐ AppDot / Portal" value={localClient.portalDropdown} columnId="dropdown_mktrbeyg" clientId={id} options={colOptions['dropdown_mktrbeyg'] ?? []} valueType="dropdown" highlight />
             <SelectField label="⭐ Product Category" value={localClient.productCategory} columnId="color_mktq81r3" clientId={id} options={colOptions['color_mktq81r3'] ?? []} valueType="status" />
             <EditField label="📦 Product Description" value={localClient.productDescription} columnId="long_text_mktqtxm" clientId={id} multiline />

@@ -102,6 +102,9 @@ export interface ClientInfo {
   quickbooksName: string;
   shipHeroId: string;
   shipHeroName: string;
+  /** Yes / No dropdown — also drives the "Retrieved payment information"
+   *  checklist step on the onboarding board. */
+  paymentOnFile: string;
   productCategory: string;
   productDescription: string;
   warehouseLocation: string;

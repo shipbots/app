@@ -116,11 +116,14 @@ export async function fetchOnboardingItems(): Promise<OnboardingItem[]> {
         }
       }
 
+      // Build the checklist from the per-step config. Steps that live on the
+      // Clients board get a `null` value here; they're filled in below after
+      // the join. Progress is recomputed at that point too.
       const checklist: ChecklistStep[] = CHECKLIST_STEPS.map(step => ({
         id: step.id,
         label: step.label,
         shortLabel: step.shortLabel,
-        value: cols[step.id] || null,
+        value: (step.board ?? 'onboarding') === 'onboarding' ? (cols[step.id] || null) : null,
         options: step.options,
         invertLogic: step.invertLogic,
       }));
@@ -179,74 +182,116 @@ export async function fetchOnboardingItems(): Promise<OnboardingItem[]> {
     cursor = page.cursor;
   } while (cursor);
 
-  // ── Join Initial Inventory Est. Delivery Date from the Clients board ──
-  // Calendar "Expected Delivery" pulls from this field (date_mktrzhyk on the
-  // Clients board), not from the actual-received date_…1 on Onboarding.
+  // ── Join Clients-board fields the onboarding view needs ──
+  // - Initial Inventory Est. Delivery Date (calendar 'Expected Delivery')
+  // - Payment on File? (drives the 'Retrieved payment information' checklist
+  //   step, plus a SelectField in the Client Info panel)
   const clientIds = Array.from(
     new Set(allItems.map(i => i.clientBoardItemId).filter((id): id is string => !!id))
   );
   if (clientIds.length > 0) {
     try {
-      const estByClient = await fetchEstimatedDeliveryDates(clientIds);
+      const joined = await fetchClientBoardJoins(clientIds);
       for (const item of allItems) {
-        if (item.clientBoardItemId && estByClient[item.clientBoardItemId]) {
-          const { date, time } = estByClient[item.clientBoardItemId];
-          item.estimatedDeliveryDate = date;
-          item.estimatedDeliveryTime = time;
+        if (!item.clientBoardItemId) continue;
+        const j = joined[item.clientBoardItemId];
+        if (!j) continue;
+        item.estimatedDeliveryDate = j.estimatedDeliveryDate;
+        item.estimatedDeliveryTime = j.estimatedDeliveryTime;
+
+        // Patch in checklist steps whose value lives on the Clients board.
+        // Each such step matches by id; we mutate it in place so the rest of
+        // the checklist (progress %, badge counts, etc.) reflects the join.
+        for (const step of item.checklist) {
+          const cfg = CHECKLIST_STEPS.find(s => s.id === step.id);
+          if (!cfg || (cfg.board ?? 'onboarding') !== 'clients') continue;
+          step.value = j.clientBoardColumns[cfg.id] ?? null;
         }
+
+        // Recompute progress now that client-board steps have real values.
+        const doneCount = item.checklist.filter(s => getStepState(s.value, s.invertLogic) === 'done').length;
+        const applicableCount = item.checklist.filter(s => getStepState(s.value, s.invertLogic) !== 'na').length;
+        item.progress = applicableCount > 0 ? Math.round((doneCount / applicableCount) * 100) : 0;
       }
     } catch (err) {
-      console.error('[fetchOnboardingItems] estimated delivery date join failed:', err);
-      // non-fatal: items just won't have estimatedDeliveryDate set
+      console.error('[fetchOnboardingItems] clients-board join failed:', err);
+      // non-fatal: items just won't have those fields filled
     }
   }
 
   return allItems;
 }
 
-// Fetch date_mktrzhyk (Initial Inventory Est. Delivery Date) for a batch of
-// Client board item IDs. Returns { itemId → { date, time } }.
-async function fetchEstimatedDeliveryDates(
-  itemIds: string[]
-): Promise<Record<string, { date: string | null; time: string | null }>> {
-  const result: Record<string, { date: string | null; time: string | null }> = {};
+// Per-client fields that the Onboarding view reads from the Clients board.
+type ClientBoardJoin = {
+  estimatedDeliveryDate: string | null;
+  estimatedDeliveryTime: string | null;
+  /** Raw text value (e.g. "Yes", "No", "") for every client-board checklist
+   *  step, keyed by column id. */
+  clientBoardColumns: Record<string, string>;
+};
+
+// IDs of all Clients-board columns the join needs to pull. Includes the
+// Initial Inventory date plus every checklist step configured with
+// `board: 'clients'`.
+function clientBoardJoinColumnIds(): string[] {
+  const set = new Set<string>(['date_mktrzhyk']);
+  for (const step of CHECKLIST_STEPS) {
+    if ((step.board ?? 'onboarding') === 'clients') set.add(step.id);
+  }
+  return Array.from(set);
+}
+
+async function fetchClientBoardJoins(itemIds: string[]): Promise<Record<string, ClientBoardJoin>> {
+  const result: Record<string, ClientBoardJoin> = {};
   // Monday's items() query silently truncates the response on larger batches —
   // empirically anything above ~25 IDs starts dropping items without error.
-  // Keep this small to ensure every client is returned.
   const CHUNK = 25;
   const chunks: string[][] = [];
   for (let i = 0; i < itemIds.length; i += CHUNK) {
     chunks.push(itemIds.slice(i, i + CHUNK));
   }
-  // Run the chunks in parallel — previously this was a sequential for-loop,
-  // which meant 12 round-trips for 300 clients (~3-4s on top of the page
-  // render). Monday's per-minute rate limit is way above 12 simultaneous
-  // small queries; this brings the join down to roughly one round-trip.
+  const colIds = clientBoardJoinColumnIds();
+  const colIdsJson = JSON.stringify(colIds);
+  // Run chunks in parallel; per-minute rate limits are well above the small
+  // burst this produces, and a sequential loop adds 3-4s to every page render.
   await Promise.all(
     chunks.map(async chunk => {
       const query = `query {
         items(ids: [${chunk.join(',')}]) {
           id
-          column_values(ids: ["date_mktrzhyk"]) { id text value }
+          column_values(ids: ${colIdsJson}) { id text value }
         }
       }`;
       const data = await mondayQuery(query);
       const items: Array<{ id: string; column_values: Array<{ id: string; text: string | null; value: string | null }> }> = data.items ?? [];
       for (const it of items) {
-        const cv = it.column_values?.[0];
-        // Parse the raw JSON value to get canonical YYYY-MM-DD — cv.text
-        // returns a locale-formatted string ("May 31, 2026") that won't
-        // match the calendar's ISO date keys.
+        const cvById: Record<string, { text: string | null; value: string | null }> = {};
+        for (const cv of it.column_values ?? []) cvById[cv.id] = cv;
+
+        // Estimated delivery date — parse the canonical YYYY-MM-DD from raw
+        // value; cv.text can be locale-formatted ("May 31, 2026") and won't
+        // match calendar ISO date keys.
+        const dateCv = cvById['date_mktrzhyk'];
         let date: string | null = null;
         let time: string | null = null;
-        if (cv?.value) {
+        if (dateCv?.value) {
           try {
-            const parsed = JSON.parse(cv.value);
+            const parsed = JSON.parse(dateCv.value);
             date = parsed?.date || null;
             time = parsed?.time && parsed.time !== '00:00:00' ? parsed.time : null;
           } catch { /* ignore */ }
         }
-        result[it.id] = { date, time };
+
+        // Client-board checklist column values (text form is the displayed
+        // label like "Yes" / "No" — exactly what getStepState() expects).
+        const clientBoardColumns: Record<string, string> = {};
+        for (const step of CHECKLIST_STEPS) {
+          if ((step.board ?? 'onboarding') !== 'clients') continue;
+          clientBoardColumns[step.id] = cvById[step.id]?.text ?? '';
+        }
+
+        result[it.id] = { estimatedDeliveryDate: date, estimatedDeliveryTime: time, clientBoardColumns };
       }
     })
   );
@@ -393,6 +438,7 @@ export async function fetchClientInfo(itemId: string, onboardingItemId?: string)
     quickbooksName: cols['text_mkx5b9b4'] || '',
     shipHeroId: cols['text_mktmf2yw'] || '',
     shipHeroName: cols['text_mkw9n26z'] || '',
+    paymentOnFile: cols['dropdown_mm47xxjv'] || '',
     productCategory: cols['color_mktq81r3'] || '',
     productDescription: cols['long_text_mktqtxm'] || '',
     warehouseLocation: cols['dropdown_mktxaege'] || '',

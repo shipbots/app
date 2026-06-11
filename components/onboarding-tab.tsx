@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { ChecklistStep } from '@/lib/types';
-import { getStepState, getStepColor } from '@/lib/constants';
+import { getStepState, getStepColor, CHECKLIST_STEPS } from '@/lib/constants';
 import {
   Check, Clock, Minus, ChevronDown, User,
   FileSignature, PhoneCall, ShoppingBag, Settings2, RefreshCw,
@@ -79,6 +79,7 @@ function StateIcon({ state }: { state: 'done' | 'pending' | 'na' | 'not_started'
 function EditableStep({
   step,
   itemId,
+  clientBoardItemId,
   onSaved,
   subLabel,
   forcedNa = false,
@@ -86,6 +87,10 @@ function EditableStep({
 }: {
   step: ChecklistStep;
   itemId: string;
+  /** Needed for steps whose underlying column lives on the Clients board
+   *  (e.g. "Retrieved payment information"). Saves route there instead of
+   *  to the Onboarding board. */
+  clientBoardItemId?: string | null;
   onSaved: (stepId: string, newValue: string | null) => void;
   subLabel?: string;
   forcedNa?: boolean;
@@ -116,7 +121,20 @@ function EditableStep({
     setSaving(true);
     setSaveError(false);
     try {
-      const res = await fetch(`/api/onboarding/${itemId}`, {
+      // Route the save to whichever board owns this column. Steps with
+      // board: 'clients' (e.g. "Retrieved payment information") live on the
+      // Clients board, not the Onboarding board — writing them to /api/
+      // onboarding would silently no-op since the column id doesn't exist
+      // there. Auto-detect column type happens server-side either way.
+      const cfg = CHECKLIST_STEPS.find(s => s.id === step.id);
+      const isClientsBoard = (cfg?.board ?? 'onboarding') === 'clients';
+      if (isClientsBoard && !clientBoardItemId) {
+        throw new Error('No linked Clients board item — cannot save this step');
+      }
+      const url = isClientsBoard
+        ? `/api/client/${clientBoardItemId}`
+        : `/api/onboarding/${itemId}`;
+      const res = await fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ columnId: step.id, value: newValue }),
@@ -808,6 +826,7 @@ export function OnboardingTab({
             key={step.id}
             step={step}
             itemId={itemId}
+            clientBoardItemId={clientBoardItemId}
             onSaved={handleSaved}
             subLabel={
               step.id === 'color_mktv3dek'  ? intlSubLabel :

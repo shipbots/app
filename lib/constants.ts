@@ -36,10 +36,18 @@ type ChecklistStepConfig = {
   shortLabel: string;
   options: readonly string[];
   invertLogic?: boolean;
+  /**
+   * Where this checklist step's value lives. Defaults to the Onboarding
+   * board. 'clients' means the column lives on the Clients board and is
+   * joined in via the connect_boards relation — e.g. "Retrieved payment
+   * information" mirrors the "Payment on File?" dropdown on Clients.
+   */
+  board?: 'onboarding' | 'clients';
 };
 
 export const CHECKLIST_STEPS: readonly ChecklistStepConfig[] = [
   { id: 'color_mktr9afd',  label: 'Sign Contract',                       shortLabel: 'Contract',    options: ['Done', 'Pending'] },
+  { id: 'dropdown_mm47xxjv', label: 'Retrieved payment information',     shortLabel: 'Payment Info', options: ['Yes', 'No'], board: 'clients' },
   { id: 'color_mktp5834',  label: 'Book Onboarding Call',                shortLabel: 'Book Call',   options: ['Done'] },
   { id: 'color_mktrpzz5',  label: 'Connect Your Store',                  shortLabel: 'Store',       options: ['Done', 'Working on it', 'Stuck', 'Not connecting Store'] },
   { id: 'color_mktrf23d',  label: 'Configure Shopify Settings',          shortLabel: 'Shopify',     options: ['Done', 'N/A'] },
@@ -98,7 +106,11 @@ export const ONBOARDING_COLUMN_IDS = [
   'text_mkkgy00b',
   'text1',
   'text_mkw94440', // Shipping Details (stores selected shipping methods)
-  ...CHECKLIST_STEPS.map(s => s.id),
+  // Only include checklist steps whose value lives on the Onboarding board.
+  // Steps with `board: 'clients'` are joined in separately from the Clients
+  // board so we don't waste the Onboarding fetch query on columns it doesn't
+  // own.
+  ...CHECKLIST_STEPS.filter(s => (s.board ?? 'onboarding') === 'onboarding').map(s => s.id),
   // New status indicator columns (already included via CHECKLIST_STEPS above,
   // but listed here for clarity: color_mm27gvc0, color_mm278h2v)
 ];
