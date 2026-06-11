@@ -1539,6 +1539,7 @@ export function ClientInfoTab({ client, fullscreen, onboardingItemId, deliveredD
         <SelectField label="📦 Sending Product to Amazon FBA Warehouse" value={localClient.amazonFBA} columnId="color_mktqw7rg" clientId={id} options={colOptions['color_mktqw7rg'] ?? []} valueType="status" />
         <SelectField label="🛍️ TikTok Shop?" value={localClient.tikTokShop} columnId="dropdown_mm28h9mz" clientId={id} options={colOptions['dropdown_mm28h9mz'] ?? ['Yes', 'No']} valueType="dropdown" />
         <SelectField label="🏷️ Lot Code / Expiration Needed?" value={localClient.lotCodeExpiration} columnId="dropdown_mm28rr9y" clientId={id} options={colOptions['dropdown_mm28rr9y'] ?? ['Yes', 'No']} valueType="dropdown" />
+        <SelectField label="🏷️ Outside Labels?" value={localClient.outsideLabels} columnId="dropdown_mm47p3h7" clientId={id} options={colOptions['dropdown_mm47p3h7'] ?? ['Yes', 'No']} valueType="dropdown" />
         <SelectField label="🚚 Shipping Method" value={localClient.shippingMethod} columnId="dropdown_mktzcdg0" clientId={id} options={colOptions['dropdown_mktzcdg0'] ?? []} valueType="dropdown" />
         <EditField label="🔒 Additional Insurance / Signature" value={localClient.additionalInsuranceSignature} columnId="text_mktrs0xa" clientId={id} />
         <EditField label="🏪 Wholesale Details" value={localClient.wholesaleDetails} columnId="text_mkw5t2ey" clientId={id} />

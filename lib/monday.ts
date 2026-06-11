@@ -459,6 +459,7 @@ export async function fetchClientInfo(itemId: string, onboardingItemId?: string)
     notesForPacking: cols['long_text_mkxfv1hr'] || '',
     tikTokShop: cols['dropdown_mm28h9mz'] || '',
     lotCodeExpiration: cols['dropdown_mm28rr9y'] || '',
+    outsideLabels: cols['dropdown_mm47p3h7'] || '',
     // Returns
     returnsProcess: cols['color_mkxfrgba'] || '',
     notesForReturns: cols['long_text_mkxeajq4'] || '',

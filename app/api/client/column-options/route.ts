@@ -28,6 +28,7 @@ const TARGET_COLUMN_IDS = new Set([
   'dropdown_mktrbeyg', // Portal Dropdown
   'dropdown_mm28h9mz', // TikTok Shop?
   'dropdown_mm28rr9y', // Lot Code / Expiration Needed?
+  'dropdown_mm47p3h7', // Outside Labels?
 ]);
 
 export async function GET() {

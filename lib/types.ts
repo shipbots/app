@@ -145,6 +145,7 @@ export interface ClientInfo {
   notesForPacking: string;
   tikTokShop: string;
   lotCodeExpiration: string;
+  outsideLabels: string;
   // Returns
   returnsProcess: string;
   notesForReturns: string;
