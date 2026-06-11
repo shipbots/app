@@ -6,11 +6,10 @@
  * the user select multiple, and supports adding a brand-new email inline
  * (Monday's `create_labels_if_missing` adds it as a permanent option on save).
  *
- * Extracted into its own file specifically to avoid a circular import:
- *   tasks-view.tsx imports the picker as a runtime value, and
- *   edit-task-modal.tsx imports BoardInfo from tasks-view. With the picker
- *   also living in edit-task-modal.tsx, webpack saw a cycle with a runtime
- *   binding and failed the Vercel production build (Turbopack tolerated it).
+ * Extracted into its own file to avoid a circular import between
+ * tasks-view.tsx and edit-task-modal.tsx. The companion fix moved the
+ * BoardInfo type into @/lib/types so neither component reaches back into
+ * the other for it — see lib/types.ts for the rationale.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';

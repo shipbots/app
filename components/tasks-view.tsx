@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { OnboardingItem, SubItem } from '@/lib/types';
+import { OnboardingItem, SubItem, BoardInfo } from '@/lib/types';
 import {
   CheckSquare, Square, Plus, X, User, Calendar, AlertCircle,
   ChevronDown, ChevronRight, Filter, Loader2, Search, Pencil,
@@ -158,16 +158,6 @@ function TaskSection({
 }
 
 // ─── Create Task Modal ────────────────────────────────────────────────────────
-export interface BoardInfo {
-  boardId: string | null;
-  statusColumnId: string | null;
-  statusOptions: string[];
-  dateColumnId: string | null;
-  /** ID of the dropdown column the team uses to assign a task (by email). */
-  assigneeColumnId: string | null;
-  /** Existing emails the dropdown has seen; UI seeds its picker from these. */
-  assigneeOptions: string[];
-}
 
 export function CreateTaskModal({
   items,

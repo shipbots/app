@@ -1,11 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { SubItem } from '@/lib/types';
-// Type-only import — `BoardInfo` is only ever used in a TS position, so the
-// emitted JS has no edge between this file and tasks-view.tsx. That keeps
-// webpack's module graph acyclic even though both files reference each other.
-import type { BoardInfo } from './tasks-view';
+import { SubItem, BoardInfo } from '@/lib/types';
 import { AssigneePicker } from './assignee-picker';
 import { X, Save, Loader2, Check, AlertCircle } from 'lucide-react';
 

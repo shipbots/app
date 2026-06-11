@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { FirefliesMeeting, OnboardingItem, SubItem } from '@/lib/types';
-import { BoardInfo } from './tasks-view';
+import { FirefliesMeeting, OnboardingItem, SubItem, BoardInfo } from '@/lib/types';
 import {
   X, Plus, CheckSquare, Square, Loader2, AlertCircle,
   ChevronDown, Search, Calendar, Video,
@@ -124,7 +123,7 @@ export function ActionItemsModal({
     fetch('/api/subitems/board-info')
       .then(r => r.json())
       .then((d: BoardInfo) => setBoardInfo(d))
-      .catch(() => setBoardInfo({ boardId: null, statusColumnId: null, statusOptions: [], dateColumnId: null }));
+      .catch(() => setBoardInfo({ boardId: null, statusColumnId: null, statusOptions: [], dateColumnId: null, assigneeColumnId: null, assigneeOptions: [] }));
   }, []);
 
   const statusOptions = boardInfo?.statusOptions?.length

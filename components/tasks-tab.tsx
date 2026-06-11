@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { OnboardingItem, SubItem } from '@/lib/types';
-import { CreateTaskModal, BoardInfo } from './tasks-view';
+import { OnboardingItem, SubItem, BoardInfo } from '@/lib/types';
+import { CreateTaskModal } from './tasks-view';
 import { EditTaskModal } from './edit-task-modal';
 import {
   CheckSquare, Square, Calendar, User, AlertCircle,

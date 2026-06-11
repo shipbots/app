@@ -46,6 +46,29 @@ export interface SubItem {
   parentItemName: string;
 }
 
+/**
+ * Metadata about the Monday.com subitem board the team uses for tasks —
+ * which columns hold status, due-date, and assignee, plus the current
+ * label sets for the status and assignee dropdowns.
+ *
+ * Lives in lib/types (not components/tasks-view, where it used to be)
+ * so edit-task-modal.tsx, action-items-modal.tsx, tasks-tab.tsx, and
+ * tasks-view.tsx can all reference it without creating a circular
+ * import graph. `import type` was not enough — webpack's production
+ * cycle detector still tripped on it even though the TS types get
+ * erased — moving the type to a leaf module is the real fix.
+ */
+export interface BoardInfo {
+  boardId: string | null;
+  statusColumnId: string | null;
+  statusOptions: string[];
+  dateColumnId: string | null;
+  /** ID of the dropdown column the team uses to assign a task (by email). */
+  assigneeColumnId: string | null;
+  /** Existing emails the dropdown has seen; UI seeds its picker from these. */
+  assigneeOptions: string[];
+}
+
 export interface CalendarEvent {
   id: string;            // item.id + '-kickoff' | item.id + '-delivery'
   type: 'kickoff' | 'delivery';
