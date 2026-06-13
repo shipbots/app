@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { OnboardingItem, ClientInfo, FirefliesMeeting, GmailThread } from '@/lib/types';
 import { StatusBadge } from './status-badge';
 import { ClientInfoTab } from './client-info-tab';
-import { ClientExpandedView } from './client-expanded-view';
+import { StickyNotesPanel } from './sticky-notes-panel';
 import { OnboardingTab } from './onboarding-tab';
 import { MeetingsTab } from './meetings-tab';
 import { EmailsTab } from './emails-tab';
@@ -17,7 +17,7 @@ import { PIPELINE_STAGES, INACTIVE_STATUSES } from '@/lib/constants';
 import {
   X, FileText, ClipboardList, Video, Mail, ExternalLink,
   Maximize2, Minimize2, UserPlus, ChevronDown, MailWarning, Phone, Package, CheckSquare, RefreshCw, FolderOpen,
-  Search, ChevronRight, Loader2,
+  Search, ChevronRight, Loader2, BarChart3,
 } from 'lucide-react';
 
 // ─── Agent badge helpers ─────────────────────────────────────────────────────
@@ -648,6 +648,223 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
 
   const panelWidth = fullscreen ? 'w-full' : 'w-full max-w-xl';
 
+  // ── Re-usable JSX bits ──────────────────────────────────────────────────
+  // Pulled out as variables so the CS expanded layout (2-column row, sticky
+  // notes spanning from the very top) can compose them on the left side
+  // without duplicating the entire tab/content rendering.
+
+  const tabsRowJsx = (
+    <div className="flex gap-1 flex-wrap">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          onClick={() => setActiveTab(tab.id)}
+          className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            activeTab === tab.id
+              ? 'font-semibold'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          style={activeTab === tab.id ? { background: 'var(--brand-cyan-light)', color: 'var(--brand-navy)' } : {}}
+        >
+          {tab.icon}
+          {tab.label}
+          {tab.badge != null && (
+            <span className="ml-0.5 min-w-[18px] h-[18px] px-1 text-white text-[10px] font-bold rounded-full flex items-center justify-center" style={{ background: 'var(--brand-navy)' }}>
+              {tab.badge}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+
+  const tabContentJsx = (
+    <>
+      {activeTab === 'onboarding' && (
+        <OnboardingTab
+          steps={item.checklist}
+          progress={item.progress}
+          status={item.status}
+          kickoffDate={item.kickoffDate}
+          inventoryDelivered={item.inventoryDelivered}
+          itemId={item.id}
+          onboarder={item.onboarder}
+          internationalFulfillment={clientInfo?.internationalFulfillment}
+          internationalShippingDDUDDP={clientInfo?.internationalShippingDDUDDP}
+          amazonFBA={clientInfo?.amazonFBA}
+          ecommercePlatforms={clientInfo?.ecommercePlatforms}
+          shipHeroName={clientInfo?.shipHeroName || item.name}
+          shippingDetails={item.shippingDetails}
+          clientBoardItemId={item.clientBoardItemId ?? undefined}
+          contactEmail={clientInfo?.contactEmail}
+          clientName={item.name}
+          tikTokShop={clientInfo?.tikTokShop}
+          lotCodeExpiration={clientInfo?.lotCodeExpiration}
+          onKickoffDateSaved={(newValue) =>
+            onItemUpdate?.(item.id, { kickoffDate: newValue || null })
+          }
+        />
+      )}
+      <div className={activeTab !== 'info' ? 'hidden' : 'h-full overflow-hidden'}>
+        {loadingClient ? (
+          <div className="p-4 flex items-center justify-center h-32">
+            <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-500 border-t-transparent" />
+            <span className="ml-2 text-sm text-gray-500">Loading client info…</span>
+          </div>
+        ) : clientInfo ? (
+          <ClientInfoTab
+            client={clientInfo}
+            // Force single-column section layout in the CS expanded view
+            // (the right half of the panel is sticky notes + metrics).
+            fullscreen={fullscreen}
+            forceSingleColumn={isCustomerService && fullscreen}
+            hideHeader={isCustomerService && fullscreen}
+            onboardingItemId={item.id}
+            deliveredDate={item.deliveredDate}
+            inventoryDelivered={item.inventoryDelivered}
+            onNameChange={newName => setDisplayName(newName)}
+            onDeliveredDateSaved={(newValue) =>
+              onItemUpdate?.(item.id, { deliveredDate: newValue || null })
+            }
+            onEstimatedDeliveryDateSaved={(newValue) =>
+              onItemUpdate?.(item.id, { estimatedDeliveryDate: newValue || null })
+            }
+          />
+        ) : (
+          <div className="p-8 text-center text-gray-500">
+            <p className="text-sm">No client record linked</p>
+          </div>
+        )}
+      </div>
+      {activeTab === 'meetings' && (
+        <MeetingsTab
+          meetings={meetings}
+          loading={loadingMeetings}
+          items={items}
+          clientItemId={item.id}
+          onTasksCreated={newTasks => {
+            setTasks(prev => [...newTasks, ...prev]);
+            setTasksFetched(false);
+          }}
+        />
+      )}
+      {activeTab === 'emails' && (
+        <EmailsTab emails={emails} loading={loadingEmails} error={emailsError} />
+      )}
+      {activeTab === 'pos' && (
+        <ShipHeroPOsTab
+          pos={pos}
+          loading={loadingPos}
+          error={posError}
+          clientName={item.name}
+        />
+      )}
+      {activeTab === 'tasks' && (
+        <TasksTab
+          tasks={tasks}
+          loading={loadingTasks}
+          items={items}
+          clientItemId={item.id}
+          onTaskCreated={task => setTasks(prev => [task, ...prev])}
+          onTaskUpdated={updated => setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))}
+        />
+      )}
+      {activeTab === 'docs' && (
+        <DocumentsTab
+          clientId={item.id}
+          docusignFile={clientInfo?.docusignFile}
+          clientBoardItemId={item.clientBoardItemId ?? undefined}
+          onboardingItemId={item.id}
+          clientInfo={clientInfo}
+          onDocusignExtracted={updates => {
+            if (clientInfo) setClientInfo(prev => prev ? { ...prev, ...updates } : prev);
+          }}
+        />
+      )}
+    </>
+  );
+
+  // ── CS expanded view: 2-column row layout from the very top ─────────────
+  // The sticky-notes column starts at the top of the panel (aligned with
+  // the client name row), not below the tabs. Action icons live in the
+  // top-right corner of the sticky-notes column.
+  if (isCustomerService && fullscreen) {
+    return (
+      <div className="fixed right-0 top-12 h-[calc(100vh-48px)] z-40 w-full bg-white shadow-2xl flex animate-slide-in border-l border-gray-200 overflow-hidden">
+        {/* Left column: big name → tabs → tab content */}
+        <div className="w-[44%] min-w-0 flex flex-col border-r border-gray-200">
+          <div className="px-5 py-4 flex-shrink-0">
+            <ClientNavigator
+              currentItem={item}
+              items={items}
+              onNavigate={onNavigate ?? (() => {})}
+              nameOverride={displayName !== item.name ? displayName : undefined}
+              size="xl"
+            />
+          </div>
+          <div className="px-5 pb-3 border-b border-gray-200 flex-shrink-0">
+            {tabsRowJsx}
+          </div>
+          <div className="flex-1 overflow-hidden">
+            {tabContentJsx}
+          </div>
+        </div>
+
+        {/* Right column: sticky notes (spans from the panel top) + metrics */}
+        <div className="flex-1 min-w-0 flex flex-col gap-4 p-5 bg-gray-50 relative overflow-y-auto">
+          {/* Action icons — anchored to the top-right of the panel. */}
+          <div className="absolute top-3 right-3 z-50 flex items-center gap-1 bg-white/80 backdrop-blur-sm border border-gray-200 rounded-lg shadow-sm">
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing || loadingClient}
+              className="p-1.5 hover:bg-gray-100 rounded-l-lg transition-colors disabled:opacity-50"
+              title="Refresh client data"
+            >
+              <RefreshCw className={`w-4 h-4 text-gray-500 ${refreshing || loadingClient ? 'animate-spin' : ''}`} />
+            </button>
+            <button
+              onClick={() => setFullscreen(f => !f)}
+              className="p-1.5 hover:bg-gray-100 transition-colors"
+              title="Exit fullscreen"
+            >
+              <Minimize2 className="w-4 h-4 text-gray-500" />
+            </button>
+            <button
+              onClick={onClose}
+              className="flex items-center gap-1 px-2 py-1.5 hover:bg-red-50 hover:text-red-500 text-gray-500 rounded-r-lg transition-colors text-xs font-medium"
+              title="Close panel (Esc)"
+            >
+              <X className="w-4 h-4" />
+              Close
+            </button>
+          </div>
+
+          <StickyNotesPanel
+            clientBoardItemId={item.clientBoardItemId}
+            className="flex-shrink-0 h-[440px]"
+          />
+          <section className="bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden flex-1 min-h-[220px]">
+            <header className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 bg-gray-50 flex-shrink-0">
+              <BarChart3 className="w-4 h-4 text-[#015280]" />
+              <h2 className="text-sm font-semibold text-gray-900">Client Performance Metrics</h2>
+              <span className="ml-auto text-[10px] font-semibold uppercase tracking-wider bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded">
+                Coming soon
+              </span>
+            </header>
+            <div className="flex-1 flex flex-col items-center justify-center text-center px-8 py-10 text-gray-400">
+              <BarChart3 className="w-8 h-8 mb-3 opacity-50" />
+              <p className="text-sm font-medium">Metrics aren&apos;t wired up yet</p>
+              <p className="text-xs mt-1 max-w-sm leading-relaxed">
+                ShipHero shipment volumes, on-time rates, returns, and SLAs will surface
+                here once the data source is connected.
+              </p>
+            </div>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
     {/* ── Close strip — sits just to the left of the panel, click to dismiss ── */}
@@ -837,39 +1054,20 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
                 <span className="ml-2 text-sm text-gray-500">Loading client info…</span>
               </div>
             ) : clientInfo ? (
-              // Customer Service expanded view: big name + sticky notes +
-              // metrics on the right, stacked client info on the left.
-              isCustomerService && fullscreen ? (
-                <ClientExpandedView
-                  client={clientInfo}
-                  clientBoardItemId={item.clientBoardItemId}
-                  onboardingItemId={item.id}
-                  deliveredDate={item.deliveredDate}
-                  inventoryDelivered={item.inventoryDelivered}
-                  onNameChange={newName => setDisplayName(newName)}
-                  onDeliveredDateSaved={(newValue) =>
-                    onItemUpdate?.(item.id, { deliveredDate: newValue || null })
-                  }
-                  onEstimatedDeliveryDateSaved={(newValue) =>
-                    onItemUpdate?.(item.id, { estimatedDeliveryDate: newValue || null })
-                  }
-                />
-              ) : (
-                <ClientInfoTab
-                  client={clientInfo}
-                  fullscreen={fullscreen}
-                  onboardingItemId={item.id}
-                  deliveredDate={item.deliveredDate}
-                  inventoryDelivered={item.inventoryDelivered}
-                  onNameChange={newName => setDisplayName(newName)}
-                  onDeliveredDateSaved={(newValue) =>
-                    onItemUpdate?.(item.id, { deliveredDate: newValue || null })
-                  }
-                  onEstimatedDeliveryDateSaved={(newValue) =>
-                    onItemUpdate?.(item.id, { estimatedDeliveryDate: newValue || null })
-                  }
-                />
-              )
+              <ClientInfoTab
+                client={clientInfo}
+                fullscreen={fullscreen}
+                onboardingItemId={item.id}
+                deliveredDate={item.deliveredDate}
+                inventoryDelivered={item.inventoryDelivered}
+                onNameChange={newName => setDisplayName(newName)}
+                onDeliveredDateSaved={(newValue) =>
+                  onItemUpdate?.(item.id, { deliveredDate: newValue || null })
+                }
+                onEstimatedDeliveryDateSaved={(newValue) =>
+                  onItemUpdate?.(item.id, { estimatedDeliveryDate: newValue || null })
+                }
+              />
             ) : (
               <div className="p-8 text-center text-gray-500">
                 <p className="text-sm">No client record linked</p>
