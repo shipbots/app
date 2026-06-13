@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { OnboardingItem, ClientInfo, FirefliesMeeting, GmailThread } from '@/lib/types';
 import { StatusBadge } from './status-badge';
 import { ClientInfoTab } from './client-info-tab';
+import { ClientExpandedView } from './client-expanded-view';
 import { OnboardingTab } from './onboarding-tab';
 import { MeetingsTab } from './meetings-tab';
 import { EmailsTab } from './emails-tab';
@@ -812,20 +813,39 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
                 <span className="ml-2 text-sm text-gray-500">Loading client info…</span>
               </div>
             ) : clientInfo ? (
-              <ClientInfoTab
-                client={clientInfo}
-                fullscreen={fullscreen}
-                onboardingItemId={item.id}
-                deliveredDate={item.deliveredDate}
-                inventoryDelivered={item.inventoryDelivered}
-                onNameChange={newName => setDisplayName(newName)}
-                onDeliveredDateSaved={(newValue) =>
-                  onItemUpdate?.(item.id, { deliveredDate: newValue || null })
-                }
-                onEstimatedDeliveryDateSaved={(newValue) =>
-                  onItemUpdate?.(item.id, { estimatedDeliveryDate: newValue || null })
-                }
-              />
+              // Customer Service expanded view: big name + sticky notes +
+              // metrics on the right, stacked client info on the left.
+              isCustomerService && fullscreen ? (
+                <ClientExpandedView
+                  client={clientInfo}
+                  clientBoardItemId={item.clientBoardItemId}
+                  onboardingItemId={item.id}
+                  deliveredDate={item.deliveredDate}
+                  inventoryDelivered={item.inventoryDelivered}
+                  onNameChange={newName => setDisplayName(newName)}
+                  onDeliveredDateSaved={(newValue) =>
+                    onItemUpdate?.(item.id, { deliveredDate: newValue || null })
+                  }
+                  onEstimatedDeliveryDateSaved={(newValue) =>
+                    onItemUpdate?.(item.id, { estimatedDeliveryDate: newValue || null })
+                  }
+                />
+              ) : (
+                <ClientInfoTab
+                  client={clientInfo}
+                  fullscreen={fullscreen}
+                  onboardingItemId={item.id}
+                  deliveredDate={item.deliveredDate}
+                  inventoryDelivered={item.inventoryDelivered}
+                  onNameChange={newName => setDisplayName(newName)}
+                  onDeliveredDateSaved={(newValue) =>
+                    onItemUpdate?.(item.id, { deliveredDate: newValue || null })
+                  }
+                  onEstimatedDeliveryDateSaved={(newValue) =>
+                    onItemUpdate?.(item.id, { estimatedDeliveryDate: newValue || null })
+                  }
+                />
+              )
             ) : (
               <div className="p-8 text-center text-gray-500">
                 <p className="text-sm">No client record linked</p>

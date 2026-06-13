@@ -12,6 +12,15 @@ import {
 interface ClientInfoTabProps {
   client: ClientInfo;
   fullscreen?: boolean;
+  /**
+   * When true, force single-column section layout regardless of fullscreen.
+   * The Customer Service expanded view uses this so the right half of the
+   * screen can host sticky notes + performance metrics panels instead of
+   * the second column of client fields.
+   */
+  forceSingleColumn?: boolean;
+  /** Hide the editable client-name header (parent renders it large). */
+  hideHeader?: boolean;
   onboardingItemId?: string;
   /** deliveredDate from the Onboarding board (date__1 column) */
   deliveredDate?: string | null;
@@ -1068,7 +1077,12 @@ function FileField({
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
-export function ClientInfoTab({ client, fullscreen, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange, onDeliveredDateSaved, onEstimatedDeliveryDateSaved }: ClientInfoTabProps) {
+export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, hideHeader = false, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange, onDeliveredDateSaved, onEstimatedDeliveryDateSaved }: ClientInfoTabProps) {
+  // The "two-column-per-section" layout is the standard fullscreen treatment
+  // when the panel is the only thing on screen. The CS expanded view sets
+  // forceSingleColumn so the right half of the screen can host its own
+  // panels (sticky notes + metrics) instead of the second column of fields.
+  const useTwoColumnSections = fullscreen && !forceSingleColumn;
   const id = client.id;
 
   // Column options fetched once from Monday.com (status/dropdown labels)
@@ -1291,6 +1305,7 @@ export function ClientInfoTab({ client, fullscreen, onboardingItemId, deliveredD
     <div className="p-4 overflow-y-auto h-full">
 
       {/* ── Client Name (editable — renames both boards) ── */}
+      {!hideHeader && (
       <div className="mb-3 px-1">
         <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">🏷️ Client / Company Name</p>
         {nameEditing ? (
@@ -1326,10 +1341,11 @@ export function ClientInfoTab({ client, fullscreen, onboardingItemId, deliveredD
           </div>
         )}
       </div>
+      )}
 
       {/* ── General Account Info ── */}
       <Section title="General Account Info">
-        <div className={fullscreen ? 'grid grid-cols-2 gap-x-4 items-start' : ''}>
+        <div className={useTwoColumnSections ? 'grid grid-cols-2 gap-x-4 items-start' : ''}>
 
           {/* ── Primary column (always visible) ── */}
           <div>
@@ -1361,7 +1377,7 @@ export function ClientInfoTab({ client, fullscreen, onboardingItemId, deliveredD
 
           {/* ── Secondary column (fullscreen: right column; non-fullscreen: below) ── */}
           {/* key=billingVersion forces remount of EditFields after extraction populates values */}
-          <div className={fullscreen ? '' : 'mt-1'} key={billingVersion}>
+          <div className={useTwoColumnSections ? '' : 'mt-1'} key={billingVersion}>
             <EditField label="📋 Name of Legal Entity" value={localClient.legalEntity} columnId="text_mktp4fvk" clientId={id} highlight />
             <EditField label="💼 Quickbooks Company Name" value={localClient.quickbooksName} columnId="text_mkx5b9b4" clientId={id} />
             <EditField label="📧 Email for Invoices" value={localClient.invoicingEmail} columnId="text_mktqjmmm" clientId={id} icon={<Mail className="w-3.5 h-3.5" />} highlight />
