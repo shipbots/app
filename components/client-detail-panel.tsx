@@ -670,33 +670,39 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
                 />
               </div>
               <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                <StatusPicker
-                  itemId={item.id}
-                  currentStatus={currentStatus}
-                  onChanged={newStatus => {
-                    setCurrentStatus(newStatus);
-                    onStatusChanged?.(item.id, newStatus);
-                  }}
-                />
-                {/* Email summary pending indicator */}
-                {item.checklist.find(s => s.id === 'color_mm27gvc0')?.value?.toLowerCase() !== 'yes' && (
-                  <span
-                    title="Onboarding summary email not yet sent"
-                    className="flex items-center gap-1 text-[11px] font-medium text-orange-600 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded-full"
-                  >
-                    <MailWarning className="w-3 h-3" />
-                    Summary pending
-                  </span>
-                )}
-                {/* Additional call required indicator */}
-                {item.checklist.find(s => s.id === 'color_mm278h2v')?.value?.toLowerCase() === 'yes' && (
-                  <span
-                    title="Additional call required"
-                    className="flex items-center gap-1 text-[11px] font-medium text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full"
-                  >
-                    <Phone className="w-3 h-3" />
-                    Call needed
-                  </span>
+                {/* Pipeline status, "Summary pending", and "Call needed" are
+                    onboarding-team affordances — CS reps don't drive
+                    pipeline status or chase summary emails, so hide them
+                    in customer-service mode. */}
+                {!isCustomerService && (
+                  <>
+                    <StatusPicker
+                      itemId={item.id}
+                      currentStatus={currentStatus}
+                      onChanged={newStatus => {
+                        setCurrentStatus(newStatus);
+                        onStatusChanged?.(item.id, newStatus);
+                      }}
+                    />
+                    {item.checklist.find(s => s.id === 'color_mm27gvc0')?.value?.toLowerCase() !== 'yes' && (
+                      <span
+                        title="Onboarding summary email not yet sent"
+                        className="flex items-center gap-1 text-[11px] font-medium text-orange-600 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded-full"
+                      >
+                        <MailWarning className="w-3 h-3" />
+                        Summary pending
+                      </span>
+                    )}
+                    {item.checklist.find(s => s.id === 'color_mm278h2v')?.value?.toLowerCase() === 'yes' && (
+                      <span
+                        title="Additional call required"
+                        className="flex items-center gap-1 text-[11px] font-medium text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full"
+                      >
+                        <Phone className="w-3 h-3" />
+                        Call needed
+                      </span>
+                    )}
+                  </>
                 )}
                 {/* Agent assign (always visible) */}
                 {item.clientBoardItemId && (
