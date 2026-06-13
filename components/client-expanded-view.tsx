@@ -26,8 +26,7 @@
  */
 
 import { ClientInfo } from '@/lib/types';
-import { Pencil, BarChart3 } from 'lucide-react';
-import { useState, useRef, useCallback } from 'react';
+import { BarChart3 } from 'lucide-react';
 import { ClientInfoTab } from './client-info-tab';
 import { StickyNotesPanel } from './sticky-notes-panel';
 
@@ -41,89 +40,6 @@ interface ClientExpandedViewProps {
   onNameChange?: (newName: string) => void;
   onDeliveredDateSaved?: (newValue: string) => void;
   onEstimatedDeliveryDateSaved?: (newValue: string) => void;
-}
-
-// ── Inline-editable big client name (the expanded view's hero) ──────────────
-function BigClientName({
-  name,
-  clientBoardItemId,
-  onboardingItemId,
-  onChange,
-}: {
-  name: string;
-  clientBoardItemId: string;
-  onboardingItemId?: string;
-  onChange?: (newName: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(name);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const start = () => {
-    setDraft(name);
-    setEditing(true);
-    setError(false);
-    setTimeout(() => inputRef.current?.select(), 30);
-  };
-
-  const save = useCallback(async () => {
-    const next = draft.trim();
-    if (!next || next === name) { setEditing(false); return; }
-    setSaving(true);
-    setError(false);
-    try {
-      const res = await fetch(`/api/client/${clientBoardItemId}/rename`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newName: next, onboardingItemId }),
-      });
-      if (!res.ok) throw new Error('rename failed');
-      onChange?.(next);
-      setEditing(false);
-    } catch {
-      setError(true);
-      setTimeout(() => setError(false), 4000);
-    } finally {
-      setSaving(false);
-    }
-  }, [clientBoardItemId, draft, name, onChange, onboardingItemId]);
-
-  if (editing) {
-    return (
-      <div className="flex items-center gap-3">
-        <input
-          ref={inputRef}
-          type="text"
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          onBlur={save}
-          onKeyDown={e => {
-            if (e.key === 'Enter') save();
-            if (e.key === 'Escape') { setDraft(name); setEditing(false); }
-          }}
-          className="text-3xl font-bold text-gray-900 border-b-2 border-[#43c7ff] focus:outline-none bg-transparent px-1 flex-1 min-w-0"
-        />
-        {saving && <span className="text-xs text-gray-400">Saving…</span>}
-        {error && <span className="text-xs text-red-500">Rename failed</span>}
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-3 group min-w-0">
-      <h1 className="text-3xl font-bold text-gray-900 truncate" title={name}>{name}</h1>
-      <button
-        type="button"
-        onClick={start}
-        title="Rename client"
-        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-100"
-      >
-        <Pencil className="w-4 h-4 text-gray-400" />
-      </button>
-    </div>
-  );
 }
 
 // ── Performance metrics placeholder ─────────────────────────────────────────
@@ -162,24 +78,14 @@ export function ClientExpandedView({
 }: ClientExpandedViewProps) {
   return (
     <div className="h-full overflow-y-auto bg-gray-50 p-5">
-      {/* 3-row layout: client name, then sticky+metrics column shares space
-          with the stacked info on the left. Use CSS grid for proportional
-          control. */}
+      {/* The big client name now lives in the panel header (via the size='xl'
+          ClientNavigator), so we drop the duplicate hero block here and let
+          the two-column body claim the full height. */}
       <div className="grid grid-cols-12 gap-5">
         {/* ── Left column: client info sections (stacked) ── */}
         <div className="col-span-12 lg:col-span-5 flex flex-col gap-5 min-w-0">
-          <div className="bg-white border border-gray-200 rounded-xl px-5 py-4">
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Client / Company Name</p>
-            <BigClientName
-              name={client.name}
-              clientBoardItemId={client.id}
-              onboardingItemId={onboardingItemId}
-              onChange={onNameChange}
-            />
-          </div>
-
-          {/* Embed the standard ClientInfoTab without its big header and
-              with forced single-column section layout. */}
+          {/* Embed the standard ClientInfoTab without its in-body name header
+              and with forced single-column section layout. */}
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
             <ClientInfoTab
               client={client}

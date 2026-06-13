@@ -336,11 +336,14 @@ function ClientNavigator({
   items,
   onNavigate,
   nameOverride,
+  size = 'sm',
 }: {
   currentItem: OnboardingItem;
   items: OnboardingItem[];
   onNavigate: (item: OnboardingItem) => void;
   nameOverride?: string;
+  /** 'sm' = side panel header (default); 'xl' = CS expanded view hero. */
+  size?: 'sm' | 'xl';
 }) {
   const [open, setOpen]   = useState(false);
   const [query, setQuery] = useState('');
@@ -373,16 +376,21 @@ function ClientNavigator({
     if (item.id !== currentItem.id) onNavigate(item);
   };
 
+  const trigger = size === 'xl'
+    ? 'flex items-center gap-2 text-3xl font-bold text-gray-900 transition-colors max-w-full hover:opacity-75 leading-tight'
+    : 'flex items-center gap-1 text-lg font-semibold text-gray-900 transition-colors max-w-full hover:opacity-75';
+  const chevron = size === 'xl' ? 'w-5 h-5 flex-shrink-0 opacity-50' : 'w-4 h-4 flex-shrink-0 opacity-50';
+
   return (
     <div className="relative min-w-0" ref={ref}>
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1 text-lg font-semibold text-gray-900 transition-colors max-w-full hover:opacity-75"
+        className={trigger}
         title="Switch client"
       >
         <span className="truncate">{nameOverride ?? currentItem.name}</span>
-        <ChevronDown className="w-4 h-4 flex-shrink-0 opacity-50" />
+        <ChevronDown className={chevron} />
       </button>
 
       {open && (
@@ -667,8 +675,17 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
                   items={items}
                   onNavigate={onNavigate ?? (() => {})}
                   nameOverride={displayName !== item.name ? displayName : undefined}
+                  // CS expanded view → display the client name as the hero,
+                  // not a small dropdown trigger. Click still pops the
+                  // switcher.
+                  size={isCustomerService && fullscreen ? 'xl' : 'sm'}
                 />
               </div>
+              {/* Onboarding-team status row. In the CS expanded view this
+                  whole row is hidden — the user explicitly asked to drop
+                  the 'Completed' pill, 'Summary pending', and to keep the
+                  hero area minimal. */}
+              {!(isCustomerService && fullscreen) && (
               <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                 {/* Pipeline status, "Summary pending", and "Call needed" are
                     onboarding-team affordances — CS reps don't drive
@@ -726,6 +743,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
                   Monday.com
                 </a>
               </div>
+              )}
             </div>
 
             {/* Header actions */}
