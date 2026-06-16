@@ -841,7 +841,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
 
           <StickyNotesPanel
             clientBoardItemId={item.clientBoardItemId}
-            className="flex-shrink-0 h-[440px]"
+            className="flex-shrink-0 h-[308px]"
           />
           <section className="bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden flex-1 min-h-[220px]">
             <header className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 bg-gray-50 flex-shrink-0">
