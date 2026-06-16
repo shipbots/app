@@ -480,8 +480,85 @@ type Tab = 'info' | 'onboarding' | 'meetings' | 'emails' | 'pos' | 'tasks' | 'do
 // material (client info + docs), task work, and shared calendar context.
 const CUSTOMER_SERVICE_TABS: ReadonlyArray<Tab> = ['info', 'tasks', 'docs'];
 
+// ── Persisted layout sizes for the CS expanded view ──────────────────────
+// Keyed in localStorage so the rep's chosen split sticks across sessions /
+// clients. Per-device, not per-client — it's a layout preference, not data.
+const LS_LEFT_COL_KEY = 'shipbots:cs-panel:left-col-pct';
+const LS_STICKY_HEIGHT_KEY = 'shipbots:cs-panel:sticky-notes-height';
+const LEFT_COL_DEFAULT_PCT = 44;
+const LEFT_COL_MIN_PCT = 25;
+const LEFT_COL_MAX_PCT = 70;
+const STICKY_HEIGHT_DEFAULT = 308;
+const STICKY_HEIGHT_MIN = 160;
+
+function readPersistedNumber(key: string, fallback: number): number {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onItemUpdate, onNavigate, appMode = 'onboarding' }: ClientDetailPanelProps) {
   const isCustomerService = appMode === 'customer-service';
+  // CS expanded view layout sizes — drag the handles to resize, prefs
+  // persist in localStorage so they stick across sessions.
+  const [leftColPct, setLeftColPct] = useState<number>(() =>
+    readPersistedNumber(LS_LEFT_COL_KEY, LEFT_COL_DEFAULT_PCT)
+  );
+  const [stickyHeight, setStickyHeight] = useState<number>(() =>
+    readPersistedNumber(LS_STICKY_HEIGHT_KEY, STICKY_HEIGHT_DEFAULT)
+  );
+  const expandedRef = useRef<HTMLDivElement>(null);
+  const rightColRef = useRef<HTMLDivElement>(null);
+  const [dragKind, setDragKind] = useState<null | 'col' | 'sticky'>(null);
+  useEffect(() => {
+    if (!dragKind) return;
+    const onMove = (e: MouseEvent) => {
+      if (dragKind === 'col' && expandedRef.current) {
+        const rect = expandedRef.current.getBoundingClientRect();
+        const pct = ((e.clientX - rect.left) / rect.width) * 100;
+        setLeftColPct(Math.max(LEFT_COL_MIN_PCT, Math.min(LEFT_COL_MAX_PCT, pct)));
+      } else if (dragKind === 'sticky' && rightColRef.current) {
+        const rect = rightColRef.current.getBoundingClientRect();
+        // Cap to ~80% of the right column so metrics is always visible.
+        const cap = Math.max(STICKY_HEIGHT_MIN, rect.height - 160);
+        const px = e.clientY - rect.top - 20; // subtract right column padding
+        setStickyHeight(Math.max(STICKY_HEIGHT_MIN, Math.min(cap, px)));
+      }
+    };
+    const onUp = () => setDragKind(null);
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    // Prevent text selection while dragging.
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.userSelect = 'none';
+    return () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = prevSelect;
+    };
+  }, [dragKind]);
+  // Persist sizes 250ms after the last change to avoid hammering localStorage.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const id = window.setTimeout(() => {
+      try { window.localStorage.setItem(LS_LEFT_COL_KEY, String(Math.round(leftColPct))); } catch { /* full / disabled */ }
+    }, 250);
+    return () => window.clearTimeout(id);
+  }, [leftColPct]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const id = window.setTimeout(() => {
+      try { window.localStorage.setItem(LS_STICKY_HEIGHT_KEY, String(Math.round(stickyHeight))); } catch { /* full / disabled */ }
+    }, 250);
+    return () => window.clearTimeout(id);
+  }, [stickyHeight]);
+
   const [activeTab, setActiveTab] = useState<Tab>(isCustomerService ? 'info' : 'onboarding');
   const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null);
   const [meetings, setMeetings] = useState<FirefliesMeeting[]>([]);
@@ -790,9 +867,15 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
   // top-right corner of the sticky-notes column.
   if (isCustomerService && fullscreen) {
     return (
-      <div className="fixed right-0 top-12 h-[calc(100vh-48px)] z-40 w-full bg-white shadow-2xl flex animate-slide-in border-l border-gray-200 overflow-hidden">
+      <div
+        ref={expandedRef}
+        className={`fixed right-0 top-12 h-[calc(100vh-48px)] z-40 w-full bg-white shadow-2xl flex animate-slide-in border-l border-gray-200 overflow-hidden ${dragKind ? (dragKind === 'col' ? 'cursor-col-resize' : 'cursor-row-resize') : ''}`}
+      >
         {/* Left column: big name → tabs → tab content */}
-        <div className="w-[44%] min-w-0 flex flex-col border-r border-gray-200">
+        <div
+          className="min-w-0 flex flex-col border-r border-gray-200"
+          style={{ width: `${leftColPct}%` }}
+        >
           <div className="px-5 py-4 flex-shrink-0">
             <ClientNavigator
               currentItem={item}
@@ -810,8 +893,21 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
           </div>
         </div>
 
+        {/* Vertical resize handle between left and right columns. */}
+        <div
+          onMouseDown={e => { e.preventDefault(); setDragKind('col'); }}
+          onDoubleClick={() => setLeftColPct(LEFT_COL_DEFAULT_PCT)}
+          title="Drag to resize columns · double-click to reset"
+          className="group w-1.5 flex-shrink-0 cursor-col-resize bg-transparent hover:bg-[#43c7ff]/30 transition-colors relative -mx-px"
+        >
+          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-gray-200 group-hover:bg-[#43c7ff] transition-colors" />
+        </div>
+
         {/* Right column: sticky notes (spans from the panel top) + metrics */}
-        <div className="flex-1 min-w-0 flex flex-col gap-4 p-5 bg-gray-50 relative overflow-y-auto">
+        <div
+          ref={rightColRef}
+          className="flex-1 min-w-0 flex flex-col gap-4 p-5 bg-gray-50 relative overflow-y-auto"
+        >
           {/* Action icons — anchored to the top-right of the panel. */}
           <div className="absolute top-3 right-3 z-50 flex items-center gap-1 bg-white/80 backdrop-blur-sm border border-gray-200 rounded-lg shadow-sm">
             <button
@@ -839,11 +935,27 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
             </button>
           </div>
 
-          <StickyNotesPanel
-            clientBoardItemId={item.clientBoardItemId}
-            className="flex-shrink-0 h-[308px]"
-          />
-          <section className="bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden flex-1 min-h-[220px]">
+          <div
+            className="flex-shrink-0"
+            style={{ height: stickyHeight }}
+          >
+            <StickyNotesPanel
+              clientBoardItemId={item.clientBoardItemId}
+              className="h-full"
+            />
+          </div>
+
+          {/* Horizontal resize handle between sticky notes and metrics. */}
+          <div
+            onMouseDown={e => { e.preventDefault(); setDragKind('sticky'); }}
+            onDoubleClick={() => setStickyHeight(STICKY_HEIGHT_DEFAULT)}
+            title="Drag to resize sticky notes · double-click to reset"
+            className="group h-1.5 -my-1 flex-shrink-0 cursor-row-resize bg-transparent hover:bg-[#43c7ff]/30 transition-colors relative"
+          >
+            <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-gray-200 group-hover:bg-[#43c7ff] transition-colors" />
+          </div>
+
+          <section className="bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden flex-1 min-h-[160px]">
             <header className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 bg-gray-50 flex-shrink-0">
               <BarChart3 className="w-4 h-4 text-[#015280]" />
               <h2 className="text-sm font-semibold text-gray-900">Client Performance Metrics</h2>
