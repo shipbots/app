@@ -27,7 +27,7 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { OnboardingItem, SubItem, ClientInfo } from '@/lib/types';
-import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search, ChevronsUpDown, ChevronUp, ChevronDown, Filter, X } from 'lucide-react';
+import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search, ChevronsUpDown, ChevronUp, ChevronDown, Filter, X, Eye, EyeOff } from 'lucide-react';
 
 // ── Sort config used by both client tables ──────────────────────────────────
 type SortColumn = 'client' | 'manager' | 'contact' | 'portal';
@@ -66,6 +66,8 @@ type ClientIndexEntry = {
   contact3Phone: string;
   /** AppDot / Portal dropdown label — shown as its own table column. */
   portal: string;
+  /** Clients-board group id — drives the Inactive filter / badge. */
+  groupId: string;
 };
 
 interface ClientsViewProps {
@@ -77,7 +79,16 @@ interface ClientsViewProps {
   /** Signed-in CS agent — used to filter "My Clients" and "My Tasks". */
   currentUserEmail: string | null;
   currentUserName: string | null;
+  /** Per-client group-id overrides from the detail panel's Active/Inactive
+   *  toggle. Layered on top of the search index so reps see their toggle
+   *  reflected without waiting for a Monday refetch. */
+  clientGroupOverrides?: Record<string, string>;
 }
+
+// "Exited" group id — duplicated from lib/constants since this is a client
+// component that already pulls a lot in; importing constants here is fine
+// but explicit keeps the inactive-detection self-contained.
+const CLIENT_GROUP_EXITED_ID = 'group_mkq09z7j';
 
 // ── Contact cache (module-level so navigating between tabs reuses it) ────────
 const contactCache: Record<string, Pick<ClientInfo, 'contactName' | 'contactEmail' | 'contactPhone'> | 'loading' | 'error'> = {};
@@ -310,22 +321,35 @@ function ClientRow({
   item,
   agentEmail,
   portal,
+  inactive,
   onSelect,
 }: {
   item: OnboardingItem;
   agentEmail: string;
   /** AppDot / Portal label from the search index; empty when unknown / not on file. */
   portal: string;
+  /** True when the client is in the "Exited" group on the Clients board. */
+  inactive: boolean;
   onSelect: () => void;
 }) {
   return (
     <tr
       onClick={onSelect}
-      className="hover:bg-[#f0fbff] cursor-pointer transition-colors border-b border-gray-100"
+      className={`cursor-pointer transition-colors border-b border-gray-100 ${
+        inactive ? 'bg-gray-50/60 hover:bg-gray-100/80 text-gray-500' : 'hover:bg-[#f0fbff]'
+      }`}
     >
       <td className="px-4 py-2.5">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="font-medium text-sm text-gray-900 truncate">{item.name}</span>
+          <span className={`font-medium text-sm truncate ${inactive ? 'text-gray-500' : 'text-gray-900'}`}>{item.name}</span>
+          {inactive && (
+            <span
+              className="text-[9px] font-semibold uppercase tracking-wider bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full flex-shrink-0"
+              title="In the Exited group — toggle this back on from the client's side panel."
+            >
+              Inactive
+            </span>
+          )}
         </div>
       </td>
       <td className="px-4 py-2.5">
@@ -523,6 +547,7 @@ function ClientTable({
   items,
   agentEmailMap,
   searchIndex,
+  clientGroupOverrides,
   onSelectItem,
   sort,
   onSortChange,
@@ -536,6 +561,8 @@ function ClientTable({
   /** Keyed by clientBoardItemId — gives the table the AppDot/Portal value
    *  and the cached contact name for sort/display without re-fetching. */
   searchIndex: Record<string, ClientIndexEntry> | null;
+  /** Per-client group-id overrides — drives the row's 'Inactive' badge. */
+  clientGroupOverrides: Record<string, string>;
   onSelectItem: (item: OnboardingItem) => void;
   sort: SortConfig;
   onSortChange: (next: SortConfig) => void;
@@ -543,6 +570,12 @@ function ClientTable({
    *  Manager filter on the All Clients table). */
   headerExtra?: React.ReactNode;
 }) {
+  const isInactive = (clientBoardItemId: string | null): boolean => {
+    if (!clientBoardItemId) return false;
+    const override = clientGroupOverrides[clientBoardItemId];
+    if (override !== undefined) return override === CLIENT_GROUP_EXITED_ID;
+    return searchIndex?.[clientBoardItemId]?.groupId === CLIENT_GROUP_EXITED_ID;
+  };
   const portalFor = (clientBoardItemId: string | null) =>
     clientBoardItemId ? (searchIndex?.[clientBoardItemId]?.portal ?? '') : '';
 
@@ -601,6 +634,7 @@ function ClientTable({
                   item={item}
                   agentEmail={item.clientBoardItemId ? (agentEmailMap[item.clientBoardItemId] ?? '') : ''}
                   portal={portalFor(item.clientBoardItemId)}
+                  inactive={isInactive(item.clientBoardItemId)}
                   onSelect={() => onSelectItem(item)}
                 />
               ))}
@@ -724,8 +758,10 @@ export function ClientsView({
   onSelectItem,
   currentUserEmail,
   currentUserName,
+  clientGroupOverrides = {},
 }: ClientsViewProps) {
   const [query, setQuery] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
   const me = (currentUserEmail ?? '').toLowerCase();
 
   // Lazily fetch the cross-field search index (legal name, store name,
@@ -815,13 +851,37 @@ export function ClientsView({
     });
   }, [items, query, searchIndex]);
 
+  // Inactive detection — check the override first (set by the side panel
+  // toggle so the table reflects the change without waiting for Monday),
+  // then fall back to the search index.
+  const isInactive = (clientBoardItemId: string | null): boolean => {
+    if (!clientBoardItemId) return false;
+    const override = clientGroupOverrides[clientBoardItemId];
+    if (override !== undefined) return override === CLIENT_GROUP_EXITED_ID;
+    return searchIndex?.[clientBoardItemId]?.groupId === CLIENT_GROUP_EXITED_ID;
+  };
+
+  // Inactive clients are hidden from both tables by default; the "View
+  // inactive clients" toggle in the header brings them back.
+  const visibilityFiltered = useMemo(() => {
+    if (showInactive) return filtered;
+    return filtered.filter(i => !isInactive(i.clientBoardItemId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, showInactive, searchIndex, clientGroupOverrides]);
+
+  const inactiveHiddenCount = useMemo(() => {
+    if (showInactive) return 0;
+    return filtered.filter(i => isInactive(i.clientBoardItemId)).length;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, showInactive, searchIndex, clientGroupOverrides]);
+
   const myClients = useMemo(() => {
     if (!me) return [];
-    return filtered.filter(i => {
+    return visibilityFiltered.filter(i => {
       const agent = i.clientBoardItemId ? (agentEmailMap[i.clientBoardItemId] ?? '').toLowerCase() : '';
       return agent === me;
     });
-  }, [filtered, agentEmailMap, me]);
+  }, [visibilityFiltered, agentEmailMap, me]);
 
   // ── Sort state — independent per table so a rep can leave 'My Clients'
   //    sorted by main contact while reordering 'All Clients' by manager.
@@ -848,16 +908,16 @@ export function ClientsView({
   const [selectedManagers, setSelectedManagers] = useState<Set<string>>(new Set());
 
   const filteredForAll = useMemo(() => {
-    if (selectedManagers.size === 0) return filtered;
-    return filtered.filter(i => {
+    if (selectedManagers.size === 0) return visibilityFiltered;
+    return visibilityFiltered.filter(i => {
       const email = i.clientBoardItemId ? (agentEmailMap[i.clientBoardItemId] ?? '') : '';
       return selectedManagers.has(email || UNASSIGNED_KEY);
     });
-  }, [filtered, selectedManagers, agentEmailMap]);
+  }, [visibilityFiltered, selectedManagers, agentEmailMap]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-gray-50 p-4 gap-3">
-      {/* Sub-header: search */}
+      {/* Sub-header: search + view inactive toggle */}
       <div className="flex items-center gap-3 flex-shrink-0">
         <div className="flex items-center gap-2 text-sm text-gray-700">
           <Users className="w-4 h-4 text-[#015280]" />
@@ -888,6 +948,27 @@ export function ClientsView({
             </p>
           )}
         </div>
+
+        {/* View inactive clients — toggle button. Off by default; turning it
+            on brings inactive (Exited group) clients back into both tables. */}
+        <button
+          type="button"
+          onClick={() => setShowInactive(v => !v)}
+          title={showInactive ? 'Hide inactive (Exited group) clients' : 'Show inactive (Exited group) clients in the lists'}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-colors flex-shrink-0 ${
+            showInactive
+              ? 'border-[#43c7ff] bg-[#e6f8ff] text-[#015280]'
+              : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          {showInactive ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+          {showInactive ? 'Hiding nothing' : 'View inactive clients'}
+          {!showInactive && inactiveHiddenCount > 0 && (
+            <span className="ml-0.5 text-[10px] font-bold bg-gray-200 text-gray-700 rounded-full px-1.5 py-0.5 leading-none">
+              {inactiveHiddenCount}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Two-column layout: stacked client tables on the left, tasks on the right */}
@@ -904,6 +985,7 @@ export function ClientsView({
             items={myClients}
             agentEmailMap={agentEmailMap}
             searchIndex={searchIndex}
+            clientGroupOverrides={clientGroupOverrides}
             onSelectItem={onSelectItem}
             sort={mySort}
             onSortChange={setMySort}
@@ -915,6 +997,7 @@ export function ClientsView({
             items={filteredForAll}
             agentEmailMap={agentEmailMap}
             searchIndex={searchIndex}
+            clientGroupOverrides={clientGroupOverrides}
             onSelectItem={onSelectItem}
             sort={allSort}
             onSortChange={setAllSort}

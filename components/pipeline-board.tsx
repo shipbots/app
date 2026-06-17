@@ -107,6 +107,18 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     setItemOverrides(prev => ({ ...prev, [itemId]: { ...prev[itemId], ...patch } }));
     setSelectedItem(prev => prev && prev.id === itemId ? { ...prev, ...patch } : prev);
   };
+  // Clients-board group overrides — fed by the Active/Inactive toggle in the
+  // detail panel. ClientsView reads these on top of its search index so the
+  // CS tables update instantly without re-fetching.
+  const [clientGroupOverrides, setClientGroupOverrides] = useState<Record<string, string>>({});
+  const handleClientActiveChanged = (clientBoardItemId: string, active: boolean) => {
+    setClientGroupOverrides(prev => ({
+      ...prev,
+      // Empty group → "active" but unspecified group; ClientsView only checks
+      // 'is this id === EXITED' so anything non-EXITED reads as active.
+      [clientBoardItemId]: active ? '' : 'group_mkq09z7j',
+    }));
+  };
 
   useEffect(() => {
     fetch('/api/agent-emails')
@@ -355,6 +367,7 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
             onSelectItem={setSelectedItem}
             currentUserEmail={session?.user?.email ?? null}
             currentUserName={session?.user?.name ?? null}
+            clientGroupOverrides={clientGroupOverrides}
           />
         )}
 
@@ -487,6 +500,7 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
           }
           onItemUpdate={handleItemUpdate}
           onNavigate={newItem => setSelectedItem(newItem)}
+          onClientActiveChanged={handleClientActiveChanged}
         />
       )}
 

@@ -47,7 +47,7 @@ const COLUMN_IDS = [
 ];
 
 type ColumnValue = { id: string; text: string | null };
-type Item = { id: string; name: string; column_values: ColumnValue[] };
+type Item = { id: string; name: string; column_values: ColumnValue[]; group?: { id: string } | null };
 
 export type ClientIndexEntry = {
   id: string;
@@ -66,6 +66,9 @@ export type ClientIndexEntry = {
   contact3Phone: string;
   /** AppDot / Portal dropdown label, e.g. "ShipBots Portal". */
   portal: string;
+  /** Clients-board group id (e.g. group_mkq09z7j == 'Exited'). The UI
+   *  uses this to mark clients inactive without an extra Monday query. */
+  groupId: string;
 };
 
 async function mondayQuery(query: string, variables: Record<string, unknown> | undefined, key: string) {
@@ -99,6 +102,7 @@ function entryFromItem(it: Item): ClientIndexEntry {
     contact3Email: cols['text_mktrt74r'] ?? '',
     contact3Phone: cols['text_mktrw0tb'] ?? '',
     portal:        cols['dropdown_mktrbeyg'] ?? '',
+    groupId:       it.group?.id ?? '',
   };
 }
 
@@ -115,14 +119,14 @@ export async function GET() {
         ? `query ($cursor: String!) {
             next_items_page(cursor: $cursor, limit: 100) {
               cursor
-              items { id name column_values(ids: ${JSON.stringify(COLUMN_IDS)}) { id text } }
+              items { id name group { id } column_values(ids: ${JSON.stringify(COLUMN_IDS)}) { id text } }
             }
           }`
         : `query {
             boards(ids: [${CLIENTS_BOARD_ID}]) {
               items_page(limit: 100) {
                 cursor
-                items { id name column_values(ids: ${JSON.stringify(COLUMN_IDS)}) { id text } }
+                items { id name group { id } column_values(ids: ${JSON.stringify(COLUMN_IDS)}) { id text } }
               }
             }
           }`;

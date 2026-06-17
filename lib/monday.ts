@@ -347,6 +347,7 @@ export async function fetchClientInfo(itemId: string, onboardingItemId?: string)
     items(ids: [${itemId}]) {
       id
       name
+      group { id }
       column_values {
         id
         text
@@ -522,6 +523,7 @@ export async function fetchClientInfo(itemId: string, onboardingItemId?: string)
     supportAgentEmail: cols['dropdown_mkxx7xv'] || '',
     hubspotDealLink: '',
     hubspotDealId: '',
+    groupId: item.group?.id ?? '',
   };
 }
 
@@ -694,6 +696,23 @@ export async function renameItem(
   console.log(`[renameItem] board=${boardId} item=${itemId} name="${newName}"`);
   await mondayQuery(query);
   console.log(`[renameItem] renamed OK`);
+}
+
+// ─── Move a Clients-board item to a different group ─────────────────────────
+// Used by the side panel's Active / Inactive toggle. When a client is
+// marked inactive we move them into CLIENT_GROUP_EXITED; reactivating
+// drops them in CLIENT_GROUP_ACTIVE_DEFAULT.
+export async function moveClientToGroup(itemId: string, groupId: string): Promise<void> {
+  const safeGroup = groupId.replace(/"/g, '\\"');
+  const query = `mutation {
+    move_item_to_group(item_id: ${itemId}, group_id: "${safeGroup}") {
+      id
+      group { id title }
+    }
+  }`;
+  console.log(`[moveClientToGroup] item=${itemId} → group=${groupId}`);
+  await mondayQuery(query);
+  console.log(`[moveClientToGroup] moved OK`);
 }
 
 // ─── Update a field on the Onboarding board ──────────────────────────────────

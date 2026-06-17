@@ -188,6 +188,9 @@ export interface ClientInfo {
   supportAgentEmail: string;
   hubspotDealLink: string;
   hubspotDealId: string;
+  /** Clients-board group id (e.g. group_mkq09z7j = 'Exited'). Drives the
+   *  Active / Inactive toggle in the side panel. */
+  groupId: string;
 }
 
 export interface FirefliesMeeting {

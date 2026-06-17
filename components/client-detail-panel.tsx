@@ -13,7 +13,7 @@ import { TasksTab } from './tasks-tab';
 import { DocumentsTab } from './documents-tab';
 import { ShipHeroPO } from '@/app/api/shiphero-pos/route';
 import { SubItem } from '@/lib/types';
-import { PIPELINE_STAGES, INACTIVE_STATUSES } from '@/lib/constants';
+import { PIPELINE_STAGES, INACTIVE_STATUSES, CLIENT_GROUP_EXITED } from '@/lib/constants';
 import {
   X, FileText, ClipboardList, Video, Mail, ExternalLink,
   Maximize2, Minimize2, UserPlus, ChevronDown, MailWarning, Phone, Package, CheckSquare, RefreshCw, FolderOpen,
@@ -451,6 +451,83 @@ function ClientNavigator({
   );
 }
 
+// ─── Active / Inactive toggle ────────────────────────────────────────────────
+// Green pill when the client is active, grey when inactive. Flipping it
+// moves the Clients-board item between the "Exited" group and the main
+// "Company" group via /api/client/[id]/set-active. Optimistic update with
+// rollback on failure so the rep gets instant feedback.
+function ActiveToggle({
+  clientBoardItemId,
+  initialActive,
+  onChanged,
+}: {
+  clientBoardItemId: string;
+  initialActive: boolean;
+  onChanged?: (active: boolean) => void;
+}) {
+  const [active, setActive] = useState(initialActive);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(false);
+
+  useEffect(() => { setActive(initialActive); }, [initialActive]);
+
+  const toggle = async () => {
+    if (saving) return;
+    const next = !active;
+    setActive(next); // optimistic
+    setSaving(true);
+    setError(false);
+    try {
+      const res = await fetch(`/api/client/${clientBoardItemId}/set-active`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: next }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        console.error(`[ActiveToggle] failed: ${res.status}`, body);
+        throw new Error(`${res.status}`);
+      }
+      onChanged?.(next);
+    } catch (err) {
+      console.error('[ActiveToggle] error', err);
+      setActive(!next); // rollback
+      setError(true);
+      setTimeout(() => setError(false), 3000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={saving}
+      title={active ? 'Click to mark inactive (moves to Exited group)' : 'Click to mark active (moves to Company group)'}
+      className={`inline-flex items-center gap-1.5 pl-1 pr-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition-colors select-none ${
+        active
+          ? 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100'
+          : 'border-gray-300 bg-gray-100 text-gray-600 hover:bg-gray-200'
+      } ${saving ? 'opacity-60 cursor-wait' : ''}`}
+    >
+      <span
+        className={`w-7 h-3.5 rounded-full relative transition-colors ${
+          active ? 'bg-green-500' : 'bg-gray-400'
+        }`}
+        aria-hidden
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 w-2.5 h-2.5 rounded-full bg-white shadow-sm transition-transform ${
+            active ? 'translate-x-3.5' : 'translate-x-0'
+          }`}
+        />
+      </span>
+      {error ? 'Save failed' : active ? 'Active' : 'Inactive'}
+    </button>
+  );
+}
+
 // ─── Main Panel ──────────────────────────────────────────────────────────────
 type AppMode = 'onboarding' | 'customer-service';
 
@@ -472,6 +549,9 @@ interface ClientDetailPanelProps {
    * and lands the user on Client Info by default. Defaults to 'onboarding'.
    */
   appMode?: AppMode;
+  /** Called after the Active/Inactive toggle saves so the parent can update
+   *  its filtered lists without a full server round-trip. */
+  onClientActiveChanged?: (clientBoardItemId: string, active: boolean) => void;
 }
 
 type Tab = 'info' | 'onboarding' | 'meetings' | 'emails' | 'pos' | 'tasks' | 'docs';
@@ -503,7 +583,7 @@ function readPersistedNumber(key: string, fallback: number): number {
   }
 }
 
-export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onItemUpdate, onNavigate, appMode = 'onboarding' }: ClientDetailPanelProps) {
+export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onItemUpdate, onNavigate, appMode = 'onboarding', onClientActiveChanged }: ClientDetailPanelProps) {
   const isCustomerService = appMode === 'customer-service';
   // CS expanded view layout sizes — drag the handles to resize, prefs
   // persist in localStorage so they stick across sessions.
@@ -561,6 +641,10 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
 
   const [activeTab, setActiveTab] = useState<Tab>(isCustomerService ? 'info' : 'onboarding');
   const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null);
+  // Derived from the lazy-loaded client record. Until clientInfo lands we
+  // assume the client is active so the toggle defaults to the common case
+  // and flips correctly once the real groupId arrives.
+  const isInactive = !!clientInfo && clientInfo.groupId === CLIENT_GROUP_EXITED;
   const [meetings, setMeetings] = useState<FirefliesMeeting[]>([]);
   const [emails, setEmails] = useState<GmailThread[]>([]);
   const [emailsError, setEmailsError] = useState<string | null>(null);
@@ -876,7 +960,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
           className="min-w-0 flex flex-col border-r border-gray-200"
           style={{ width: `${leftColPct}%` }}
         >
-          <div className="px-5 py-4 flex-shrink-0">
+          <div className="px-5 py-4 flex-shrink-0 flex items-center gap-3 flex-wrap">
             <ClientNavigator
               currentItem={item}
               items={items}
@@ -884,6 +968,16 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
               nameOverride={displayName !== item.name ? displayName : undefined}
               size="xl"
             />
+            {item.clientBoardItemId && (
+              <ActiveToggle
+                clientBoardItemId={item.clientBoardItemId}
+                initialActive={!isInactive}
+                onChanged={active => {
+                  setClientInfo(prev => prev ? { ...prev, groupId: active ? '' : CLIENT_GROUP_EXITED } : prev);
+                  if (item.clientBoardItemId) onClientActiveChanged?.(item.clientBoardItemId, active);
+                }}
+              />
+            )}
           </div>
           <div className="px-5 pb-3 border-b border-gray-200 flex-shrink-0">
             {tabsRowJsx}
@@ -1049,6 +1143,17 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
                       </span>
                     )}
                   </>
+                )}
+                {/* Active / Inactive toggle (always visible — even in CS mode). */}
+                {item.clientBoardItemId && (
+                  <ActiveToggle
+                    clientBoardItemId={item.clientBoardItemId}
+                    initialActive={!isInactive}
+                    onChanged={active => {
+                      setClientInfo(prev => prev ? { ...prev, groupId: active ? '' : CLIENT_GROUP_EXITED } : prev);
+                      if (item.clientBoardItemId) onClientActiveChanged?.(item.clientBoardItemId, active);
+                    }}
+                  />
                 )}
                 {/* Agent assign (always visible) */}
                 {item.clientBoardItemId && (

@@ -1,6 +1,17 @@
 export const ONBOARDING_BOARD_ID = '6004116565';
 export const CLIENTS_BOARD_ID = '7846251224';
 
+// Groups on the Clients board that the app cares about.
+//   EXITED — the "deactivated" bucket. Items moved here are treated as
+//            inactive everywhere in the UI (hidden by default, shown when
+//            the "View inactive clients" toggle is on).
+//   ACTIVE_DEFAULT — the main bucket clients land in when reactivated from
+//                    the side panel toggle. If your team uses a different
+//                    home group (e.g. CA3PL) you can change this one id and
+//                    the UI follows.
+export const CLIENT_GROUP_EXITED = 'group_mkq09z7j';
+export const CLIENT_GROUP_ACTIVE_DEFAULT = '1731530494_companys___freshdes__1';
+
 // Pipeline columns in order — active (non-deactivated) Monday.com labels only
 export const PIPELINE_STAGES = [
   { status: 'Not Started',                    color: '#cab641', bgColor: '#faf8e8' },
