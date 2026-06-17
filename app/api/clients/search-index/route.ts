@@ -42,6 +42,8 @@ const COLUMN_IDS = [
   'text_mktr4v7q', // Person of Contact 3 Name
   'text_mktrt74r', // Person of Contact 3 Email
   'text_mktrw0tb', // Person of Contact 3 Phone Number
+  // CS browse-by-client portal column (shown in the table, also indexed)
+  'dropdown_mktrbeyg', // AppDot / Portal
 ];
 
 type ColumnValue = { id: string; text: string | null };
@@ -62,6 +64,8 @@ export type ClientIndexEntry = {
   contact3Name: string;
   contact3Email: string;
   contact3Phone: string;
+  /** AppDot / Portal dropdown label, e.g. "ShipBots Portal". */
+  portal: string;
 };
 
 async function mondayQuery(query: string, variables: Record<string, unknown> | undefined, key: string) {
@@ -94,6 +98,7 @@ function entryFromItem(it: Item): ClientIndexEntry {
     contact3Name:  cols['text_mktr4v7q'] ?? '',
     contact3Email: cols['text_mktrt74r'] ?? '',
     contact3Phone: cols['text_mktrw0tb'] ?? '',
+    portal:        cols['dropdown_mktrbeyg'] ?? '',
   };
 }
 

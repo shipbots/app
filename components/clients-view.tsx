@@ -30,7 +30,7 @@ import { OnboardingItem, SubItem, ClientInfo } from '@/lib/types';
 import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search, ChevronsUpDown, ChevronUp, ChevronDown, Filter, X } from 'lucide-react';
 
 // ── Sort config used by both client tables ──────────────────────────────────
-type SortColumn = 'client' | 'manager' | 'contact';
+type SortColumn = 'client' | 'manager' | 'contact' | 'portal';
 type SortDir = 'asc' | 'desc';
 type SortConfig = { column: SortColumn; dir: SortDir };
 
@@ -64,6 +64,8 @@ type ClientIndexEntry = {
   contact3Name: string;
   contact3Email: string;
   contact3Phone: string;
+  /** AppDot / Portal dropdown label — shown as its own table column. */
+  portal: string;
 };
 
 interface ClientsViewProps {
@@ -307,10 +309,13 @@ function ContactCell({
 function ClientRow({
   item,
   agentEmail,
+  portal,
   onSelect,
 }: {
   item: OnboardingItem;
   agentEmail: string;
+  /** AppDot / Portal label from the search index; empty when unknown / not on file. */
+  portal: string;
   onSelect: () => void;
 }) {
   return (
@@ -340,6 +345,15 @@ function ClientRow({
           clientBoardItemId={item.clientBoardItemId}
           clientName={item.name}
         />
+      </td>
+      <td className="px-4 py-2.5">
+        {portal ? (
+          <span className="text-sm text-gray-800 truncate max-w-[220px] inline-block" title={portal}>
+            {portal}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-400 italic">—</span>
+        )}
       </td>
     </tr>
   );
@@ -508,6 +522,7 @@ function ClientTable({
   emptyMessage,
   items,
   agentEmailMap,
+  searchIndex,
   onSelectItem,
   sort,
   onSortChange,
@@ -518,6 +533,9 @@ function ClientTable({
   emptyMessage: string;
   items: OnboardingItem[];
   agentEmailMap: Record<string, string>;
+  /** Keyed by clientBoardItemId — gives the table the AppDot/Portal value
+   *  and the cached contact name for sort/display without re-fetching. */
+  searchIndex: Record<string, ClientIndexEntry> | null;
   onSelectItem: (item: OnboardingItem) => void;
   sort: SortConfig;
   onSortChange: (next: SortConfig) => void;
@@ -525,6 +543,9 @@ function ClientTable({
    *  Manager filter on the All Clients table). */
   headerExtra?: React.ReactNode;
 }) {
+  const portalFor = (clientBoardItemId: string | null) =>
+    clientBoardItemId ? (searchIndex?.[clientBoardItemId]?.portal ?? '') : '';
+
   // Map each item to a tuple of sort keys so we don't recompute strings per
   // comparison call.
   const sorted = useMemo(() => {
@@ -539,10 +560,14 @@ function ClientTable({
       client: item.name ?? '',
       manager: item.clientBoardItemId ? (agentEmailMap[item.clientBoardItemId] ?? '') : '',
       contact: contactNameFor(item.clientBoardItemId),
+      portal: portalFor(item.clientBoardItemId),
     }));
     decorated.sort((a, b) => compareStrings(a[sort.column], b[sort.column], sort.dir));
     return decorated.map(d => d.item);
-  }, [items, sort, agentEmailMap]);
+    // searchIndex is intentionally a dep so a freshly-loaded index re-sorts
+    // by portal value without a manual refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, sort, agentEmailMap, searchIndex]);
 
   return (
     <section className="flex flex-col bg-white border border-gray-200 rounded-xl overflow-hidden flex-1 min-h-0">
@@ -566,6 +591,7 @@ function ClientTable({
                 <SortHeader label="Client" column="client" sort={sort} onChange={onSortChange} />
                 <SortHeader label="Account Manager" column="manager" sort={sort} onChange={onSortChange} />
                 <SortHeader label="Main Contact" column="contact" sort={sort} onChange={onSortChange} />
+                <SortHeader label="AppDot / Portal" column="portal" sort={sort} onChange={onSortChange} />
               </tr>
             </thead>
             <tbody>
@@ -574,6 +600,7 @@ function ClientTable({
                   key={item.id}
                   item={item}
                   agentEmail={item.clientBoardItemId ? (agentEmailMap[item.clientBoardItemId] ?? '') : ''}
+                  portal={portalFor(item.clientBoardItemId)}
                   onSelect={() => onSelectItem(item)}
                 />
               ))}
@@ -876,6 +903,7 @@ export function ClientsView({
             }
             items={myClients}
             agentEmailMap={agentEmailMap}
+            searchIndex={searchIndex}
             onSelectItem={onSelectItem}
             sort={mySort}
             onSortChange={setMySort}
@@ -886,6 +914,7 @@ export function ClientsView({
             emptyMessage={query ? 'No clients match your filter.' : 'No clients found.'}
             items={filteredForAll}
             agentEmailMap={agentEmailMap}
+            searchIndex={searchIndex}
             onSelectItem={onSelectItem}
             sort={allSort}
             onSortChange={setAllSort}
