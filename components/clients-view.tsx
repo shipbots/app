@@ -353,6 +353,15 @@ function ClientRow({
         </div>
       </td>
       <td className="px-4 py-2.5">
+        {portal ? (
+          <span className="text-sm text-gray-800 truncate max-w-[220px] inline-block" title={portal}>
+            {portal}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-400 italic">—</span>
+        )}
+      </td>
+      <td className="px-4 py-2.5">
         {agentEmail ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-gray-100 rounded-full px-2 py-0.5">
             <User className="w-3 h-3 text-gray-400" />
@@ -369,15 +378,6 @@ function ClientRow({
           clientBoardItemId={item.clientBoardItemId}
           clientName={item.name}
         />
-      </td>
-      <td className="px-4 py-2.5">
-        {portal ? (
-          <span className="text-sm text-gray-800 truncate max-w-[220px] inline-block" title={portal}>
-            {portal}
-          </span>
-        ) : (
-          <span className="text-xs text-gray-400 italic">—</span>
-        )}
       </td>
     </tr>
   );
@@ -622,9 +622,9 @@ function ClientTable({
             <thead className="sticky top-0 bg-white border-b border-gray-200 z-10">
               <tr>
                 <SortHeader label="Client" column="client" sort={sort} onChange={onSortChange} />
+                <SortHeader label="AppDot / Portal" column="portal" sort={sort} onChange={onSortChange} />
                 <SortHeader label="Account Manager" column="manager" sort={sort} onChange={onSortChange} />
                 <SortHeader label="Main Contact" column="contact" sort={sort} onChange={onSortChange} />
-                <SortHeader label="AppDot / Portal" column="portal" sort={sort} onChange={onSortChange} />
               </tr>
             </thead>
             <tbody>
