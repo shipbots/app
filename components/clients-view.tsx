@@ -27,7 +27,7 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { OnboardingItem, SubItem, ClientInfo } from '@/lib/types';
-import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search, ChevronsUpDown, ChevronUp, ChevronDown, Filter, X, Eye, EyeOff } from 'lucide-react';
+import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search, ChevronsUpDown, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Filter, X, Eye, EyeOff } from 'lucide-react';
 
 // ── Sort config used by both client tables ──────────────────────────────────
 type SortColumn = 'client' | 'manager' | 'contact' | 'portal';
@@ -91,7 +91,12 @@ interface ClientsViewProps {
 const CLIENT_GROUP_EXITED_ID = 'group_mkq09z7j';
 
 // ── Contact cache (module-level so navigating between tabs reuses it) ────────
-const contactCache: Record<string, Pick<ClientInfo, 'contactName' | 'contactEmail' | 'contactPhone'> | 'loading' | 'error'> = {};
+type ContactRecord = { name: string; email: string; phone: string };
+const contactCache: Record<string, ContactRecord[] | 'loading' | 'error'> = {};
+
+function isEmptyContact(c: ContactRecord): boolean {
+  return !c.name && !c.email && !c.phone;
+}
 
 function useClientContact(clientBoardItemId: string | null, enabled: boolean) {
   const [, force] = useState(0);
@@ -101,14 +106,19 @@ function useClientContact(clientBoardItemId: string | null, enabled: boolean) {
     if (contactCache[clientBoardItemId]) return;
     contactCache[clientBoardItemId] = 'loading';
     force(n => n + 1);
+    // Fallback path — only fires when the search index hasn't seeded the
+    // cache yet. /api/client/[id] only returns the primary contact today,
+    // so this fallback won't include contacts 2 / 3. If you need full
+    // multi-contact data without the index, extend the endpoint.
     fetch(`/api/client/${clientBoardItemId}`)
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`${r.status}`)))
       .then((data: ClientInfo) => {
-        contactCache[clientBoardItemId] = {
-          contactName: data.contactName ?? '',
-          contactEmail: data.contactEmail ?? '',
-          contactPhone: data.contactPhone ?? '',
-        };
+        const contacts: ContactRecord[] = [{
+          name: data.contactName ?? '',
+          email: data.contactEmail ?? '',
+          phone: data.contactPhone ?? '',
+        }];
+        contactCache[clientBoardItemId] = contacts.filter(c => !isEmptyContact(c));
         force(n => n + 1);
       })
       .catch(() => {
@@ -169,7 +179,9 @@ function CopyField({ icon, value, href, label }: { icon: React.ReactNode; value:
   );
 }
 
-// ── Hover card showing the main contact details ─────────────────────────────
+// ── Hover card showing one or more contacts (pageable) ──────────────────────
+const CONTACT_TITLES = ['Main contact', 'Second contact', 'Third contact'];
+
 function ContactHoverCard({
   clientBoardItemId,
   clientName,
@@ -182,7 +194,26 @@ function ContactHoverCard({
   const contact = useClientContact(clientBoardItemId, true);
   const loading = contact === 'loading' || contact === undefined;
   const error = contact === 'error';
-  const data = loading || error ? null : contact;
+  const contacts: ContactRecord[] | null =
+    loading || error ? null : Array.isArray(contact) ? contact : null;
+
+  // Active index — resets when the card opens for a different client so
+  // we don't carry a "page 3" across rows.
+  const [activeIdx, setActiveIdx] = useState(0);
+  useEffect(() => { setActiveIdx(0); }, [clientBoardItemId]);
+
+  const total = contacts?.length ?? 0;
+  const current = contacts && total > 0 ? contacts[Math.min(activeIdx, total - 1)] : null;
+  const title = total > 1 ? CONTACT_TITLES[Math.min(activeIdx, CONTACT_TITLES.length - 1)] : 'Main contact';
+
+  const prev = (e: React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    setActiveIdx(i => (total === 0 ? 0 : (i - 1 + total) % total));
+  };
+  const next = (e: React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    setActiveIdx(i => (total === 0 ? 0 : (i + 1) % total));
+  };
 
   return (
     <div
@@ -197,10 +228,34 @@ function ContactHoverCard({
         <div className="w-7 h-7 rounded-full bg-[#e6f8ff] flex items-center justify-center text-[#015280] flex-shrink-0">
           <User className="w-3.5 h-3.5" />
         </div>
-        <div className="min-w-0">
-          <p className="text-xs text-gray-400 leading-tight">Main contact for</p>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-gray-400 leading-tight">
+            {title} for{total > 1 && <span className="ml-1 text-gray-400">· {activeIdx + 1} of {total}</span>}
+          </p>
           <p className="text-sm font-semibold text-gray-900 truncate">{clientName}</p>
         </div>
+        {total > 1 && (
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            <button
+              type="button"
+              onClick={prev}
+              title="Previous contact"
+              aria-label="Previous contact"
+              className="p-1 rounded hover:bg-gray-100 transition-colors"
+            >
+              <ChevronLeft className="w-3.5 h-3.5 text-gray-500" />
+            </button>
+            <button
+              type="button"
+              onClick={next}
+              title="Next contact"
+              aria-label="Next contact"
+              className="p-1 rounded hover:bg-gray-100 transition-colors"
+            >
+              <ChevronRight className="w-3.5 h-3.5 text-gray-500" />
+            </button>
+          </div>
+        )}
       </div>
 
       {loading && (
@@ -216,26 +271,32 @@ function ContactHoverCard({
         </p>
       )}
 
-      {data && (
+      {!loading && !error && total === 0 && (
+        <p className="text-xs text-gray-400 italic py-3 text-center">
+          No contacts on file
+        </p>
+      )}
+
+      {current && (
         <div className="space-y-0.5">
           <div className="px-2 py-1.5 flex items-center gap-2">
             <User className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-            {data.contactName ? (
-              <span className="text-xs font-medium text-gray-900 truncate">{data.contactName}</span>
+            {current.name ? (
+              <span className="text-xs font-medium text-gray-900 truncate">{current.name}</span>
             ) : (
               <span className="text-xs text-gray-400">No name on file</span>
             )}
           </div>
           <CopyField
             icon={<Mail className="w-3.5 h-3.5" />}
-            value={data.contactEmail}
-            href={data.contactEmail ? `mailto:${data.contactEmail}` : undefined}
+            value={current.email}
+            href={current.email ? `mailto:${current.email}` : undefined}
             label="Email"
           />
           <CopyField
             icon={<Phone className="w-3.5 h-3.5" />}
-            value={data.contactPhone}
-            href={data.contactPhone ? `tel:${data.contactPhone.replace(/[^\d+]/g, '')}` : undefined}
+            value={current.phone}
+            href={current.phone ? `tel:${current.phone.replace(/[^\d+]/g, '')}` : undefined}
             label="Phone"
           />
         </div>
@@ -254,7 +315,10 @@ function ContactCell({
 }) {
   // Pre-warm cached contact so the cell can show the name without hovering.
   const cached = clientBoardItemId ? contactCache[clientBoardItemId] : undefined;
-  const cachedData = cached && cached !== 'loading' && cached !== 'error' ? cached : null;
+  const cachedContacts: ContactRecord[] | null =
+    cached && cached !== 'loading' && cached !== 'error' && Array.isArray(cached) ? cached : null;
+  const cachedPrimary = cachedContacts && cachedContacts.length > 0 ? cachedContacts[0] : null;
+  const extraCount = cachedContacts ? Math.max(0, cachedContacts.length - 1) : 0;
 
   const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
   const cellRef = useRef<HTMLDivElement>(null);
@@ -284,10 +348,15 @@ function ContactCell({
   //   • "No contact" when there's no Clients board link at all (rare; stub).
   const label = (() => {
     if (!clientBoardItemId) return 'No contact';
-    if (cachedData) return cachedData.contactName || 'No name on file';
+    if (cachedPrimary) return cachedPrimary.name || 'No name on file';
+    if (cachedContacts && cachedContacts.length === 0) return 'No contacts on file';
     return 'View contact';
   })();
-  const isPlaceholder = label === 'View contact' || label === 'No name on file' || label === 'No contact';
+  const isPlaceholder =
+    label === 'View contact' ||
+    label === 'No name on file' ||
+    label === 'No contact' ||
+    label === 'No contacts on file';
 
   return (
     <>
@@ -302,6 +371,14 @@ function ContactCell({
         <span className={`text-sm truncate max-w-[220px] ${isPlaceholder ? 'text-gray-400 italic' : 'text-gray-800'}`}>
           {label}
         </span>
+        {extraCount > 0 && (
+          <span
+            className="ml-0.5 text-[10px] font-semibold bg-[#e6f8ff] text-[#015280] rounded-full px-1.5 py-0.5 leading-none"
+            title={`${extraCount} more contact${extraCount > 1 ? 's' : ''} — hover to view`}
+          >
+            +{extraCount}
+          </span>
+        )}
       </div>
       {anchor && clientBoardItemId && (
         <div onMouseEnter={() => { if (hideTimer.current) clearTimeout(hideTimer.current); }} onMouseLeave={hide}>
@@ -585,8 +662,8 @@ function ClientTable({
     const contactNameFor = (clientBoardItemId: string | null) => {
       if (!clientBoardItemId) return '';
       const cached = contactCache[clientBoardItemId];
-      if (!cached || cached === 'loading' || cached === 'error') return '';
-      return cached.contactName ?? '';
+      if (!cached || cached === 'loading' || cached === 'error' || !Array.isArray(cached)) return '';
+      return cached[0]?.name ?? '';
     };
     const decorated = items.map(item => ({
       item,
@@ -780,17 +857,16 @@ export function ClientsView({
         const map: Record<string, ClientIndexEntry> = {};
         for (const r of rows) {
           map[r.id] = r;
-          // Pre-warm the contact hover cache so the cell can show the real
-          // contact name immediately, and hovering doesn't trigger a second
-          // fetch. The full /api/client/{id} payload has extra fields we
-          // don't use here, but contact name/email/phone is everything the
-          // hover card actually renders.
+          // Pre-warm the contact hover cache with all three contacts so
+          // the cell can show the real primary contact immediately and
+          // hovering can page through 2 / 3 without firing a fetch.
           if (!contactCache[r.id]) {
-            contactCache[r.id] = {
-              contactName: r.contactName,
-              contactEmail: r.contactEmail,
-              contactPhone: r.contactPhone,
-            };
+            const contacts: ContactRecord[] = [
+              { name: r.contactName,  email: r.contactEmail,  phone: r.contactPhone  },
+              { name: r.contact2Name, email: r.contact2Email, phone: r.contact2Phone },
+              { name: r.contact3Name, email: r.contact3Email, phone: r.contact3Phone },
+            ].filter(c => !isEmptyContact(c));
+            contactCache[r.id] = contacts;
           }
         }
         setSearchIndex(map);

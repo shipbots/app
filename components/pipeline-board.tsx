@@ -345,14 +345,18 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
               <button onClick={handleRefresh} className="p-2 rounded-lg transition-colors hover:bg-white/10" title="Refresh">
                 <RefreshCw className={`w-4 h-4 text-white/80 ${refreshing ? 'animate-spin' : ''}`} />
               </button>
-              <button onClick={() => setShowAlerts(!showAlerts)} className="relative p-2 rounded-lg hover:bg-white/10 transition-colors">
-                <Bell className="w-4 h-4 text-white/80" />
-                {alerts.length > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                    {alerts.length}
-                  </span>
-                )}
-              </button>
+              {/* Alerts &amp; Action Items — hidden in CS mode (the onboarding
+                  team owns these alerts; CS reps don't action them). */}
+              {!isCustomerService && (
+                <button onClick={() => setShowAlerts(!showAlerts)} className="relative p-2 rounded-lg hover:bg-white/10 transition-colors">
+                  <Bell className="w-4 h-4 text-white/80" />
+                  {alerts.length > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                      {alerts.length}
+                    </span>
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </header>
