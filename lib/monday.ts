@@ -850,6 +850,13 @@ export async function updateSubitem(
      * dropdown option.
      */
     assignees?: string[];
+    /**
+     * Optional Monday "update" (post) to attach to the subitem. We don't
+     * edit existing updates — each non-empty string posts a fresh update,
+     * which is how Monday's UI surfaces note history. Empty / whitespace
+     * strings are ignored.
+     */
+    notes?: string;
   }
 ): Promise<void> {
   // Rename if name provided
@@ -882,6 +889,17 @@ export async function updateSubitem(
     await mondayQuery(`mutation {
       change_multiple_column_values(board_id: ${boardId}, item_id: ${itemId}, column_values: ${colValuesStr}, create_labels_if_missing: true) { id }
     }`);
+  }
+
+  // Post a Monday update (comment-style) when notes are present. Same
+  // approach createSubitem uses — additive, never overwrites prior notes.
+  if (opts.notes?.trim()) {
+    try {
+      const safeBody = opts.notes.trim().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      await mondayQuery(`mutation {
+        create_update(item_id: ${itemId}, body: "${safeBody}") { id }
+      }`);
+    } catch { /* non-fatal: column updates already landed */ }
   }
 }
 

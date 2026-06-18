@@ -17,6 +17,10 @@ export function EditTaskModal({ task, onClose, onSaved }: EditTaskModalProps) {
   const [status, setStatus]     = useState(task.status);
   const [dueDate, setDueDate]   = useState(task.dueDate);
   const [assignees, setAssignees] = useState<string[]>((task.assigneeEmails ?? []).map(e => e.toLowerCase()));
+  // Always-blank on open — each non-empty save posts a *new* Monday update.
+  // We don't fetch the latest update text to pre-fill since the user
+  // typically wants to add context, not overwrite the prior thread.
+  const [notes, setNotes]       = useState('');
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState('');
   const [saved, setSaved]       = useState(false);
@@ -53,6 +57,7 @@ export function EditTaskModal({ task, onClose, onSaved }: EditTaskModalProps) {
           ...(boardInfo.assigneeColumnId
             ? { assigneeColumnId: boardInfo.assigneeColumnId, assignees }
             : {}),
+          ...(notes.trim() ? { notes: notes.trim() } : {}),
         }),
       });
       if (!res.ok) {
@@ -91,11 +96,14 @@ export function EditTaskModal({ task, onClose, onSaved }: EditTaskModalProps) {
         </div>
 
         <div className="px-6 py-5 flex flex-col gap-4">
-          {/* Client (read-only) */}
+          {/* Client (read-only — Monday doesn't support moving a subitem
+              between parents; doing it would require delete + recreate
+              and lose the task's history). */}
           {task.parentItemName && (
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Client</p>
               <p className="text-sm text-gray-700 bg-gray-50 rounded-lg px-3 py-2">{task.parentItemName}</p>
+              <p className="text-[10px] text-gray-400 mt-1 italic">Locked — to move a task to a different client, recreate it there.</p>
             </div>
           )}
 
@@ -170,6 +178,23 @@ export function EditTaskModal({ task, onClose, onSaved }: EditTaskModalProps) {
                 onChange={setAssignees}
               />
             )}
+          </div>
+
+          {/* Notes — additive Monday update on save */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+              Notes <span className="text-gray-300 font-normal normal-case">(optional)</span>
+            </label>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="Add a fresh update to this task…"
+              rows={2}
+              className="w-full px-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#43c7ff] hover:border-[#43c7ff] transition-colors resize-none"
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              Posts as a Monday.com update on the task — doesn&apos;t replace earlier notes.
+            </p>
           </div>
 
           {error && (
