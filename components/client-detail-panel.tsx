@@ -878,8 +878,12 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
             // Force single-column section layout in the CS expanded view
             // (the right half of the panel is sticky notes + metrics).
             fullscreen={fullscreen}
-            forceSingleColumn={isCustomerService && fullscreen}
-            hideHeader={isCustomerService && fullscreen}
+            // Any fullscreen panel uses the 2-column expanded layout (CS or
+            // Onboarding), so the embedded ClientInfoTab forces a single-column
+            // section stack and hides its own name header (the panel renders
+            // a big one above).
+            forceSingleColumn={fullscreen}
+            hideHeader={fullscreen}
             onboardingItemId={item.id}
             deliveredDate={item.deliveredDate}
             inventoryDelivered={item.inventoryDelivered}
@@ -945,17 +949,19 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
     </>
   );
 
-  // ── CS expanded view: 2-column row layout from the very top ─────────────
-  // The sticky-notes column starts at the top of the panel (aligned with
-  // the client name row), not below the tabs. Action icons live in the
-  // top-right corner of the sticky-notes column.
-  if (isCustomerService && fullscreen) {
+  // ── Expanded view: 2-column row layout from the very top ───────────────
+  // Active for both CS and Onboarding when fullscreen. Onboarding mode
+  // additionally renders the pipeline-status / Summary pending / Call
+  // needed / Agent / Monday.com chip row below the big name; CS keeps
+  // that hero clean. Sticky notes + metrics live on the right; action
+  // icons sit in the right column's top-right corner.
+  if (fullscreen) {
     return (
       <div
         ref={expandedRef}
         className={`fixed right-0 top-12 h-[calc(100vh-48px)] z-40 w-full bg-white shadow-2xl flex animate-slide-in border-l border-gray-200 overflow-hidden ${dragKind ? (dragKind === 'col' ? 'cursor-col-resize' : 'cursor-row-resize') : ''}`}
       >
-        {/* Left column: big name → tabs → tab content */}
+        {/* Left column: big name → (onboarding chip row) → tabs → tab content */}
         <div
           className="min-w-0 flex flex-col border-r border-gray-200"
           style={{ width: `${leftColPct}%` }}
@@ -979,6 +985,64 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
               />
             )}
           </div>
+
+          {/* Onboarding chip row — pipeline status pill, Summary pending,
+              Call needed, Agent assign, Monday.com link. Same set of chips
+              the OLD layout shows for onboarding; hidden entirely in CS to
+              keep the hero clean as the user originally asked. The Active
+              toggle is intentionally up next to the name, not duplicated
+              here. */}
+          {!isCustomerService && (
+            <div className="px-5 pb-3 flex items-center gap-2 flex-wrap flex-shrink-0">
+              <StatusPicker
+                itemId={item.id}
+                currentStatus={currentStatus}
+                onChanged={newStatus => {
+                  setCurrentStatus(newStatus);
+                  onStatusChanged?.(item.id, newStatus);
+                }}
+              />
+              {item.checklist.find(s => s.id === 'color_mm27gvc0')?.value?.toLowerCase() !== 'yes' && (
+                <span
+                  title="Onboarding summary email not yet sent"
+                  className="flex items-center gap-1 text-[11px] font-medium text-orange-600 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded-full"
+                >
+                  <MailWarning className="w-3 h-3" />
+                  Summary pending
+                </span>
+              )}
+              {item.checklist.find(s => s.id === 'color_mm278h2v')?.value?.toLowerCase() === 'yes' && (
+                <span
+                  title="Additional call required"
+                  className="flex items-center gap-1 text-[11px] font-medium text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full"
+                >
+                  <Phone className="w-3 h-3" />
+                  Call needed
+                </span>
+              )}
+              {item.clientBoardItemId && (
+                <AgentAssignButton
+                  clientId={item.clientBoardItemId}
+                  currentEmail={agentEmail}
+                  onAssigned={email => {
+                    setAgentEmail(email);
+                    if (clientInfo) setClientInfo({ ...clientInfo, supportAgentEmail: email });
+                    if (item.clientBoardItemId) onAgentAssigned?.(item.clientBoardItemId, email);
+                  }}
+                />
+              )}
+              <a
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs hover:underline flex items-center gap-0.5 font-medium" style={{ color: 'var(--brand-navy)' }}
+              >
+                <ExternalLink className="w-3 h-3" />
+                Monday.com
+              </a>
+            </div>
+          )}
+
           <div className="px-5 pb-3 border-b border-gray-200 flex-shrink-0">
             {tabsRowJsx}
           </div>
