@@ -42,8 +42,9 @@ const COLUMN_IDS = [
   'text_mktr4v7q', // Person of Contact 3 Name
   'text_mktrt74r', // Person of Contact 3 Email
   'text_mktrw0tb', // Person of Contact 3 Phone Number
-  // CS browse-by-client portal column (shown in the table, also indexed)
+  // CS browse-by-client columns (shown in the table, also indexed)
   'dropdown_mktrbeyg', // AppDot / Portal
+  'dropdown_mktxaege', // Warehouse Location
 ];
 
 type ColumnValue = { id: string; text: string | null };
@@ -66,6 +67,8 @@ export type ClientIndexEntry = {
   contact3Phone: string;
   /** AppDot / Portal dropdown label, e.g. "ShipBots Portal". */
   portal: string;
+  /** Warehouse Location dropdown label (dropdown_mktxaege on Clients). */
+  warehouse: string;
   /** Clients-board group id (e.g. group_mkq09z7j == 'Exited'). The UI
    *  uses this to mark clients inactive without an extra Monday query. */
   groupId: string;
@@ -102,6 +105,7 @@ function entryFromItem(it: Item): ClientIndexEntry {
     contact3Email: cols['text_mktrt74r'] ?? '',
     contact3Phone: cols['text_mktrw0tb'] ?? '',
     portal:        cols['dropdown_mktrbeyg'] ?? '',
+    warehouse:     cols['dropdown_mktxaege'] ?? '',
     groupId:       it.group?.id ?? '',
   };
 }

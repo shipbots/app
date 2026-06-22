@@ -30,7 +30,7 @@ import { OnboardingItem, SubItem, ClientInfo } from '@/lib/types';
 import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search, ChevronsUpDown, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Filter, X, Eye, EyeOff } from 'lucide-react';
 
 // ── Sort config used by both client tables ──────────────────────────────────
-type SortColumn = 'client' | 'manager' | 'contact' | 'portal';
+type SortColumn = 'client' | 'manager' | 'contact' | 'portal' | 'warehouse';
 type SortDir = 'asc' | 'desc';
 type SortConfig = { column: SortColumn; dir: SortDir };
 
@@ -66,6 +66,8 @@ type ClientIndexEntry = {
   contact3Phone: string;
   /** AppDot / Portal dropdown label — shown as its own table column. */
   portal: string;
+  /** Warehouse Location dropdown label — shown as its own table column. */
+  warehouse: string;
   /** Clients-board group id — drives the Inactive filter / badge. */
   groupId: string;
 };
@@ -398,6 +400,7 @@ function ClientRow({
   item,
   agentEmail,
   portal,
+  warehouse,
   inactive,
   onSelect,
 }: {
@@ -405,6 +408,8 @@ function ClientRow({
   agentEmail: string;
   /** AppDot / Portal label from the search index; empty when unknown / not on file. */
   portal: string;
+  /** Warehouse Location label; empty when unknown / not on file. */
+  warehouse: string;
   /** True when the client is in the "Exited" group on the Clients board. */
   inactive: boolean;
   onSelect: () => void;
@@ -433,6 +438,15 @@ function ClientRow({
         {portal ? (
           <span className="text-sm text-gray-800 truncate max-w-[220px] inline-block" title={portal}>
             {portal}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-400 italic">—</span>
+        )}
+      </td>
+      <td className="px-4 py-2.5">
+        {warehouse ? (
+          <span className="text-sm text-gray-800 truncate max-w-[200px] inline-block" title={warehouse}>
+            {warehouse}
           </span>
         ) : (
           <span className="text-xs text-gray-400 italic">—</span>
@@ -655,6 +669,8 @@ function ClientTable({
   };
   const portalFor = (clientBoardItemId: string | null) =>
     clientBoardItemId ? (searchIndex?.[clientBoardItemId]?.portal ?? '') : '';
+  const warehouseFor = (clientBoardItemId: string | null) =>
+    clientBoardItemId ? (searchIndex?.[clientBoardItemId]?.warehouse ?? '') : '';
 
   // Map each item to a tuple of sort keys so we don't recompute strings per
   // comparison call.
@@ -671,6 +687,7 @@ function ClientTable({
       manager: item.clientBoardItemId ? (agentEmailMap[item.clientBoardItemId] ?? '') : '',
       contact: contactNameFor(item.clientBoardItemId),
       portal: portalFor(item.clientBoardItemId),
+      warehouse: warehouseFor(item.clientBoardItemId),
     }));
     decorated.sort((a, b) => compareStrings(a[sort.column], b[sort.column], sort.dir));
     return decorated.map(d => d.item);
@@ -700,6 +717,7 @@ function ClientTable({
               <tr>
                 <SortHeader label="Client" column="client" sort={sort} onChange={onSortChange} />
                 <SortHeader label="AppDot / Portal" column="portal" sort={sort} onChange={onSortChange} />
+                <SortHeader label="Warehouse" column="warehouse" sort={sort} onChange={onSortChange} />
                 <SortHeader label="Account Manager" column="manager" sort={sort} onChange={onSortChange} />
                 <SortHeader label="Main Contact" column="contact" sort={sort} onChange={onSortChange} />
               </tr>
@@ -711,6 +729,7 @@ function ClientTable({
                   item={item}
                   agentEmail={item.clientBoardItemId ? (agentEmailMap[item.clientBoardItemId] ?? '') : ''}
                   portal={portalFor(item.clientBoardItemId)}
+                  warehouse={warehouseFor(item.clientBoardItemId)}
                   inactive={isInactive(item.clientBoardItemId)}
                   onSelect={() => onSelectItem(item)}
                 />
