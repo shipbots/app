@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 import { OnboardingItem, CalendarEvent } from '@/lib/types';
 import { ClientCard } from './client-card';
 import { ChevronLeft, ChevronRight, Phone, Package } from 'lucide-react';
@@ -62,13 +62,29 @@ function EventBadge({ event }: { event: CalendarEvent }) {
 
 // ─── Full event card (badge + kanban card) ────────────────────────────────────
 
-function CalendarEventCard({ event, agentEmail, onSelect }: {
+function CalendarEventCard({ event, agentEmail, onSelect, onDragStart, onDragEnd }: {
   event: CalendarEvent;
   agentEmail: string | null;
   onSelect: () => void;
+  /** Fires when the rep starts dragging this card. Only delivery events
+   *  are actually draggable; kickoffs aren't movable from here. */
+  onDragStart?: (event: CalendarEvent) => void;
+  onDragEnd?: () => void;
 }) {
+  const draggable = event.type === 'delivery' && Boolean(event.item.clientBoardItemId);
   return (
-    <div className="mb-2 rounded-lg overflow-hidden shadow-sm">
+    <div
+      className={`mb-2 rounded-lg overflow-hidden shadow-sm ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
+      draggable={draggable}
+      onDragStart={e => {
+        if (!draggable) return;
+        // dataTransfer needs *something* set or some browsers refuse the drag.
+        e.dataTransfer.setData('text/plain', event.id);
+        e.dataTransfer.effectAllowed = 'move';
+        onDragStart?.(event);
+      }}
+      onDragEnd={() => onDragEnd?.()}
+    >
       <EventBadge event={event} />
       <ClientCard item={event.item} agentEmail={agentEmail} onClick={onSelect} />
     </div>
@@ -77,11 +93,16 @@ function CalendarEventCard({ event, agentEmail, onSelect }: {
 
 // ─── Week view ────────────────────────────────────────────────────────────────
 
-function WeekView({ days, events, agentEmailMap, onSelectItem }: {
+function WeekView({ days, events, agentEmailMap, onSelectItem, onDragStart, onDragEnd, onDropOnDay, onDragOverDay, dragOverISO }: {
   days: Date[];
   events: CalendarEvent[];
   agentEmailMap: Record<string, string>;
   onSelectItem: (item: OnboardingItem) => void;
+  onDragStart: (event: CalendarEvent) => void;
+  onDragEnd: () => void;
+  onDropOnDay: (day: Date) => void;
+  onDragOverDay: (day: Date) => void;
+  dragOverISO: string | null;
 }) {
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
 
@@ -125,11 +146,15 @@ function WeekView({ days, events, agentEmailMap, onSelectItem }: {
               .filter(e => isSameDay(parseLocalDate(e.date), day))
               .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
             const isToday = isSameDay(day, today);
+            const iso = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+            const isDragOver = dragOverISO === iso;
             return (
               <div
                 key={i}
-                className={`border-r border-gray-100 last:border-r-0 p-2 ${
-                  isToday ? 'bg-[#e6f8ff]/20' : 'bg-white'
+                onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOverDay(day); }}
+                onDrop={e => { e.preventDefault(); onDropOnDay(day); }}
+                className={`border-r border-gray-100 last:border-r-0 p-2 transition-colors ${
+                  isDragOver ? 'bg-[#43c7ff]/15 border-[#43c7ff]' : isToday ? 'bg-[#e6f8ff]/20' : 'bg-white'
                 }`}
               >
                 {dayEvents.length === 0 ? (
@@ -145,6 +170,8 @@ function WeekView({ days, events, agentEmailMap, onSelectItem }: {
                           : null
                       }
                       onSelect={() => onSelectItem(event.item)}
+                      onDragStart={onDragStart}
+                      onDragEnd={onDragEnd}
                     />
                   ))
                 )}
@@ -159,12 +186,17 @@ function WeekView({ days, events, agentEmailMap, onSelectItem }: {
 
 // ─── Month view ───────────────────────────────────────────────────────────────
 
-function MonthView({ days, currentMonth, events, agentEmailMap, onSelectItem }: {
+function MonthView({ days, currentMonth, events, agentEmailMap, onSelectItem, onDragStart, onDragEnd, onDropOnDay, onDragOverDay, dragOverISO }: {
   days: Date[];
   currentMonth: number;
   events: CalendarEvent[];
   agentEmailMap: Record<string, string>;
   onSelectItem: (item: OnboardingItem) => void;
+  onDragStart: (event: CalendarEvent) => void;
+  onDragEnd: () => void;
+  onDropOnDay: (day: Date) => void;
+  onDragOverDay: (day: Date) => void;
+  dragOverISO: string | null;
 }) {
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
 
@@ -191,12 +223,20 @@ function MonthView({ days, currentMonth, events, agentEmailMap, onSelectItem }: 
             .filter(e => isSameDay(parseLocalDate(e.date), day))
             .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
+          const iso = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+          const isDragOver = dragOverISO === iso;
           return (
             <div
               key={i}
-              className={`border-b border-r border-gray-100 p-1.5 min-h-40 ${
-                isCurrentMonth ? 'bg-white' : 'bg-gray-50/70'
-              } ${i % 7 === 6 ? 'border-r-0' : ''}`}
+              onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOverDay(day); }}
+              onDrop={e => { e.preventDefault(); onDropOnDay(day); }}
+              className={`border-b border-r border-gray-100 p-1.5 min-h-40 transition-colors ${
+                isDragOver
+                  ? 'bg-[#43c7ff]/15'
+                  : isCurrentMonth
+                    ? 'bg-white'
+                    : 'bg-gray-50/70'
+              } ${isDragOver ? 'outline outline-2 -outline-offset-2 outline-[#43c7ff]' : ''} ${i % 7 === 6 ? 'border-r-0' : ''}`}
             >
               {/* Date number */}
               <div className="flex items-center justify-end mb-1 px-0.5">
@@ -222,6 +262,8 @@ function MonthView({ days, currentMonth, events, agentEmailMap, onSelectItem }: 
                       : null
                   }
                   onSelect={() => onSelectItem(event.item)}
+                  onDragStart={onDragStart}
+                  onDragEnd={onDragEnd}
                 />
               ))}
             </div>
@@ -238,9 +280,22 @@ interface CalendarViewProps {
   items: OnboardingItem[];
   agentEmailMap: Record<string, string>;
   onSelectItem: (item: OnboardingItem) => void;
+  /** Optimistic field patch fired after a calendar drop saves to Monday.
+   *  PipelineBoard merges this into itemOverrides so the kanban /
+   *  calendar / side panel all reflect the new date. */
+  onItemUpdate?: (itemId: string, patch: Partial<OnboardingItem>) => void;
 }
 
-export function CalendarView({ items, agentEmailMap, onSelectItem }: CalendarViewProps) {
+type DraggedEvent = { item: OnboardingItem; originalDate: string };
+
+function isoFromDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate }: CalendarViewProps) {
   const [calMode, setCalMode] = useState<'month' | 'week'>('month');
   const [currentDate, setCurrentDate] = useState<Date>(() => {
     const d = new Date();
@@ -318,6 +373,56 @@ export function CalendarView({ items, agentEmailMap, onSelectItem }: CalendarVie
     }
     return days;
   }, [currentDate]);
+
+  // ── Drag-and-drop: move a delivery card to a different day ─────────────
+  // We keep the dragged event in a ref because HTML5 dataTransfer is
+  // string-only; the ref dodges the round-trip. dragOverISO drives the
+  // drop-target highlight.
+  const draggingRef = useRef<DraggedEvent | null>(null);
+  const [dragOverISO, setDragOverISO] = useState<string | null>(null);
+
+  const handleDragStart = useCallback((event: CalendarEvent) => {
+    if (event.type !== 'delivery') return;
+    draggingRef.current = { item: event.item, originalDate: event.date };
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    draggingRef.current = null;
+    setDragOverISO(null);
+  }, []);
+
+  const handleDropOnDay = useCallback(async (day: Date) => {
+    const dragged = draggingRef.current;
+    draggingRef.current = null;
+    setDragOverISO(null);
+    if (!dragged) return;
+    if (!dragged.item.clientBoardItemId) {
+      console.warn('[calendar drop] item has no Clients-board link, cannot save');
+      return;
+    }
+    const newDate = isoFromDate(day);
+    if (newDate === dragged.originalDate) return;
+
+    // Optimistic — push the new date into the parent's itemOverrides so
+    // every consumer (kanban, calendar, side panel) sees it instantly.
+    onItemUpdate?.(dragged.item.id, { estimatedDeliveryDate: newDate });
+
+    try {
+      const res = await fetch(`/api/client/${dragged.item.clientBoardItemId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ columnId: 'date_mktrzhyk', value: newDate, valueType: 'date' }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        console.error(`[calendar drop] save failed: ${res.status}`, body);
+        throw new Error(`${res.status}`);
+      }
+    } catch (err) {
+      console.error('[calendar drop] error, rolling back', err);
+      onItemUpdate?.(dragged.item.id, { estimatedDeliveryDate: dragged.originalDate });
+    }
+  }, [onItemUpdate]);
 
   const label = useMemo(() => {
     if (calMode === 'month') {
@@ -406,6 +511,11 @@ export function CalendarView({ items, agentEmailMap, onSelectItem }: CalendarVie
           events={events}
           agentEmailMap={agentEmailMap}
           onSelectItem={onSelectItem}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDropOnDay={handleDropOnDay}
+          onDragOverDay={day => setDragOverISO(isoFromDate(day))}
+          dragOverISO={dragOverISO}
         />
       ) : (
         <MonthView
@@ -414,6 +524,11 @@ export function CalendarView({ items, agentEmailMap, onSelectItem }: CalendarVie
           events={events}
           agentEmailMap={agentEmailMap}
           onSelectItem={onSelectItem}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDropOnDay={handleDropOnDay}
+          onDragOverDay={day => setDragOverISO(isoFromDate(day))}
+          dragOverISO={dragOverISO}
         />
       )}
     </div>

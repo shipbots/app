@@ -381,6 +381,7 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
             items={effectiveItems}
             agentEmailMap={agentEmailMap}
             onSelectItem={setSelectedItem}
+            onItemUpdate={handleItemUpdate}
           />
         )}
 
