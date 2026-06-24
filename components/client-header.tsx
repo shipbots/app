@@ -295,9 +295,17 @@ function ContactCard({
       isPrimary ? 'border-[#43c7ff] bg-[#f0fbff]/40' : 'border-gray-200 bg-white'
     } ${empty ? 'border-dashed' : ''}`}>
       <div className="flex items-center justify-between mb-1 gap-2">
-        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Contact {slot}</p>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Contact {slot}</p>
+          {isPrimary && hubUser && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-1.5 py-0.5 whitespace-nowrap">
+              <ShieldCheck className="w-2.5 h-2.5" />
+              Hub user
+            </span>
+          )}
+        </div>
         {isPrimary ? (
-          <span className="text-[10px] font-semibold bg-[#015280] text-white px-2 py-0.5 rounded-full inline-flex items-center gap-0.5">
+          <span className="text-[10px] font-semibold bg-[#015280] text-white px-2 py-0.5 rounded-full inline-flex items-center gap-0.5 flex-shrink-0">
             Primary
           </span>
         ) : (
@@ -305,7 +313,7 @@ function ContactCard({
             type="button"
             onClick={() => onMakePrimary(slot as 2 | 3)}
             disabled={empty || promoting !== null}
-            className="text-[10px] font-semibold border border-gray-300 hover:border-[#43c7ff] hover:text-[#015280] text-gray-500 px-2 py-0.5 rounded-full disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
+            className="text-[10px] font-semibold border border-gray-300 hover:border-[#43c7ff] hover:text-[#015280] text-gray-500 px-2 py-0.5 rounded-full disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1 flex-shrink-0"
             title={empty ? 'Add contact info first' : 'Swap with the current primary contact'}
           >
             {promoting === slot ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <ChevronUp className="w-2.5 h-2.5" />}
@@ -314,51 +322,49 @@ function ContactCard({
         )}
       </div>
 
-      <div className="space-y-0.5">
-        <InlineField
-          icon={<User className="w-3 h-3" />}
-          value={data.name}
-          columnId={cols.name}
-          clientId={clientId}
-          placeholder={empty ? 'Add name' : 'No name on file'}
-          onSaved={patch(nameKey)}
-        />
-        {isPrimary && hubUser && (
-          <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-1.5 py-0.5 w-fit">
-            <ShieldCheck className="w-2.5 h-2.5" />
-            Hub user
-          </span>
-        )}
-        <InlineField
-          icon={<Mail className="w-3 h-3" />}
-          value={data.email}
-          columnId={cols.email}
-          clientId={clientId}
-          placeholder={empty ? 'Add email' : 'No email on file'}
-          copyable
-          hrefBuilder={v => `mailto:${v}`}
-          onSaved={patch(emailKey)}
-        />
-        <InlineField
-          icon={<Phone className="w-3 h-3" />}
-          value={data.phone}
-          columnId={cols.phone}
-          clientId={clientId}
-          placeholder={empty ? 'Add phone' : 'No phone on file'}
-          copyable
-          hrefBuilder={v => `tel:${v.replace(/[^\d+]/g, '')}`}
-          onSaved={patch(phoneKey)}
-        />
-        {isPrimary && (
+      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+        <div className="space-y-0.5 min-w-0">
           <InlineField
-            icon={<MapPin className="w-3 h-3" />}
-            value={data.location ?? ''}
-            columnId="text_mktx8q74"
+            icon={<User className="w-3 h-3" />}
+            value={data.name}
+            columnId={cols.name}
             clientId={clientId}
-            placeholder="Add location"
-            onSaved={patch('contactLocation')}
+            placeholder={empty ? 'Add name' : 'No name on file'}
+            onSaved={patch(nameKey)}
           />
-        )}
+          <InlineField
+            icon={<Mail className="w-3 h-3" />}
+            value={data.email}
+            columnId={cols.email}
+            clientId={clientId}
+            placeholder={empty ? 'Add email' : 'No email on file'}
+            copyable
+            hrefBuilder={v => `mailto:${v}`}
+            onSaved={patch(emailKey)}
+          />
+        </div>
+        <div className="space-y-0.5 min-w-0">
+          <InlineField
+            icon={<Phone className="w-3 h-3" />}
+            value={data.phone}
+            columnId={cols.phone}
+            clientId={clientId}
+            placeholder={empty ? 'Add phone' : 'No phone on file'}
+            copyable
+            hrefBuilder={v => `tel:${v.replace(/[^\d+]/g, '')}`}
+            onSaved={patch(phoneKey)}
+          />
+          {isPrimary && (
+            <InlineField
+              icon={<MapPin className="w-3 h-3" />}
+              value={data.location ?? ''}
+              columnId="text_mktx8q74"
+              clientId={clientId}
+              placeholder="Add location"
+              onSaved={patch('contactLocation')}
+            />
+          )}
+        </div>
       </div>
     </section>
   );
@@ -506,23 +512,15 @@ export function ClientHeader({
     }
   }, [client, clientId, onClientChanged]);
 
+  const toggleCollapsed = () => setCollapsed(c => !c);
+
   return (
     <header className="flex-shrink-0 bg-white border-b border-gray-200 px-4 py-2 relative">
-      {/* Row 1: name + Active + chevron · chips · platform · warehouse · actions */}
+      {/* Row 1: name + Active · chips · platform · warehouse · actions */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
           {nameSlot}
           {activeSlot}
-          <button
-            type="button"
-            onClick={() => setCollapsed(c => !c)}
-            title={collapsed ? 'Expand client header' : 'Collapse client header'}
-            className="p-1 rounded hover:bg-gray-100 transition-colors"
-          >
-            {collapsed
-              ? <ChevronDown className="w-4 h-4 text-gray-500" />
-              : <ChevronUp className="w-4 h-4 text-gray-500" />}
-          </button>
         </div>
 
         {chipSlot && (
@@ -542,25 +540,45 @@ export function ClientHeader({
         </div>
       </div>
 
-      {/* Row 2: contact cards (expanded) or compact line (collapsed) */}
+      {/* Row 2: chevron + contact cards (expanded) or compact line (collapsed).
+          The chevron lives on the contacts row's left edge so it's visually
+          tied to what it controls. */}
       {collapsed ? (
-        <div className="mt-1.5">
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            title="Show contacts"
+            className="p-0.5 rounded hover:bg-gray-100 transition-colors flex-shrink-0"
+          >
+            <ChevronDown className="w-4 h-4 text-gray-500" />
+          </button>
           <CollapsedContactLine client={client} />
         </div>
       ) : (
-        <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
-          {[1, 2, 3].map(slot => (
-            <ContactCard
-              key={slot}
-              slot={slot as ContactSlot}
-              client={client}
-              clientId={clientId}
-              hubUser={primaryIsHubUser}
-              onClientChanged={onClientChanged}
-              onMakePrimary={handleMakePrimary}
-              promoting={promoting}
-            />
-          ))}
+        <div className="mt-2 flex items-start gap-1.5">
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            title="Hide contacts"
+            className="px-0.5 pt-1.5 rounded hover:bg-gray-100 transition-colors flex-shrink-0"
+          >
+            <ChevronUp className="w-4 h-4 text-gray-500" />
+          </button>
+          <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-3 gap-2">
+            {[1, 2, 3].map(slot => (
+              <ContactCard
+                key={slot}
+                slot={slot as ContactSlot}
+                client={client}
+                clientId={clientId}
+                hubUser={primaryIsHubUser}
+                onClientChanged={onClientChanged}
+                onMakePrimary={handleMakePrimary}
+                promoting={promoting}
+              />
+            ))}
+          </div>
         </div>
       )}
     </header>
