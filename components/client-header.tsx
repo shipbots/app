@@ -24,8 +24,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ClientInfo } from '@/lib/types';
 import {
-  ChevronDown, ChevronUp, ChevronRight,
-  Mail, Phone, MapPin, Copy, Check, User, UserPlus,
+  ChevronDown, ChevronUp,
+  Mail, Phone, MapPin, Copy, Check, User,
   Box, Warehouse, Pencil, Loader2, ShieldCheck,
   RefreshCw, Minimize2, X,
 } from 'lucide-react';
@@ -291,10 +291,10 @@ function ContactCard({
   const phoneKey: keyof ClientInfo = slot === 1 ? 'contactPhone' : slot === 2 ? 'contact2Phone' : 'contact3Phone';
 
   return (
-    <section className={`flex flex-col rounded-lg border p-3 min-h-[120px] ${
+    <section className={`flex flex-col rounded-lg border p-2 ${
       isPrimary ? 'border-[#43c7ff] bg-[#f0fbff]/40' : 'border-gray-200 bg-white'
     } ${empty ? 'border-dashed' : ''}`}>
-      <div className="flex items-center justify-between mb-1.5 gap-2">
+      <div className="flex items-center justify-between mb-1 gap-2">
         <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Contact {slot}</p>
         {isPrimary ? (
           <span className="text-[10px] font-semibold bg-[#015280] text-white px-2 py-0.5 rounded-full inline-flex items-center gap-0.5">
@@ -314,15 +314,7 @@ function ContactCard({
         )}
       </div>
 
-      {empty && !isPrimary ? (
-        <div className="flex-1 flex flex-col items-center justify-center text-center text-gray-400 italic gap-1.5">
-          <UserPlus className="w-5 h-5 text-gray-300" />
-          <p className="text-[11px]">No contact on file</p>
-          <p className="text-[10px]">Click below to add</p>
-        </div>
-      ) : null}
-
-      <div className="space-y-1">
+      <div className="space-y-0.5">
         <InlineField
           icon={<User className="w-3 h-3" />}
           value={data.name}
@@ -332,7 +324,7 @@ function ContactCard({
           onSaved={patch(nameKey)}
         />
         {isPrimary && hubUser && (
-          <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-1.5 py-0.5">
+          <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-1.5 py-0.5 w-fit">
             <ShieldCheck className="w-2.5 h-2.5" />
             Hub user
           </span>
@@ -357,7 +349,7 @@ function ContactCard({
           hrefBuilder={v => `tel:${v.replace(/[^\d+]/g, '')}`}
           onSaved={patch(phoneKey)}
         />
-        {isPrimary && (data.location || isPrimary) && (
+        {isPrimary && (
           <InlineField
             icon={<MapPin className="w-3 h-3" />}
             value={data.location ?? ''}
@@ -445,6 +437,11 @@ export interface ClientHeaderProps {
   nameSlot: React.ReactNode;
   /** Active/Inactive toggle from the parent (already wired to set-active). */
   activeSlot: React.ReactNode;
+  /** Onboarding chip row — pipeline status pill, Summary pending, Call
+   *  needed, Agent assign, Monday.com link. Renders inline in the top row
+   *  next to the name; the parent passes null in CS mode to keep the
+   *  hero clean. */
+  chipSlot?: React.ReactNode;
   /** Patch the parent's clientInfo state when an inline edit / swap saves. */
   onClientChanged: (patch: Partial<ClientInfo>) => void;
   /** Hub-user lookup result for the primary contact's email. */
@@ -454,7 +451,7 @@ export interface ClientHeaderProps {
 }
 
 export function ClientHeader({
-  client, clientId, nameSlot, activeSlot, onClientChanged, primaryIsHubUser, actionsSlot,
+  client, clientId, nameSlot, activeSlot, chipSlot, onClientChanged, primaryIsHubUser, actionsSlot,
 }: ClientHeaderProps) {
   const [collapsed, setCollapsed] = useState<boolean>(loadCollapsed);
   useEffect(() => { saveCollapsed(collapsed); }, [collapsed]);
@@ -510,10 +507,10 @@ export function ClientHeader({
   }, [client, clientId, onClientChanged]);
 
   return (
-    <header className="flex-shrink-0 bg-white border-b border-gray-200 px-5 py-3 relative">
-      {/* Row 1: name + Active + chevron · platform · warehouse · actions */}
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3 min-w-0">
+    <header className="flex-shrink-0 bg-white border-b border-gray-200 px-4 py-2 relative">
+      {/* Row 1: name + Active + chevron · chips · platform · warehouse · actions */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
           {nameSlot}
           {activeSlot}
           <button
@@ -528,6 +525,12 @@ export function ClientHeader({
           </button>
         </div>
 
+        {chipSlot && (
+          <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+            {chipSlot}
+          </div>
+        )}
+
         <div className="flex items-center gap-2 flex-shrink-0">
           <PlatformPills
             value={client.portalDropdown}
@@ -539,18 +542,13 @@ export function ClientHeader({
         </div>
       </div>
 
-      <p className="text-[10px] text-gray-400 italic mt-1 flex items-center gap-1">
-        <ChevronRight className="w-2.5 h-2.5" />
-        Contact changes auto-sync to Monday.com
-      </p>
-
       {/* Row 2: contact cards (expanded) or compact line (collapsed) */}
       {collapsed ? (
-        <div className="mt-2">
+        <div className="mt-1.5">
           <CollapsedContactLine client={client} />
         </div>
       ) : (
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
           {[1, 2, 3].map(slot => (
             <ContactCard
               key={slot}

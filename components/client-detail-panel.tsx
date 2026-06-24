@@ -1025,6 +1025,60 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
       </div>
     );
 
+    // Onboarding chip row — status pill, Summary pending, Call needed,
+    // Agent assign, Monday.com link. Lives inline in ClientHeader's top
+    // row so the body starts higher. Null in CS mode.
+    const headerChipSlot = !isCustomerService ? (
+      <>
+        <StatusPicker
+          itemId={item.id}
+          currentStatus={currentStatus}
+          onChanged={newStatus => {
+            setCurrentStatus(newStatus);
+            onStatusChanged?.(item.id, newStatus);
+          }}
+        />
+        {item.checklist.find(s => s.id === 'color_mm27gvc0')?.value?.toLowerCase() !== 'yes' && (
+          <span
+            title="Onboarding summary email not yet sent"
+            className="flex items-center gap-1 text-[11px] font-medium text-orange-600 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded-full"
+          >
+            <MailWarning className="w-3 h-3" />
+            Summary pending
+          </span>
+        )}
+        {item.checklist.find(s => s.id === 'color_mm278h2v')?.value?.toLowerCase() === 'yes' && (
+          <span
+            title="Additional call required"
+            className="flex items-center gap-1 text-[11px] font-medium text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full"
+          >
+            <Phone className="w-3 h-3" />
+            Call needed
+          </span>
+        )}
+        {item.clientBoardItemId && (
+          <AgentAssignButton
+            clientId={item.clientBoardItemId}
+            currentEmail={agentEmail}
+            onAssigned={email => {
+              setAgentEmail(email);
+              if (clientInfo) setClientInfo({ ...clientInfo, supportAgentEmail: email });
+              if (item.clientBoardItemId) onAgentAssigned?.(item.clientBoardItemId, email);
+            }}
+          />
+        )}
+        <a
+          href={item.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs hover:underline flex items-center gap-0.5 font-medium" style={{ color: 'var(--brand-navy)' }}
+        >
+          <ExternalLink className="w-3 h-3" />
+          Monday.com
+        </a>
+      </>
+    ) : null;
+
     return (
       <div
         ref={expandedRef}
@@ -1038,6 +1092,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
             clientId={item.clientBoardItemId}
             nameSlot={headerNameSlot}
             activeSlot={headerActiveSlot}
+            chipSlot={headerChipSlot}
             actionsSlot={headerActionsSlot}
             primaryIsHubUser={primaryIsHubUser}
             onClientChanged={patch => {
@@ -1060,67 +1115,14 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
         {/* Below: 2-column body — tabs + content on the left, sticky notes
             + metrics on the right. */}
         <div className={`flex-1 min-h-0 flex overflow-hidden`}>
-        {/* Left column: big name → (onboarding chip row) → tabs → tab content */}
+        {/* Left column: tabs → tab content. The onboarding chip row lives
+            inside ClientHeader now, so the body starts immediately with
+            the tabs. */}
         <div
           className="min-w-0 flex flex-col border-r border-gray-200"
           style={{ width: `${leftColPct}%` }}
         >
-          {/* Onboarding chip row — pipeline status pill, Summary pending,
-              Call needed, Agent assign, Monday.com link. Sits between the
-              new ClientHeader and the tabs row. Hidden in CS mode (the
-              ClientHeader keeps the hero clean there as the user asked). */}
-          {!isCustomerService && (
-            <div className="px-5 pt-3 pb-3 flex items-center gap-2 flex-wrap flex-shrink-0">
-              <StatusPicker
-                itemId={item.id}
-                currentStatus={currentStatus}
-                onChanged={newStatus => {
-                  setCurrentStatus(newStatus);
-                  onStatusChanged?.(item.id, newStatus);
-                }}
-              />
-              {item.checklist.find(s => s.id === 'color_mm27gvc0')?.value?.toLowerCase() !== 'yes' && (
-                <span
-                  title="Onboarding summary email not yet sent"
-                  className="flex items-center gap-1 text-[11px] font-medium text-orange-600 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded-full"
-                >
-                  <MailWarning className="w-3 h-3" />
-                  Summary pending
-                </span>
-              )}
-              {item.checklist.find(s => s.id === 'color_mm278h2v')?.value?.toLowerCase() === 'yes' && (
-                <span
-                  title="Additional call required"
-                  className="flex items-center gap-1 text-[11px] font-medium text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full"
-                >
-                  <Phone className="w-3 h-3" />
-                  Call needed
-                </span>
-              )}
-              {item.clientBoardItemId && (
-                <AgentAssignButton
-                  clientId={item.clientBoardItemId}
-                  currentEmail={agentEmail}
-                  onAssigned={email => {
-                    setAgentEmail(email);
-                    if (clientInfo) setClientInfo({ ...clientInfo, supportAgentEmail: email });
-                    if (item.clientBoardItemId) onAgentAssigned?.(item.clientBoardItemId, email);
-                  }}
-                />
-              )}
-              <a
-                href={item.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs hover:underline flex items-center gap-0.5 font-medium" style={{ color: 'var(--brand-navy)' }}
-              >
-                <ExternalLink className="w-3 h-3" />
-                Monday.com
-              </a>
-            </div>
-          )}
-
-          <div className="px-5 pb-3 border-b border-gray-200 flex-shrink-0">
+          <div className="px-5 pt-3 pb-3 border-b border-gray-200 flex-shrink-0">
             {tabsRowJsx}
           </div>
           <div className="flex-1 overflow-hidden">
