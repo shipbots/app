@@ -13,7 +13,7 @@
 
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
-import { FileSpreadsheet, Sparkles, Loader2 } from 'lucide-react';
+import { FileSpreadsheet, Sparkles, Loader2, Sheet } from 'lucide-react';
 
 // Lazy-load the CSV formatter so the xlsx (~500KB) bundle only ships when
 // the user actually opens that tile. Tiles that haven't been opened never
@@ -35,11 +35,14 @@ interface AppDef {
   id: string;
   label: string;
   description: string;
-  // Solid background color for the icon tile (matches iOS look).
+  // Tailwind gradient classes for the icon tile (iOS-style).
   bg: string;
   iconBg: string;
   icon: React.ComponentType<{ className?: string }>;
-  Component: React.ComponentType<{ onBack: () => void }>;
+  // A tile is either an in-app surface (Component mounts inline) or a
+  // shortcut to an external URL (opens in a new tab). Exactly one is set.
+  Component?: React.ComponentType<{ onBack: () => void }>;
+  externalUrl?: string;
 }
 
 const APPS: AppDef[] = [
@@ -53,16 +56,35 @@ const APPS: AppDef[] = [
     icon: FileSpreadsheet,
     Component: CsvOrderFormatterApp,
   },
+  {
+    id: 'sheet',
+    label: 'SHEET',
+    description: 'Opens the ShipBots Sheet workspace (shipbots.com/sheet) in a new tab.',
+    bg: 'from-emerald-400 to-emerald-700',
+    iconBg: '#047857',
+    icon: Sheet,
+    externalUrl: 'https://www.shipbots.com/sheet',
+  },
 ];
 
 export function MiniAppsView() {
   const [openAppId, setOpenAppId] = useState<string | null>(null);
   const open = APPS.find(a => a.id === openAppId);
 
-  if (open) {
+  if (open?.Component) {
     const App = open.Component;
     return <App onBack={() => setOpenAppId(null)} />;
   }
+
+  const handleTileClick = (app: AppDef) => {
+    if (app.externalUrl) {
+      window.open(app.externalUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (app.Component) {
+      setOpenAppId(app.id);
+    }
+  };
 
   return (
     <div className="h-full overflow-y-auto bg-gray-50">
@@ -84,7 +106,7 @@ export function MiniAppsView() {
               <button
                 key={app.id}
                 type="button"
-                onClick={() => setOpenAppId(app.id)}
+                onClick={() => handleTileClick(app)}
                 className="group flex flex-col items-center gap-1.5 focus:outline-none"
                 title={app.description}
               >
@@ -107,7 +129,7 @@ export function MiniAppsView() {
 
           {/* Placeholder slots so the grid hints at being a real iOS-style
               springboard with room to grow. Disabled, no click. */}
-          {Array.from({ length: 5 }).map((_, i) => (
+          {Array.from({ length: 4 }).map((_, i) => (
             <div key={`ph-${i}`} className="flex flex-col items-center gap-1.5 opacity-30 select-none">
               <div className="w-16 h-16 rounded-[18px] border-2 border-dashed border-gray-300" />
               <p className="text-[11px] text-gray-400">Coming soon</p>
