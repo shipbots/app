@@ -10,8 +10,9 @@ import { ChecklistBarLegend } from './checklist-bar';
 import { CalendarView } from './calendar-view';
 import { TasksView } from './tasks-view';
 import { ClientsView } from './clients-view';
+import { MiniAppsView } from './mini-apps-view';
 import { useSession } from 'next-auth/react';
-import { Search, Bell, RefreshCw, ChevronDown, ChevronRight, LayoutGrid, CalendarDays, CheckSquare, UserPlus, Users } from 'lucide-react';
+import { Search, Bell, RefreshCw, ChevronDown, ChevronRight, LayoutGrid, CalendarDays, CheckSquare, UserPlus, Users, Sparkles } from 'lucide-react';
 import { AddClientModal, CreatedClientResult } from './add-client-modal';
 import { CHECKLIST_STEPS } from '@/lib/constants';
 
@@ -44,7 +45,7 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     // workflow is "look up a client" rather than "see the kanban".
     return isCustomerService ? 'clients' : 'pipeline';
   })();
-  const [viewMode, setViewMode] = useState<'pipeline' | 'calendar' | 'tasks' | 'clients'>(initialView);
+  const [viewMode, setViewMode] = useState<'pipeline' | 'calendar' | 'tasks' | 'clients' | 'apps'>(initialView);
   const [allTasks, setAllTasks] = useState<SubItem[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [tasksFetched, setTasksFetched] = useState(false);
@@ -311,6 +312,23 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
                   <CheckSquare className="w-3.5 h-3.5" />
                   Tasks
                 </button>
+                {isCustomerService && (
+                  <button
+                    onClick={() => setViewMode('apps')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
+                      viewMode === 'apps'
+                        ? 'text-[#015280] font-semibold'
+                        : 'text-white/80 hover:text-white hover:bg-white/10'
+                    }`}
+                    style={{
+                      borderLeft: '1px solid rgba(255,255,255,0.2)',
+                      ...(viewMode === 'apps' ? { background: 'var(--brand-cyan)' } : {}),
+                    }}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Mini Apps
+                  </button>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -397,6 +415,11 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
             onTaskCreated={task => setAllTasks(prev => [task, ...prev])}
             onTaskUpdated={updated => setAllTasks(prev => prev.map(t => t.id === updated.id ? updated : t))}
           />
+        )}
+
+        {/* ── Mini Apps view (Customer Service only) ── */}
+        {viewMode === 'apps' && isCustomerService && (
+          <MiniAppsView />
         )}
 
         {/* ── Pipeline / Kanban view ── */}
