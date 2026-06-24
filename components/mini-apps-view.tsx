@@ -13,7 +13,7 @@
 
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
-import { FileSpreadsheet, Sparkles, Loader2, Sheet } from 'lucide-react';
+import { FileSpreadsheet, Sparkles, Loader2, Sheet, Warehouse } from 'lucide-react';
 
 // Lazy-load the CSV formatter so the xlsx (~500KB) bundle only ships when
 // the user actually opens that tile. Tiles that haven't been opened never
@@ -35,10 +35,16 @@ interface AppDef {
   id: string;
   label: string;
   description: string;
-  // Tailwind gradient classes for the icon tile (iOS-style).
+  // Tailwind gradient classes for the icon tile (iOS-style). Ignored when
+  // iconSrc is set (the image fills the whole tile).
   bg: string;
   iconBg: string;
-  icon: React.ComponentType<{ className?: string }>;
+  // Tile artwork — either a lucide React component drawn over the gradient
+  // or a static image that fills the whole tile. Exactly one is set.
+  icon?: React.ComponentType<{ className?: string }>;
+  iconSrc?: string;
+  // Optional fallback icon used if iconSrc fails to load (image missing).
+  iconFallback?: React.ComponentType<{ className?: string }>;
   // A tile is either an in-app surface (Component mounts inline) or a
   // shortcut to an external URL (opens in a new tab). Exactly one is set.
   Component?: React.ComponentType<{ onBack: () => void }>;
@@ -64,6 +70,16 @@ const APPS: AppDef[] = [
     iconBg: '#047857',
     icon: Sheet,
     externalUrl: 'https://www.shipbots.com/sheet',
+  },
+  {
+    id: 'ship-hero',
+    label: 'Ship Hero',
+    description: 'Opens the ShipHero login (shipbots.com/login) in a new tab.',
+    bg: 'from-gray-100 to-gray-300',
+    iconBg: '#cbd5e1',
+    iconSrc: '/mini-apps/ship-hero.png',
+    iconFallback: Warehouse,
+    externalUrl: 'https://www.shipbots.com/login',
   },
 ];
 
@@ -100,36 +116,13 @@ export function MiniAppsView() {
         </header>
 
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-x-4 gap-y-6">
-          {APPS.map(app => {
-            const Icon = app.icon;
-            return (
-              <button
-                key={app.id}
-                type="button"
-                onClick={() => handleTileClick(app)}
-                className="group flex flex-col items-center gap-1.5 focus:outline-none"
-                title={app.description}
-              >
-                <div
-                  className={`relative w-16 h-16 rounded-[18px] bg-gradient-to-br ${app.bg} text-white flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:-translate-y-0.5 transition-all`}
-                >
-                  <Icon className="w-7 h-7" />
-                </div>
-                <p className="text-[11px] font-medium text-gray-700 text-center leading-tight line-clamp-2 max-w-[88px]">
-                  {app.label}
-                </p>
-                {/* Hover tooltip — uses native title for now (above) plus a
-                    floating description on group-hover for a softer feel. */}
-                <span className="hidden group-hover:block absolute z-20 mt-20 max-w-xs text-[11px] leading-snug text-white bg-gray-900/95 rounded-md px-2.5 py-1.5 shadow-lg pointer-events-none">
-                  {app.description}
-                </span>
-              </button>
-            );
-          })}
+          {APPS.map(app => (
+            <AppTile key={app.id} app={app} onClick={() => handleTileClick(app)} />
+          ))}
 
           {/* Placeholder slots so the grid hints at being a real iOS-style
               springboard with room to grow. Disabled, no click. */}
-          {Array.from({ length: 4 }).map((_, i) => (
+          {Array.from({ length: 3 }).map((_, i) => (
             <div key={`ph-${i}`} className="flex flex-col items-center gap-1.5 opacity-30 select-none">
               <div className="w-16 h-16 rounded-[18px] border-2 border-dashed border-gray-300" />
               <p className="text-[11px] text-gray-400">Coming soon</p>
@@ -138,5 +131,48 @@ export function MiniAppsView() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ── App tile ───────────────────────────────────────────────────────────────
+// Lifted out so we can hold per-tile state (image-load fallback) without
+// polluting MiniAppsView. Renders either a static image (iconSrc) that
+// fills the whole rounded square, or a lucide icon drawn over a gradient.
+function AppTile({ app, onClick }: { app: AppDef; onClick: () => void }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const useImage = !!app.iconSrc && !imgFailed;
+  const FallbackIcon = app.iconFallback ?? app.icon;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex flex-col items-center gap-1.5 focus:outline-none"
+      title={app.description}
+    >
+      <div
+        className={`relative w-16 h-16 rounded-[18px] overflow-hidden flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:-translate-y-0.5 transition-all ${
+          useImage ? 'bg-white' : `bg-gradient-to-br ${app.bg} text-white`
+        }`}
+      >
+        {useImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={app.iconSrc}
+            alt={app.label}
+            onError={() => setImgFailed(true)}
+            className="w-full h-full object-cover"
+          />
+        ) : FallbackIcon ? (
+          <FallbackIcon className="w-7 h-7" />
+        ) : null}
+      </div>
+      <p className="text-[11px] font-medium text-gray-700 text-center leading-tight line-clamp-2 max-w-[88px]">
+        {app.label}
+      </p>
+      <span className="hidden group-hover:block absolute z-20 mt-20 max-w-xs text-[11px] leading-snug text-white bg-gray-900/95 rounded-md px-2.5 py-1.5 shadow-lg pointer-events-none">
+        {app.description}
+      </span>
+    </button>
   );
 }
