@@ -219,6 +219,15 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
   const [delimiters, setDelimiters] = useState<string[]>([',']);
   const [customDelim, setCustomDelim] = useState<string>('');
   const [productSkuMap, setProductSkuMap] = useState<Record<string, string>>({});
+  // When the column strategy is active but some cells still hold multiple
+  // products, the user can opt in to splitting them positionally — each
+  // mapped column (Product Name, SKU, Quantity) gets split with the same
+  // delimiters and zipped, so one row in becomes N rows out.
+  const [columnExpandMulti, setColumnExpandMulti] = useState<boolean>(false);
+  // Default quantity used when the Quantity column isn't mapped. Editable
+  // so the user can confirm or override. Always treated as a string in
+  // the output CSV.
+  const [defaultQuantity, setDefaultQuantity] = useState<string>('1');
   // Prefix used when the user picks Auto-generate for the Order Number
   // column. Empty until the user types something.
   const [autoGenPrefix, setAutoGenPrefix] = useState<string>('');
@@ -243,6 +252,8 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     setDelimiters([',']);
     setCustomDelim('');
     setProductSkuMap({});
+    setColumnExpandMulti(false);
+    setDefaultQuantity('1');
     setAutoGenPrefix('');
   };
 
@@ -342,6 +353,9 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       setDelimiters(detectDelimitersFromCells(sampleCells));
       setCustomDelim('');
       setProductSkuMap({});
+      setColumnExpandMulti(false);
+      // Quantity default stays at whatever the user previously typed,
+      // resetting only on a brand-new upload (handled by reset()).
       setSkuStrategy(
         out.skuConfidence === 'none' && aiProductCol && !aiSkuCol ? 'product-mapping' : 'column',
       );
@@ -405,13 +419,51 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
         const raw = String(row[billingCountryCol] ?? '').trim();
         out['Billing Country Code'] = countryEdits[raw] ?? raw;
       }
-      if (!quantityCol && !out['Quantity']) out['Quantity'] = '1';
+      if (!quantityCol && !out['Quantity']) out['Quantity'] = (defaultQuantity || '1');
       return out;
     };
 
-    // Strategy A: SKU column. One output row per source row.
+    // Strategy A: SKU column.
     if (skuStrategy === 'column') {
-      return sourceRows.map((row, idx) => buildBaseRow(row, idx));
+      // A1. Single product per row — straight passthrough.
+      if (!columnExpandMulti) {
+        return sourceRows.map((row, idx) => buildBaseRow(row, idx));
+      }
+      // A2. Multi-product cells. Split product/SKU/quantity cells with
+      // the active delimiters and zip them positionally. A row whose
+      // product cell has 3 entries becomes 3 output rows sharing all
+      // order-level fields. If the SKU cell has fewer entries (or one),
+      // the last value is repeated; if it has more, the extras are
+      // dropped — same for Quantity.
+      const productCol = mappingEdits['Product Name'];
+      const skuCol = mappingEdits['Product Sku (Required)'];
+      const expanded: Record<string, string>[] = [];
+      sourceRows.forEach((row, idx) => {
+        const base = buildBaseRow(row, idx);
+        const names = productCol
+          ? splitProducts(String(row[productCol] ?? ''), allDelims)
+          : [base['Product Name'] ?? ''];
+        const skus = skuCol
+          ? splitProducts(String(row[skuCol] ?? ''), allDelims)
+          : [];
+        const qtys = quantityCol
+          ? splitProducts(String(row[quantityCol] ?? ''), allDelims)
+          : [];
+        const n = Math.max(names.length || 1, 1);
+        for (let p = 0; p < n; p++) {
+          const lineRow: Record<string, string> = { ...base };
+          lineRow['Product Name'] = names[p] ?? names[names.length - 1] ?? '';
+          lineRow['Product Sku (Required)'] =
+            skus[p] ?? skus[skus.length - 1] ?? '';
+          if (qtys.length > 0) {
+            lineRow['Quantity'] = qtys[p] ?? qtys[qtys.length - 1] ?? (defaultQuantity || '1');
+          } else if (!quantityCol) {
+            lineRow['Quantity'] = defaultQuantity || '1';
+          }
+          expanded.push(lineRow);
+        }
+      });
+      return expanded;
     }
 
     // Strategy B: product → SKU lookup. Each source row's product cell
@@ -436,10 +488,10 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
           'Product Name': name,
           'Product Sku (Required)': sku,
         };
-        // When expanding into multiple lines, quantity defaults to 1 per
-        // product line unless the user explicitly mapped a Quantity column
-        // (in which case all lines share the source-row's quantity).
-        if (!quantityCol) lineRow['Quantity'] = '1';
+        // Per-line quantity. If no Quantity column was mapped, use the
+        // user-confirmed default (1 unless they changed it). If a column
+        // was mapped, all line items inherit the source row's quantity.
+        if (!quantityCol) lineRow['Quantity'] = defaultQuantity || '1';
         expanded.push(lineRow);
       }
     });
@@ -469,6 +521,28 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     if (uniqueProductNames.length === 0) return false;
     return uniqueProductNames.every(n => (productSkuMap[n.toLowerCase()] ?? '').trim() !== '');
   }, [skuStrategy, uniqueProductNames, productSkuMap]);
+
+  // Forecast the number of output rows. Useful preview so the user can
+  // see "12 source rows → 47 output rows" before they download.
+  const projectedOutputRows = useMemo(() => {
+    if (!result) return 0;
+    if (skuStrategy === 'product-mapping') {
+      if (!productNameCol) return sourceRows.length;
+      return sourceRows.reduce((sum, row) => {
+        const names = splitProducts(String(row[productNameCol] ?? ''), allActiveDelims);
+        return sum + Math.max(1, names.length);
+      }, 0);
+    }
+    if (columnExpandMulti) {
+      const productCol = mappingEdits['Product Name'];
+      if (!productCol) return sourceRows.length;
+      return sourceRows.reduce((sum, row) => {
+        const names = splitProducts(String(row[productCol] ?? ''), allActiveDelims);
+        return sum + Math.max(1, names.length);
+      }, 0);
+    }
+    return sourceRows.length;
+  }, [result, skuStrategy, productNameCol, sourceRows, allActiveDelims, columnExpandMulti, mappingEdits]);
 
   // Missing required columns based on current mapping edits. Auto-gen for
   // Order Number counts as "mapped" only if the user has typed a prefix.
@@ -683,6 +757,11 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
               setProductSkuMap={setProductSkuMap}
               uniqueProductNames={uniqueProductNames}
               productMapComplete={productMapComplete}
+              columnExpandMulti={columnExpandMulti}
+              setColumnExpandMulti={setColumnExpandMulti}
+              defaultQuantity={defaultQuantity}
+              setDefaultQuantity={setDefaultQuantity}
+              projectedOutputRows={projectedOutputRows}
               missingRequired={missingRequired}
               canDownload={canDownload}
               onDownload={onDownload}
@@ -707,6 +786,9 @@ function ReviewPanel({
   customDelim, setCustomDelim,
   productSkuMap, setProductSkuMap,
   uniqueProductNames, productMapComplete,
+  columnExpandMulti, setColumnExpandMulti,
+  defaultQuantity, setDefaultQuantity,
+  projectedOutputRows,
   missingRequired, canDownload, onDownload,
 }: {
   result: MapResult;
@@ -734,6 +816,11 @@ function ReviewPanel({
   setProductSkuMap: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   uniqueProductNames: string[];
   productMapComplete: boolean;
+  columnExpandMulti: boolean;
+  setColumnExpandMulti: (b: boolean) => void;
+  defaultQuantity: string;
+  setDefaultQuantity: (s: string) => void;
+  projectedOutputRows: number;
   missingRequired: readonly string[];
   canDownload: boolean;
   onDownload: () => void;
@@ -771,6 +858,11 @@ function ReviewPanel({
             <span className="mx-1.5">·</span>
             {hasHeaders ? 'Row 1 treated as headers' : 'No headers — columns auto-named'}
           </p>
+          {projectedOutputRows !== sourceRows.length && (
+            <p className="text-[11px] text-[#015280] font-semibold mt-0.5">
+              {sourceRows.length} source row{sourceRows.length === 1 ? '' : 's'} → {projectedOutputRows} output row{projectedOutputRows === 1 ? '' : 's'} (multi-product rows are duplicated per line)
+            </p>
+          )}
         </div>
         <button
           onClick={onDownload}
@@ -899,6 +991,63 @@ function ReviewPanel({
               <Check className="w-3.5 h-3.5" />
               {skuConfirmed ? 'SKU confirmed' : 'These are the SKUs'}
             </button>
+
+            {/* Optional multi-product expansion in column strategy */}
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={columnExpandMulti}
+                  onChange={e => setColumnExpandMulti(e.target.checked)}
+                  className="mt-0.5 accent-[#015280]"
+                />
+                <div className="flex-1">
+                  <p className="text-xs font-semibold text-gray-800">
+                    Some rows have multiple products in one cell
+                  </p>
+                  <p className="text-[11px] text-gray-500">
+                    Split product, SKU, and quantity cells by the same delimiters and emit one CSV
+                    row per product. All order-level fields (name, address, etc.) get duplicated.
+                  </p>
+                </div>
+              </label>
+              {columnExpandMulti && (
+                <div className="mt-2 ml-6">
+                  <p className="text-[11px] font-semibold text-gray-600 uppercase tracking-wider mb-1">
+                    Split on
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {CANDIDATE_DELIMS.map(d => {
+                      const on = delimiters.includes(d.key);
+                      return (
+                        <button
+                          key={d.key}
+                          type="button"
+                          onClick={() =>
+                            setDelimiters(prev => prev.includes(d.key) ? prev.filter(x => x !== d.key) : [...prev, d.key])
+                          }
+                          className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border transition-colors ${
+                            on ? 'border-[#43c7ff] bg-[#e6f8ff] text-[#015280]' : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                          }`}
+                        >
+                          {on ? '✓ ' : ''}{d.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] text-gray-600">Custom:</label>
+                    <input
+                      type="text"
+                      value={customDelim}
+                      onChange={e => setCustomDelim(e.target.value)}
+                      placeholder='e.g. " | "'
+                      className="flex-1 max-w-[180px] px-2 py-0.5 text-xs font-mono border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -917,6 +1066,8 @@ function ReviewPanel({
             setProductSkuMap={setProductSkuMap}
             uniqueProductNames={uniqueProductNames}
             productMapComplete={productMapComplete}
+            projectedOutputRows={projectedOutputRows}
+            sourceRowCount={sourceRows.length}
           />
         )}
       </div>
@@ -958,10 +1109,13 @@ function ReviewPanel({
             const isReq = (REQUIRED_COLS as readonly string[]).includes(col);
             const src = mappingEdits[col] ?? '';
             const isOrderRow = col === 'Order Number (Required)';
+            const isQuantityRow = col === 'Quantity';
+            const isSkuRow = col === 'Product Sku (Required)';
             const showAutoGenInput = isOrderRow && src === AUTO_GEN_ORDER_VAL;
+            const showQuantityDefault = isQuantityRow && !src;
             const reqMissing = isReq && (
               !src || (isOrderRow && src === AUTO_GEN_ORDER_VAL && !autoGenPrefix.trim())
-            );
+            ) && !(isSkuRow); // SKU handled by the strategy box above
             return (
               <div key={col} className="grid grid-cols-2 gap-2 items-start text-xs">
                 <span
@@ -1011,6 +1165,23 @@ function ReviewPanel({
                       </p>
                     </div>
                   )}
+                  {showQuantityDefault && (
+                    <div className="border border-[#43c7ff]/30 bg-[#e6f8ff]/30 rounded p-2 flex items-center gap-2">
+                      <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">
+                        Default to
+                      </span>
+                      <input
+                        type="number"
+                        min="1"
+                        value={defaultQuantity}
+                        onChange={e => setDefaultQuantity(e.target.value)}
+                        className="w-16 px-2 py-0.5 text-xs font-mono border border-gray-300 rounded bg-white text-center focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
+                      />
+                      <span className="text-[10px] text-gray-600">
+                        per order line (no Quantity column mapped)
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -1046,6 +1217,7 @@ function ProductMappingPanel({
   customDelim, setCustomDelim,
   productSkuMap, setProductSkuMap,
   uniqueProductNames, productMapComplete,
+  projectedOutputRows, sourceRowCount,
 }: {
   sourceHeaders: string[];
   sourceRows: Record<string, unknown>[];
@@ -1059,6 +1231,8 @@ function ProductMappingPanel({
   setProductSkuMap: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   uniqueProductNames: string[];
   productMapComplete: boolean;
+  projectedOutputRows: number;
+  sourceRowCount: number;
 }) {
   const toggleDelim = (key: string) => {
     setDelimiters(prev => prev.includes(key) ? prev.filter(d => d !== key) : [...prev, key]);
@@ -1151,6 +1325,15 @@ function ProductMappingPanel({
           )}
         </div>
       </div>
+
+      {/* Row-duplication preview — makes the expansion visible */}
+      {projectedOutputRows !== sourceRowCount && (
+        <div className="text-[11px] bg-[#015280]/5 border border-[#015280]/20 rounded p-2 text-[#015280] leading-snug">
+          <span className="font-semibold">{sourceRowCount} source row{sourceRowCount === 1 ? '' : 's'}</span> will be expanded into{' '}
+          <span className="font-semibold">{projectedOutputRows} output row{projectedOutputRows === 1 ? '' : 's'}</span>.
+          Each product becomes its own line — same order number, name, address, and shipping info; only Product Name + SKU change.
+        </div>
+      )}
 
       {/* Product → SKU table */}
       <div>
