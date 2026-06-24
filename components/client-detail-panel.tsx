@@ -646,6 +646,23 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
   // assume the client is active so the toggle defaults to the common case
   // and flips correctly once the real groupId arrives.
   const isInactive = !!clientInfo && clientInfo.groupId === CLIENT_GROUP_EXITED;
+
+  // Hub-user lookup for the primary contact email. Debounced 400ms so
+  // typing in the contact email field doesn't fire a request per keystroke.
+  // Result drives the green 'Hub user' badge on Contact 1 in ClientHeader.
+  const primaryEmail = (clientInfo?.contactEmail ?? '').trim().toLowerCase();
+  const [primaryIsHubUser, setPrimaryIsHubUser] = useState(false);
+  useEffect(() => {
+    if (!primaryEmail) { setPrimaryIsHubUser(false); return; }
+    let cancelled = false;
+    const id = window.setTimeout(() => {
+      fetch(`/api/hub-users/check?email=${encodeURIComponent(primaryEmail)}`)
+        .then(r => r.ok ? r.json() : Promise.reject(new Error(`${r.status}`)))
+        .then((d: { exists?: boolean }) => { if (!cancelled) setPrimaryIsHubUser(Boolean(d.exists)); })
+        .catch(() => { if (!cancelled) setPrimaryIsHubUser(false); });
+    }, 400);
+    return () => { cancelled = true; window.clearTimeout(id); };
+  }, [primaryEmail]);
   const [meetings, setMeetings] = useState<FirefliesMeeting[]>([]);
   const [emails, setEmails] = useState<GmailThread[]>([]);
   const [emailsError, setEmailsError] = useState<string | null>(null);
@@ -1022,7 +1039,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
             nameSlot={headerNameSlot}
             activeSlot={headerActiveSlot}
             actionsSlot={headerActionsSlot}
-            primaryIsHubUser={false /* hub-user lookup is async; v2 wires this in */}
+            primaryIsHubUser={primaryIsHubUser}
             onClientChanged={patch => {
               setClientInfo(prev => prev ? { ...prev, ...patch } : prev);
             }}
