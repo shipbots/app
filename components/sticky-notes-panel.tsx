@@ -15,7 +15,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, X, GripVertical, StickyNote } from 'lucide-react';
+import { Plus, X, GripVertical, StickyNote, Clock } from 'lucide-react';
+import { useSession } from 'next-auth/react';
 
 // ── Palette ─────────────────────────────────────────────────────────────────
 type NoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'purple' | 'orange';
@@ -40,6 +41,12 @@ type StickyNote = {
   color: NoteColor;
   x: number;
   y: number;
+  // v2: provenance + lifecycle. All optional so notes saved before this
+  // version still load without losing data.
+  createdAt?: string;     // ISO timestamp of when the note was first added
+  authorEmail?: string;   // email of the user who added it
+  expiresAt?: string;     // ISO timestamp; on the next hydration, the note
+                          // is pruned if this is in the past.
 };
 
 function genId(): string {
@@ -58,10 +65,60 @@ function loadNotes(clientBoardItemId: string): StickyNote[] {
     const raw = window.localStorage.getItem(storageKey(clientBoardItemId));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(n => n && typeof n.id === 'string') : [];
+    if (!Array.isArray(parsed)) return [];
+    const now = Date.now();
+    // Prune expired notes here so they never reappear after a refresh.
+    // Persistence runs on the next state change, so the localStorage copy
+    // gets cleaned up the next time the user touches anything.
+    return parsed.filter(n => {
+      if (!n || typeof n.id !== 'string') return false;
+      if (n.expiresAt && new Date(n.expiresAt).getTime() <= now) return false;
+      return true;
+    });
   } catch {
     return [];
   }
+}
+
+// First two characters of the email, uppercased. Used as a discrete
+// author tag in the note header. Empty string if no email.
+function initialsOf(email: string | null | undefined): string {
+  return (email ?? '').trim().slice(0, 2).toUpperCase();
+}
+
+// "Jun 23" style short label for the note's createdAt timestamp.
+function shortDate(iso: string | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// "Jun 23, 2026" — used inside the auto-delete settings popover so the
+// user sees the full target date, not just month/day.
+function fullDate(iso: string | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// YYYY-MM-DD in local time — the format <input type="date"> expects.
+function isoDateInput(iso: string | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// Add N days to "now" and serialize as ISO.
+function inDays(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString();
 }
 
 function saveNotes(clientBoardItemId: string, notes: StickyNote[]) {
@@ -86,9 +143,26 @@ function StickyCard({
   onDelete: () => void;
 }) {
   const [colorOpen, setColorOpen] = useState(false);
+  const [expiryOpen, setExpiryOpen] = useState(false);
   const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number } | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  const expiryRef = useRef<HTMLDivElement>(null);
   const styles = COLOR_STYLES[note.color];
+  const dateLabel = shortDate(note.createdAt);
+  const initials = initialsOf(note.authorEmail);
+
+  // Close the expiry popover on outside click so it doesn't sit open if the
+  // user clicks elsewhere.
+  useEffect(() => {
+    if (!expiryOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (expiryRef.current && !expiryRef.current.contains(e.target as Node)) {
+        setExpiryOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [expiryOpen]);
 
   // Drag with raw mouse events — react-dnd / dnd-kit are overkill for one
   // pane of cards. We capture the cursor offset on mousedown, then on
@@ -136,24 +210,36 @@ function StickyCard({
         zIndex: dragOffset ? 30 : 10,
       }}
     >
-      {/* Grip — the drag handle */}
-      <div
-        onMouseDown={onMouseDownDrag}
-        className="absolute top-1 left-1 px-1 py-0.5 rounded cursor-grab active:cursor-grabbing opacity-50 group-hover:opacity-100 transition-opacity"
-        title="Drag to move"
-      >
-        <GripVertical className="w-3 h-3" style={{ color: styles.accent }} />
+      {/* Top header: grip · date · initials · delete. Stays compact so the
+          textarea below keeps roughly the same writing area. */}
+      <div className="absolute top-0 left-0 right-0 h-5 px-1 flex items-center justify-between gap-1">
+        <div
+          onMouseDown={onMouseDownDrag}
+          className="px-1 py-0.5 rounded cursor-grab active:cursor-grabbing opacity-60 group-hover:opacity-100 transition-opacity"
+          title="Drag to move"
+        >
+          <GripVertical className="w-3 h-3" style={{ color: styles.accent }} />
+        </div>
+        {(dateLabel || initials) && (
+          <div
+            className="flex items-center gap-1 text-[9px] font-medium uppercase tracking-wider opacity-70 truncate"
+            style={{ color: styles.accent }}
+            title={`Added ${fullDate(note.createdAt) || '—'}${note.authorEmail ? ` by ${note.authorEmail}` : ''}${note.expiresAt ? ` · auto-deletes ${fullDate(note.expiresAt)}` : ''}`}
+          >
+            {dateLabel && <span>{dateLabel}</span>}
+            {dateLabel && initials && <span className="opacity-50">·</span>}
+            {initials && <span>{initials}</span>}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={onDelete}
+          title="Delete note"
+          className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-black/10 transition-opacity"
+        >
+          <X className="w-3 h-3" style={{ color: styles.accent }} />
+        </button>
       </div>
-
-      {/* Delete */}
-      <button
-        type="button"
-        onClick={onDelete}
-        title="Delete note"
-        className="absolute top-1 right-1 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-black/10 transition-opacity"
-      >
-        <X className="w-3 h-3" style={{ color: styles.accent }} />
-      </button>
 
       {/* Text — autosize-ish textarea */}
       <textarea
@@ -161,15 +247,15 @@ function StickyCard({
         onChange={e => onChange({ ...note, text: e.target.value })}
         placeholder="Write a note…"
         spellCheck
-        className="absolute inset-0 mt-6 mx-2 mb-7 bg-transparent text-sm resize-none focus:outline-none placeholder:italic"
+        className="absolute inset-0 mt-5 mx-2 mb-7 bg-transparent text-sm resize-none focus:outline-none placeholder:italic"
         style={{ color: styles.accent }}
       />
 
-      {/* Color swatch row */}
-      <div className="absolute bottom-1 left-2 right-2 flex items-center gap-1">
-        {colorOpen ? (
-          <div className="flex items-center gap-1">
-            {COLORS.map(c => (
+      {/* Bottom row: color swatch · auto-delete clock */}
+      <div className="absolute bottom-1 left-2 right-2 flex items-center justify-between gap-1">
+        <div className="flex items-center gap-1">
+          {colorOpen ? (
+            COLORS.map(c => (
               <button
                 key={c}
                 type="button"
@@ -179,18 +265,91 @@ function StickyCard({
                 className={`w-4 h-4 rounded-full border transition-transform ${note.color === c ? 'ring-2 ring-offset-1' : 'hover:scale-110'}`}
                 style={{ backgroundColor: COLOR_STYLES[c].bg, borderColor: COLOR_STYLES[c].border }}
               />
-            ))}
-          </div>
-        ) : (
+            ))
+          ) : (
+            <button
+              type="button"
+              onClick={() => setColorOpen(true)}
+              title="Change color"
+              aria-label="Change color"
+              className="w-4 h-4 rounded-full border opacity-60 group-hover:opacity-100 transition-opacity"
+              style={{ backgroundColor: styles.bg, borderColor: styles.border }}
+            />
+          )}
+        </div>
+
+        <div ref={expiryRef} className="relative">
           <button
             type="button"
-            onClick={() => setColorOpen(true)}
-            title="Change color"
-            aria-label="Change color"
-            className="w-4 h-4 rounded-full border opacity-60 group-hover:opacity-100 transition-opacity"
-            style={{ backgroundColor: styles.bg, borderColor: styles.border }}
-          />
-        )}
+            onClick={() => setExpiryOpen(o => !o)}
+            title={note.expiresAt
+              ? `Auto-deletes on ${fullDate(note.expiresAt)} — click to change`
+              : 'Set auto-delete'}
+            aria-label="Auto-delete settings"
+            className={`flex items-center gap-0.5 px-1 py-0.5 rounded transition-opacity hover:bg-black/10 ${
+              note.expiresAt ? 'opacity-90' : 'opacity-50 group-hover:opacity-90'
+            }`}
+            style={{ color: styles.accent }}
+          >
+            <Clock className="w-3 h-3" />
+            {note.expiresAt && (
+              <span className="text-[9px] font-medium">{shortDate(note.expiresAt)}</span>
+            )}
+          </button>
+          {expiryOpen && (
+            <div
+              className="absolute bottom-full right-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg z-40 min-w-[180px] py-1 text-xs"
+              onMouseDown={e => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => { onChange({ ...note, expiresAt: undefined }); setExpiryOpen(false); }}
+                className={`w-full text-left px-3 py-1.5 hover:bg-gray-50 ${!note.expiresAt ? 'font-semibold text-[#015280]' : 'text-gray-700'}`}
+              >
+                Never auto-delete
+              </button>
+              <div className="border-t border-gray-100 my-1" />
+              {[7, 14, 30].map(days => (
+                <button
+                  key={days}
+                  type="button"
+                  onClick={() => { onChange({ ...note, expiresAt: inDays(days) }); setExpiryOpen(false); }}
+                  className="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-gray-700"
+                >
+                  Delete in {days} days
+                </button>
+              ))}
+              <div className="border-t border-gray-100 my-1" />
+              <div className="px-3 py-1.5">
+                <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider block mb-1">
+                  Or on a specific date
+                </label>
+                <input
+                  type="date"
+                  value={isoDateInput(note.expiresAt)}
+                  min={isoDateInput(new Date().toISOString())}
+                  onChange={e => {
+                    if (!e.target.value) return;
+                    // <input type="date"> gives YYYY-MM-DD; new Date(value)
+                    // parses it as UTC midnight, which can land "yesterday"
+                    // in west-of-UTC timezones. Parse parts explicitly so
+                    // "expire on July 1" actually expires after July 1
+                    // local end-of-day.
+                    const [y, m, d] = e.target.value.split('-').map(Number);
+                    const eod = new Date(y, m - 1, d, 23, 59, 59);
+                    onChange({ ...note, expiresAt: eod.toISOString() });
+                  }}
+                  className="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
+                />
+                {note.expiresAt && (
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Auto-deletes {fullDate(note.expiresAt)}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -226,6 +385,8 @@ export function StickyNotesPanel({
   const [notes, setNotes] = useState<StickyNote[]>([]);
   const [loaded, setLoaded] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const { data: session } = useSession();
+  const authorEmail = session?.user?.email ?? '';
 
   // Hydrate from localStorage on client mount + when switching clients.
   useEffect(() => {
@@ -251,9 +412,11 @@ export function StickyNotesPanel({
         color: COLORS[i % COLORS.length],
         x: 12 + (i % 4) * 24,
         y: 12 + (i % 4) * 24,
+        createdAt: new Date().toISOString(),
+        authorEmail,
       },
     ]);
-  }, [notes.length]);
+  }, [notes.length, authorEmail]);
 
   const updateNote = useCallback((next: StickyNote) => {
     setNotes(prev => prev.map(n => (n.id === next.id ? next : n)));
