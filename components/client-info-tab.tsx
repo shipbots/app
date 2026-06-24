@@ -21,6 +21,10 @@ interface ClientInfoTabProps {
   forceSingleColumn?: boolean;
   /** Hide the editable client-name header (parent renders it large). */
   hideHeader?: boolean;
+  /** Hide the Contact Info section — the expanded view's ClientHeader
+   *  already shows all three contacts above the body, so duplicating
+   *  the Section here would only repeat the same data. */
+  hideContactInfo?: boolean;
   onboardingItemId?: string;
   /** deliveredDate from the Onboarding board (date__1 column) */
   deliveredDate?: string | null;
@@ -1077,7 +1081,7 @@ function FileField({
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
-export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, hideHeader = false, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange, onDeliveredDateSaved, onEstimatedDeliveryDateSaved }: ClientInfoTabProps) {
+export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, hideHeader = false, hideContactInfo = false, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange, onDeliveredDateSaved, onEstimatedDeliveryDateSaved }: ClientInfoTabProps) {
   // The "two-column-per-section" layout is the standard fullscreen treatment
   // when the panel is the only thing on screen. The CS expanded view sets
   // forceSingleColumn so the right half of the screen can host its own
@@ -1455,7 +1459,8 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
         </div>
       </Section>
 
-      {/* ── Contact Info ── */}
+      {/* ── Contact Info ── (hidden when the parent ClientHeader renders contacts at the top) */}
+      {!hideContactInfo && (
       <Section title="Contact Info">
         <ContactBlock
           label="👤 Primary Contact"
@@ -1499,6 +1504,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
           swapping={swappingContact === 3}
         />
       </Section>
+      )}
 
       {/* ── Receiving ── */}
       <Section title="Receiving">

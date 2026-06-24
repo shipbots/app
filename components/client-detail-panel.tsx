@@ -5,6 +5,7 @@ import { OnboardingItem, ClientInfo, FirefliesMeeting, GmailThread } from '@/lib
 import { StatusBadge } from './status-badge';
 import { ClientInfoTab } from './client-info-tab';
 import { StickyNotesPanel } from './sticky-notes-panel';
+import { ClientHeader } from './client-header';
 import { OnboardingTab } from './onboarding-tab';
 import { MeetingsTab } from './meetings-tab';
 import { EmailsTab } from './emails-tab';
@@ -884,6 +885,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
             // a big one above).
             forceSingleColumn={fullscreen}
             hideHeader={fullscreen}
+            hideContactInfo={fullscreen}
             onboardingItemId={item.id}
             deliveredDate={item.deliveredDate}
             inventoryDelivered={item.inventoryDelivered}
@@ -949,51 +951,109 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
     </>
   );
 
-  // ── Expanded view: 2-column row layout from the very top ───────────────
-  // Active for both CS and Onboarding when fullscreen. Onboarding mode
-  // additionally renders the pipeline-status / Summary pending / Call
-  // needed / Agent / Monday.com chip row below the big name; CS keeps
-  // that hero clean. Sticky notes + metrics live on the right; action
-  // icons sit in the right column's top-right corner.
+  // ── Expanded view: full-width client header + 2-column body ────────────
+  // ClientHeader spans across the top with name + Active + Platform +
+  // Warehouse and three contact cards. The body below is a 2-column split:
+  // tabs + tab content on the left, sticky notes + metrics on the right.
+  // Onboarding mode additionally renders the pipeline-status / Summary
+  // pending / Call needed / Agent / Monday.com chip row between the
+  // ClientHeader and the tab row.
   if (fullscreen) {
+    // Build the slot JSX for ClientHeader. Done as locals so the header
+    // doesn't need to know about ClientNavigator / ActiveToggle internals.
+    const headerNameSlot = (
+      <ClientNavigator
+        currentItem={item}
+        items={items}
+        onNavigate={onNavigate ?? (() => {})}
+        nameOverride={displayName !== item.name ? displayName : undefined}
+        size="xl"
+      />
+    );
+    const headerActiveSlot = item.clientBoardItemId ? (
+      <ActiveToggle
+        clientBoardItemId={item.clientBoardItemId}
+        initialActive={!isInactive}
+        onChanged={active => {
+          setClientInfo(prev => prev ? { ...prev, groupId: active ? '' : CLIENT_GROUP_EXITED } : prev);
+          if (item.clientBoardItemId) onClientActiveChanged?.(item.clientBoardItemId, active);
+        }}
+      />
+    ) : null;
+    const headerActionsSlot = (
+      <div className="flex items-center gap-1">
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing || loadingClient}
+          className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+          title="Refresh client data"
+        >
+          <RefreshCw className={`w-4 h-4 text-gray-500 ${refreshing || loadingClient ? 'animate-spin' : ''}`} />
+        </button>
+        <button
+          onClick={() => setFullscreen(f => !f)}
+          className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+          title="Exit fullscreen"
+        >
+          <Minimize2 className="w-4 h-4 text-gray-500" />
+        </button>
+        <button
+          onClick={onClose}
+          className="flex items-center gap-1 px-2 py-1.5 hover:bg-red-50 hover:text-red-500 text-gray-500 rounded-lg transition-colors text-xs font-medium"
+          title="Close panel (Esc)"
+        >
+          <X className="w-4 h-4" />
+          Close
+        </button>
+      </div>
+    );
+
     return (
       <div
         ref={expandedRef}
-        className={`fixed right-0 top-12 h-[calc(100vh-48px)] z-40 w-full bg-white shadow-2xl flex animate-slide-in border-l border-gray-200 overflow-hidden ${dragKind ? (dragKind === 'col' ? 'cursor-col-resize' : 'cursor-row-resize') : ''}`}
+        className={`fixed right-0 top-12 h-[calc(100vh-48px)] z-40 w-full bg-white shadow-2xl flex flex-col animate-slide-in border-l border-gray-200 overflow-hidden ${dragKind ? (dragKind === 'col' ? 'cursor-col-resize' : 'cursor-row-resize') : ''}`}
       >
+        {/* ClientHeader — only renders when we have clientInfo loaded so we
+            don't churn the layout while it's still fetching. */}
+        {clientInfo && item.clientBoardItemId && (
+          <ClientHeader
+            client={clientInfo}
+            clientId={item.clientBoardItemId}
+            nameSlot={headerNameSlot}
+            activeSlot={headerActiveSlot}
+            actionsSlot={headerActionsSlot}
+            primaryIsHubUser={false /* hub-user lookup is async; v2 wires this in */}
+            onClientChanged={patch => {
+              setClientInfo(prev => prev ? { ...prev, ...patch } : prev);
+            }}
+          />
+        )}
+
+        {/* If clientInfo hasn't landed yet, render a minimal name row so the
+            user still sees who they opened and can hit the action buttons. */}
+        {!clientInfo && (
+          <header className="flex-shrink-0 bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between gap-3">
+            {headerNameSlot}
+            <div className="flex items-center gap-2">
+              {headerActionsSlot}
+            </div>
+          </header>
+        )}
+
+        {/* Below: 2-column body — tabs + content on the left, sticky notes
+            + metrics on the right. */}
+        <div className={`flex-1 min-h-0 flex overflow-hidden`}>
         {/* Left column: big name → (onboarding chip row) → tabs → tab content */}
         <div
           className="min-w-0 flex flex-col border-r border-gray-200"
           style={{ width: `${leftColPct}%` }}
         >
-          <div className="px-5 py-4 flex-shrink-0 flex items-center gap-3 flex-wrap">
-            <ClientNavigator
-              currentItem={item}
-              items={items}
-              onNavigate={onNavigate ?? (() => {})}
-              nameOverride={displayName !== item.name ? displayName : undefined}
-              size="xl"
-            />
-            {item.clientBoardItemId && (
-              <ActiveToggle
-                clientBoardItemId={item.clientBoardItemId}
-                initialActive={!isInactive}
-                onChanged={active => {
-                  setClientInfo(prev => prev ? { ...prev, groupId: active ? '' : CLIENT_GROUP_EXITED } : prev);
-                  if (item.clientBoardItemId) onClientActiveChanged?.(item.clientBoardItemId, active);
-                }}
-              />
-            )}
-          </div>
-
           {/* Onboarding chip row — pipeline status pill, Summary pending,
-              Call needed, Agent assign, Monday.com link. Same set of chips
-              the OLD layout shows for onboarding; hidden entirely in CS to
-              keep the hero clean as the user originally asked. The Active
-              toggle is intentionally up next to the name, not duplicated
-              here. */}
+              Call needed, Agent assign, Monday.com link. Sits between the
+              new ClientHeader and the tabs row. Hidden in CS mode (the
+              ClientHeader keeps the hero clean there as the user asked). */}
           {!isCustomerService && (
-            <div className="px-5 pb-3 flex items-center gap-2 flex-wrap flex-shrink-0">
+            <div className="px-5 pt-3 pb-3 flex items-center gap-2 flex-wrap flex-shrink-0">
               <StatusPicker
                 itemId={item.id}
                 currentStatus={currentStatus}
@@ -1066,33 +1126,6 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
           ref={rightColRef}
           className="flex-1 min-w-0 flex flex-col gap-4 p-5 bg-gray-50 relative overflow-y-auto"
         >
-          {/* Action icons — anchored to the top-right of the panel. */}
-          <div className="absolute top-3 right-3 z-50 flex items-center gap-1 bg-white/80 backdrop-blur-sm border border-gray-200 rounded-lg shadow-sm">
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing || loadingClient}
-              className="p-1.5 hover:bg-gray-100 rounded-l-lg transition-colors disabled:opacity-50"
-              title="Refresh client data"
-            >
-              <RefreshCw className={`w-4 h-4 text-gray-500 ${refreshing || loadingClient ? 'animate-spin' : ''}`} />
-            </button>
-            <button
-              onClick={() => setFullscreen(f => !f)}
-              className="p-1.5 hover:bg-gray-100 transition-colors"
-              title="Exit fullscreen"
-            >
-              <Minimize2 className="w-4 h-4 text-gray-500" />
-            </button>
-            <button
-              onClick={onClose}
-              className="flex items-center gap-1 px-2 py-1.5 hover:bg-red-50 hover:text-red-500 text-gray-500 rounded-r-lg transition-colors text-xs font-medium"
-              title="Close panel (Esc)"
-            >
-              <X className="w-4 h-4" />
-              Close
-            </button>
-          </div>
-
           <div
             className="flex-shrink-0"
             style={{ height: stickyHeight }}
@@ -1130,6 +1163,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
               </p>
             </div>
           </section>
+        </div>
         </div>
       </div>
     );
