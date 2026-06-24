@@ -124,24 +124,66 @@ function splitProducts(cell: string, delimiters: string[]): string[] {
   return v.split(re).map(s => s.trim()).filter(Boolean);
 }
 
-// Walk every source row's product cell and collect the unique product
-// names. Sorted alphabetically for stable UI; deduplication is case-
-// insensitive but we keep the first-seen casing for display.
+// Walk every source row's product cells (one OR many columns) and
+// collect the unique product names. Sorted alphabetically for stable
+// UI; deduplication is case-insensitive but we keep the first-seen
+// casing for display.
 function uniqueProducts(
   rows: Record<string, unknown>[],
-  productCol: string,
+  productCols: string[],
   delimiters: string[],
 ): string[] {
-  if (!productCol) return [];
+  if (productCols.length === 0) return [];
   const seen = new Map<string, string>(); // lower → original
   for (const row of rows) {
-    const cell = String(row[productCol] ?? '');
+    for (const col of productCols) {
+      const cell = String(row[col] ?? '');
+      for (const name of splitProducts(cell, delimiters)) {
+        const key = name.toLowerCase();
+        if (!seen.has(key)) seen.set(key, name);
+      }
+    }
+  }
+  return Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
+}
+
+// Distinct sample values from a single column, in row order. Used in
+// the column picker so users can see what each column contains before
+// they check it.
+function previewValuesForColumn(
+  rows: Record<string, unknown>[],
+  col: string,
+  limit = 3,
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const row of rows) {
+    if (out.length >= limit) break;
+    const v = String(row[col] ?? '').trim();
+    if (!v || seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
+}
+
+// Per-row dedup of every product name across the selected columns. Used
+// by both the row generator and the projected-output-rows preview.
+function rowProductNames(
+  row: Record<string, unknown>,
+  cols: string[],
+  delimiters: string[],
+): string[] {
+  if (cols.length === 0) return [];
+  const seen = new Map<string, string>();
+  for (const col of cols) {
+    const cell = String(row[col] ?? '');
     for (const name of splitProducts(cell, delimiters)) {
       const key = name.toLowerCase();
       if (!seen.has(key)) seen.set(key, name);
     }
   }
-  return Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
+  return Array.from(seen.values());
 }
 
 // Look at a sample of the product-column cells and suggest which of the
@@ -215,7 +257,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
   // source only has product names, ask the user to assign a SKU per
   // unique product (multi-product cells get expanded into line items).
   const [skuStrategy, setSkuStrategy] = useState<SkuStrategy>('column');
-  const [productNameCol, setProductNameCol] = useState<string>('');
+  const [productNameCols, setProductNameCols] = useState<string[]>([]);
   const [delimiters, setDelimiters] = useState<string[]>([',']);
   const [customDelim, setCustomDelim] = useState<string>('');
   const [productSkuMap, setProductSkuMap] = useState<Record<string, string>>({});
@@ -248,7 +290,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     setCountryEdits({});
     setSkuConfirmed(false);
     setSkuStrategy('column');
-    setProductNameCol('');
+    setProductNameCols([]);
     setDelimiters([',']);
     setCustomDelim('');
     setProductSkuMap({});
@@ -346,7 +388,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       // the right surface without a click.
       const aiProductCol = out.columnMapping['Product Name'] || '';
       const aiSkuCol = out.columnMapping['Product Sku (Required)'] || '';
-      setProductNameCol(aiProductCol);
+      setProductNameCols(aiProductCol ? [aiProductCol] : []);
       const sampleCells = aiProductCol
         ? dataRows.slice(0, 20).map(r => String(r[aiProductCol] ?? ''))
         : [];
@@ -466,16 +508,15 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       return expanded;
     }
 
-    // Strategy B: product → SKU lookup. Each source row's product cell
-    // is split into N products and we emit one output row per product,
-    // sharing the order info but with the product's name + SKU
-    // substituted in. Unknown products keep the name and leave SKU blank
-    // so the user can spot them in the output.
+    // Strategy B: product → SKU lookup. Each source row's product cells
+    // (one or more selected columns) are split into N products and we
+    // emit one output row per product, sharing the order info but with
+    // the product's name + SKU substituted in. Unknown products keep the
+    // name and leave SKU blank so the user can spot them in the output.
     const expanded: Record<string, string>[] = [];
     sourceRows.forEach((row, idx) => {
       const base = buildBaseRow(row, idx);
-      const cell = productNameCol ? String(row[productNameCol] ?? '').trim() : '';
-      const names = splitProducts(cell, allDelims);
+      const names = rowProductNames(row, productNameCols, allDelims);
       if (names.length === 0) {
         // No products on this row — keep the order line but blank product fields.
         expanded.push({ ...base, 'Product Name': '', 'Product Sku (Required)': '' });
@@ -513,8 +554,8 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     [delimiters, customDelim],
   );
   const uniqueProductNames = useMemo(
-    () => (skuStrategy === 'product-mapping' ? uniqueProducts(sourceRows, productNameCol, allActiveDelims) : []),
-    [skuStrategy, sourceRows, productNameCol, allActiveDelims],
+    () => (skuStrategy === 'product-mapping' ? uniqueProducts(sourceRows, productNameCols, allActiveDelims) : []),
+    [skuStrategy, sourceRows, productNameCols, allActiveDelims],
   );
   const productMapComplete = useMemo(() => {
     if (skuStrategy !== 'product-mapping') return false;
@@ -527,9 +568,9 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
   const projectedOutputRows = useMemo(() => {
     if (!result) return 0;
     if (skuStrategy === 'product-mapping') {
-      if (!productNameCol) return sourceRows.length;
+      if (productNameCols.length === 0) return sourceRows.length;
       return sourceRows.reduce((sum, row) => {
-        const names = splitProducts(String(row[productNameCol] ?? ''), allActiveDelims);
+        const names = rowProductNames(row, productNameCols, allActiveDelims);
         return sum + Math.max(1, names.length);
       }, 0);
     }
@@ -747,8 +788,8 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
               setAutoGenPrefix={setAutoGenPrefix}
               skuStrategy={skuStrategy}
               setSkuStrategy={setSkuStrategy}
-              productNameCol={productNameCol}
-              setProductNameCol={setProductNameCol}
+              productNameCols={productNameCols}
+              setProductNameCols={setProductNameCols}
               delimiters={delimiters}
               setDelimiters={setDelimiters}
               customDelim={customDelim}
@@ -781,7 +822,7 @@ function ReviewPanel({
   skuConfirmed, setSkuConfirmed,
   autoGenPrefix, setAutoGenPrefix,
   skuStrategy, setSkuStrategy,
-  productNameCol, setProductNameCol,
+  productNameCols, setProductNameCols,
   delimiters, setDelimiters,
   customDelim, setCustomDelim,
   productSkuMap, setProductSkuMap,
@@ -806,8 +847,8 @@ function ReviewPanel({
   setAutoGenPrefix: (s: string) => void;
   skuStrategy: SkuStrategy;
   setSkuStrategy: (s: SkuStrategy) => void;
-  productNameCol: string;
-  setProductNameCol: (s: string) => void;
+  productNameCols: string[];
+  setProductNameCols: React.Dispatch<React.SetStateAction<string[]>>;
   delimiters: string[];
   setDelimiters: React.Dispatch<React.SetStateAction<string[]>>;
   customDelim: string;
@@ -1056,8 +1097,8 @@ function ReviewPanel({
           <ProductMappingPanel
             sourceHeaders={sourceHeaders}
             sourceRows={sourceRows}
-            productNameCol={productNameCol}
-            setProductNameCol={setProductNameCol}
+            productNameCols={productNameCols}
+            setProductNameCols={setProductNameCols}
             delimiters={delimiters}
             setDelimiters={setDelimiters}
             customDelim={customDelim}
@@ -1212,7 +1253,7 @@ function ReviewPanel({
 // products separated by commas, &, or +.
 function ProductMappingPanel({
   sourceHeaders, sourceRows,
-  productNameCol, setProductNameCol,
+  productNameCols, setProductNameCols,
   delimiters, setDelimiters,
   customDelim, setCustomDelim,
   productSkuMap, setProductSkuMap,
@@ -1221,8 +1262,8 @@ function ProductMappingPanel({
 }: {
   sourceHeaders: string[];
   sourceRows: Record<string, unknown>[];
-  productNameCol: string;
-  setProductNameCol: (s: string) => void;
+  productNameCols: string[];
+  setProductNameCols: React.Dispatch<React.SetStateAction<string[]>>;
   delimiters: string[];
   setDelimiters: React.Dispatch<React.SetStateAction<string[]>>;
   customDelim: string;
@@ -1241,42 +1282,58 @@ function ProductMappingPanel({
     const key = name.toLowerCase();
     setProductSkuMap(prev => ({ ...prev, [key]: sku }));
   };
-  // Show a couple of raw source cells so the user can see what they're
-  // splitting on — handy when the file mixes commas and pluses.
-  const sampleCells = productNameCol
-    ? sourceRows.slice(0, 3).map(r => String(r[productNameCol] ?? '').trim()).filter(Boolean)
-    : [];
   const filledCount = uniqueProductNames.filter(n => (productSkuMap[n.toLowerCase()] ?? '').trim() !== '').length;
 
   return (
     <div className="bg-white rounded-lg p-3 border border-gray-100 space-y-3">
-      {/* Product name source column */}
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="text-xs text-gray-700">Product name column:</label>
-        <select
-          value={productNameCol}
-          onChange={e => setProductNameCol(e.target.value)}
-          className="px-2 py-1 text-xs border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
-        >
-          <option value="">— Pick a column —</option>
-          {sourceHeaders.map(h => (
-            <option key={h} value={h}>{h}</option>
-          ))}
-        </select>
+      {/* Product name source columns — multi-select */}
+      <div className="flex flex-wrap items-start gap-2">
+        <label className="text-xs text-gray-700 pt-1">Product name column(s):</label>
+        <MultiColumnPicker
+          selected={productNameCols}
+          onChange={setProductNameCols}
+          sourceHeaders={sourceHeaders}
+          sourceRows={sourceRows}
+        />
       </div>
 
-      {/* Sample cells */}
-      {sampleCells.length > 0 && (
+      {/* Sample cells — grouped by selected column so the user can see
+          what they're splitting on. Handy when the file mixes commas and
+          pluses across two separate columns. */}
+      {productNameCols.length > 0 && (
         <div>
           <p className="text-[11px] font-semibold text-gray-600 uppercase tracking-wider mb-1">
-            Sample cells from this column
+            Sample cells from selected column{productNameCols.length === 1 ? '' : 's'}
           </p>
-          <div className="space-y-1">
-            {sampleCells.map((s, i) => (
-              <p key={i} className="text-[11px] font-mono bg-gray-50 border border-gray-200 text-gray-700 px-1.5 py-0.5 rounded truncate" title={s}>
-                {s}
-              </p>
-            ))}
+          <div className="space-y-2">
+            {productNameCols.map(col => {
+              const samples = sourceRows
+                .slice(0, 3)
+                .map(r => String(r[col] ?? '').trim())
+                .filter(Boolean);
+              return (
+                <div key={col}>
+                  <p className="text-[10px] font-semibold text-gray-500 mb-0.5">
+                    {col}
+                  </p>
+                  {samples.length === 0 ? (
+                    <p className="text-[11px] italic text-gray-400">(no values found in the first few rows)</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {samples.map((s, i) => (
+                        <p
+                          key={i}
+                          className="text-[11px] font-mono bg-gray-50 border border-gray-200 text-gray-700 px-1.5 py-0.5 rounded truncate"
+                          title={s}
+                        >
+                          {s}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -1386,6 +1443,117 @@ function ProductMappingPanel({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── MultiColumnPicker ──────────────────────────────────────────────────────
+// Multi-select popover for source columns. Each option row shows the
+// column header AND a short content preview (up to 3 distinct values
+// from that column) so the user can identify the right columns even
+// when headers are blank ("Column M") or look similar.
+function MultiColumnPicker({
+  selected, onChange, sourceHeaders, sourceRows,
+}: {
+  selected: string[];
+  onChange: React.Dispatch<React.SetStateAction<string[]>>;
+  sourceHeaders: string[];
+  sourceRows: Record<string, unknown>[];
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const toggle = (col: string) => {
+    onChange(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]);
+  };
+
+  const summary = selected.length === 0
+    ? 'Pick one or more columns'
+    : selected.length === 1
+      ? selected[0]
+      : `${selected.length} columns: ${selected.slice(0, 2).join(', ')}${selected.length > 2 ? '…' : ''}`;
+
+  return (
+    <div ref={ref} className="relative inline-block">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="inline-flex items-center gap-1.5 px-2 py-1 text-xs border border-gray-300 rounded bg-white hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] min-w-[220px] justify-between"
+      >
+        <span className={selected.length === 0 ? 'text-gray-400 italic' : 'text-gray-800 truncate'} title={selected.join(', ')}>
+          {summary}
+        </span>
+        <ChevronLeft className="w-3 h-3 text-gray-400 -rotate-90" />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 min-w-[300px] max-w-[440px] max-h-80 overflow-y-auto">
+          {sourceHeaders.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-gray-500 italic">No columns available</p>
+          ) : (
+            <>
+              <div className="sticky top-0 bg-white border-b border-gray-100 px-3 py-1.5 flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                  {selected.length} of {sourceHeaders.length} selected
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => onChange(sourceHeaders.slice())}
+                    className="text-[10px] font-semibold text-[#015280] hover:underline"
+                  >
+                    Select all
+                  </button>
+                  <span className="text-gray-300 text-[10px]">·</span>
+                  <button
+                    type="button"
+                    onClick={() => onChange([])}
+                    className="text-[10px] font-semibold text-gray-500 hover:underline"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+              <div className="py-1">
+                {sourceHeaders.map(h => {
+                  const on = selected.includes(h);
+                  const previews = previewValuesForColumn(sourceRows, h, 3);
+                  return (
+                    <button
+                      key={h}
+                      type="button"
+                      onClick={() => toggle(h)}
+                      className={`w-full text-left px-3 py-2 hover:bg-gray-50 flex items-start gap-2 ${on ? 'bg-[#e6f8ff]/40' : ''}`}
+                    >
+                      <span className={`mt-0.5 w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center ${on ? 'bg-[#015280] border-[#015280]' : 'bg-white border-gray-300'}`}>
+                        {on && <Check className="w-2.5 h-2.5 text-white" />}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-gray-900 truncate" title={h}>{h}</p>
+                        {previews.length > 0 ? (
+                          <p className="text-[10px] text-gray-500 truncate" title={previews.join(' · ')}>
+                            {previews.join(' · ')}
+                          </p>
+                        ) : (
+                          <p className="text-[10px] text-gray-400 italic">(empty in the first rows)</p>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
