@@ -97,7 +97,66 @@ function autoGenOrderNumber(prefix: string, idx: number, total: number): string 
   return `${prefix}${String(idx + 1).padStart(padForCount(total), '0')}`;
 }
 
+// ── Product-name splitting (for files where one cell lists many products) ──
+// Default candidate delimiters the user can toggle. We never split on '-'
+// because product names often contain hyphens ("PR Mailer - Bites").
+const CANDIDATE_DELIMS: { key: string; label: string }[] = [
+  { key: ',', label: 'Comma ( , )' },
+  { key: '&', label: 'Ampersand ( & )' },
+  { key: '+', label: 'Plus ( + )' },
+  { key: '/', label: 'Slash ( / )' },
+  { key: ';', label: 'Semicolon ( ; )' },
+];
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Split a multi-product cell into individual product names using the
+// chosen delimiters. Empty/whitespace-only segments are dropped. If no
+// delimiters are active, the whole cell is treated as one product.
+function splitProducts(cell: string, delimiters: string[]): string[] {
+  const v = (cell ?? '').trim();
+  if (!v) return [];
+  const active = delimiters.filter(d => d.length > 0);
+  if (active.length === 0) return [v];
+  const re = new RegExp(active.map(escapeRegex).join('|'), 'g');
+  return v.split(re).map(s => s.trim()).filter(Boolean);
+}
+
+// Walk every source row's product cell and collect the unique product
+// names. Sorted alphabetically for stable UI; deduplication is case-
+// insensitive but we keep the first-seen casing for display.
+function uniqueProducts(
+  rows: Record<string, unknown>[],
+  productCol: string,
+  delimiters: string[],
+): string[] {
+  if (!productCol) return [];
+  const seen = new Map<string, string>(); // lower → original
+  for (const row of rows) {
+    const cell = String(row[productCol] ?? '');
+    for (const name of splitProducts(cell, delimiters)) {
+      const key = name.toLowerCase();
+      if (!seen.has(key)) seen.set(key, name);
+    }
+  }
+  return Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
+}
+
+// Look at a sample of the product-column cells and suggest which of the
+// candidate delimiters are actually in use. Comma is always included if
+// nothing else is detected, so the user has a sensible starting point.
+function detectDelimitersFromCells(cells: string[]): string[] {
+  const hits: string[] = [];
+  for (const { key } of CANDIDATE_DELIMS) {
+    if (cells.some(c => c.includes(key))) hits.push(key);
+  }
+  return hits.length > 0 ? hits : [','];
+}
+
 type Stage = 'idle' | 'parsing' | 'header-confirm' | 'analyzing' | 'review' | 'error';
+type SkuStrategy = 'column' | 'product-mapping';
 
 interface MapResult {
   columns: string[];
@@ -152,6 +211,14 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
   const [mappingEdits, setMappingEdits] = useState<Record<string, string>>({});
   const [countryEdits, setCountryEdits] = useState<Record<string, string>>({});
   const [skuConfirmed, setSkuConfirmed] = useState(false);
+  // SKU strategy — either pick a SKU column from the source or, when the
+  // source only has product names, ask the user to assign a SKU per
+  // unique product (multi-product cells get expanded into line items).
+  const [skuStrategy, setSkuStrategy] = useState<SkuStrategy>('column');
+  const [productNameCol, setProductNameCol] = useState<string>('');
+  const [delimiters, setDelimiters] = useState<string[]>([',']);
+  const [customDelim, setCustomDelim] = useState<string>('');
+  const [productSkuMap, setProductSkuMap] = useState<Record<string, string>>({});
   // Prefix used when the user picks Auto-generate for the Order Number
   // column. Empty until the user types something.
   const [autoGenPrefix, setAutoGenPrefix] = useState<string>('');
@@ -171,6 +238,11 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     setMappingEdits({});
     setCountryEdits({});
     setSkuConfirmed(false);
+    setSkuStrategy('column');
+    setProductNameCol('');
+    setDelimiters([',']);
+    setCustomDelim('');
+    setProductSkuMap({});
     setAutoGenPrefix('');
   };
 
@@ -256,6 +328,24 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       setCountryEdits({ ...out.countryValueMap });
       setSkuConfirmed(false);
       setAutoGenPrefix('');
+
+      // Initialize product-mapping defaults. When the AI couldn't find a
+      // SKU column at all but did identify a Product Name column, flip
+      // the SKU strategy to "I'll provide the SKUs" so the user lands on
+      // the right surface without a click.
+      const aiProductCol = out.columnMapping['Product Name'] || '';
+      const aiSkuCol = out.columnMapping['Product Sku (Required)'] || '';
+      setProductNameCol(aiProductCol);
+      const sampleCells = aiProductCol
+        ? dataRows.slice(0, 20).map(r => String(r[aiProductCol] ?? ''))
+        : [];
+      setDelimiters(detectDelimitersFromCells(sampleCells));
+      setCustomDelim('');
+      setProductSkuMap({});
+      setSkuStrategy(
+        out.skuConfidence === 'none' && aiProductCol && !aiSkuCol ? 'product-mapping' : 'column',
+      );
+
       setStage('review');
     } catch (err) {
       console.error('[CsvOrderFormatter] proceedWithHeaders failed:', err);
@@ -290,13 +380,15 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     const billingCountryCol = mappingEdits['Billing Country Code'];
     const quantityCol = mappingEdits['Quantity'];
     const total = sourceRows.length;
-    return sourceRows.map((row, idx) => {
+    const allDelims = [...delimiters, ...(customDelim ? [customDelim] : [])];
+
+    // Build the canonical "shipping fields" output for a source row.
+    // Per-product overrides (Product Name / Product Sku) are applied
+    // afterward so multi-product rows can share order-level info.
+    const buildBaseRow = (row: Record<string, unknown>, idx: number): Record<string, string> => {
       const out: Record<string, string> = {};
       for (const col of result.columns) {
         const src = mappingEdits[col];
-        // Order Number — auto-generate path takes precedence over any
-        // accidental mapping. Sentinel value never refers to a real
-        // source column, so we'd output blanks if we let it fall through.
         if (col === 'Order Number (Required)' && isAutoGenOrder) {
           out[col] = autoGenOrderNumber(autoGenPrefix, idx, total);
           continue;
@@ -305,7 +397,6 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
         const raw = row[src];
         out[col] = raw === undefined || raw === null ? '' : String(raw).trim();
       }
-      // Country normalization
       if (countryCol) {
         const raw = String(row[countryCol] ?? '').trim();
         out['Country Code (Required)'] = countryEdits[raw] ?? raw;
@@ -314,10 +405,45 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
         const raw = String(row[billingCountryCol] ?? '').trim();
         out['Billing Country Code'] = countryEdits[raw] ?? raw;
       }
-      // Default quantity to 1 when not mapped
       if (!quantityCol && !out['Quantity']) out['Quantity'] = '1';
       return out;
+    };
+
+    // Strategy A: SKU column. One output row per source row.
+    if (skuStrategy === 'column') {
+      return sourceRows.map((row, idx) => buildBaseRow(row, idx));
+    }
+
+    // Strategy B: product → SKU lookup. Each source row's product cell
+    // is split into N products and we emit one output row per product,
+    // sharing the order info but with the product's name + SKU
+    // substituted in. Unknown products keep the name and leave SKU blank
+    // so the user can spot them in the output.
+    const expanded: Record<string, string>[] = [];
+    sourceRows.forEach((row, idx) => {
+      const base = buildBaseRow(row, idx);
+      const cell = productNameCol ? String(row[productNameCol] ?? '').trim() : '';
+      const names = splitProducts(cell, allDelims);
+      if (names.length === 0) {
+        // No products on this row — keep the order line but blank product fields.
+        expanded.push({ ...base, 'Product Name': '', 'Product Sku (Required)': '' });
+        return;
+      }
+      for (const name of names) {
+        const sku = productSkuMap[name.toLowerCase()] ?? '';
+        const lineRow: Record<string, string> = {
+          ...base,
+          'Product Name': name,
+          'Product Sku (Required)': sku,
+        };
+        // When expanding into multiple lines, quantity defaults to 1 per
+        // product line unless the user explicitly mapped a Quantity column
+        // (in which case all lines share the source-row's quantity).
+        if (!quantityCol) lineRow['Quantity'] = '1';
+        expanded.push(lineRow);
+      }
     });
+    return expanded;
   };
 
   const onDownload = () => {
@@ -327,10 +453,32 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     downloadCSV(`${baseName} — shiphero.csv`, result.columns, rows);
   };
 
+  // List of products that need a SKU under the product-mapping strategy.
+  // Recomputes when the user toggles delimiters / changes the product
+  // column / loads a new file.
+  const allActiveDelims = useMemo(
+    () => [...delimiters, ...(customDelim ? [customDelim] : [])],
+    [delimiters, customDelim],
+  );
+  const uniqueProductNames = useMemo(
+    () => (skuStrategy === 'product-mapping' ? uniqueProducts(sourceRows, productNameCol, allActiveDelims) : []),
+    [skuStrategy, sourceRows, productNameCol, allActiveDelims],
+  );
+  const productMapComplete = useMemo(() => {
+    if (skuStrategy !== 'product-mapping') return false;
+    if (uniqueProductNames.length === 0) return false;
+    return uniqueProductNames.every(n => (productSkuMap[n.toLowerCase()] ?? '').trim() !== '');
+  }, [skuStrategy, uniqueProductNames, productSkuMap]);
+
   // Missing required columns based on current mapping edits. Auto-gen for
   // Order Number counts as "mapped" only if the user has typed a prefix.
+  // Product Sku is satisfied under the product-mapping strategy as long as
+  // every unique product has a SKU.
   const missingRequired = useMemo(() => {
     return REQUIRED_COLS.filter(col => {
+      if (col === 'Product Sku (Required)' && skuStrategy === 'product-mapping') {
+        return !productMapComplete;
+      }
       const v = mappingEdits[col];
       if (!v) return true;
       if (col === 'Order Number (Required)' && v === AUTO_GEN_ORDER_VAL && !autoGenPrefix.trim()) {
@@ -338,12 +486,13 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       }
       return false;
     });
-  }, [mappingEdits, autoGenPrefix]);
+  }, [mappingEdits, autoGenPrefix, skuStrategy, productMapComplete]);
 
   const orderIsAutoGen = mappingEdits['Order Number (Required)'] === AUTO_GEN_ORDER_VAL;
+  const skuOk = skuStrategy === 'column' ? skuConfirmed : productMapComplete;
   const canDownload =
     !!result &&
-    skuConfirmed &&
+    skuOk &&
     (!orderIsAutoGen || autoGenPrefix.trim().length > 0);
 
   // ── Render ──────────────────────────────────────────────────────────────
@@ -522,6 +671,18 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
               setSkuConfirmed={setSkuConfirmed}
               autoGenPrefix={autoGenPrefix}
               setAutoGenPrefix={setAutoGenPrefix}
+              skuStrategy={skuStrategy}
+              setSkuStrategy={setSkuStrategy}
+              productNameCol={productNameCol}
+              setProductNameCol={setProductNameCol}
+              delimiters={delimiters}
+              setDelimiters={setDelimiters}
+              customDelim={customDelim}
+              setCustomDelim={setCustomDelim}
+              productSkuMap={productSkuMap}
+              setProductSkuMap={setProductSkuMap}
+              uniqueProductNames={uniqueProductNames}
+              productMapComplete={productMapComplete}
               missingRequired={missingRequired}
               canDownload={canDownload}
               onDownload={onDownload}
@@ -540,6 +701,12 @@ function ReviewPanel({
   countryEdits, setCountryEdits,
   skuConfirmed, setSkuConfirmed,
   autoGenPrefix, setAutoGenPrefix,
+  skuStrategy, setSkuStrategy,
+  productNameCol, setProductNameCol,
+  delimiters, setDelimiters,
+  customDelim, setCustomDelim,
+  productSkuMap, setProductSkuMap,
+  uniqueProductNames, productMapComplete,
   missingRequired, canDownload, onDownload,
 }: {
   result: MapResult;
@@ -555,6 +722,18 @@ function ReviewPanel({
   setSkuConfirmed: (b: boolean) => void;
   autoGenPrefix: string;
   setAutoGenPrefix: (s: string) => void;
+  skuStrategy: SkuStrategy;
+  setSkuStrategy: (s: SkuStrategy) => void;
+  productNameCol: string;
+  setProductNameCol: (s: string) => void;
+  delimiters: string[];
+  setDelimiters: React.Dispatch<React.SetStateAction<string[]>>;
+  customDelim: string;
+  setCustomDelim: (s: string) => void;
+  productSkuMap: Record<string, string>;
+  setProductSkuMap: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  uniqueProductNames: string[];
+  productMapComplete: boolean;
   missingRequired: readonly string[];
   canDownload: boolean;
   onDownload: () => void;
@@ -625,17 +804,17 @@ function ReviewPanel({
         </div>
       )}
 
-      {/* SKU confirmation — always required */}
+      {/* SKU section — strategy toggle on top, sub-UI below */}
       <div className={`rounded-xl border-2 p-4 ${
-        skuConfirmed
+        (skuStrategy === 'column' && skuConfirmed) || (skuStrategy === 'product-mapping' && productMapComplete)
           ? 'border-emerald-300 bg-emerald-50/40'
           : 'border-[#43c7ff] bg-[#e6f8ff]/40'
       }`}>
-        <div className="flex items-start justify-between gap-3 mb-2">
+        <div className="flex items-start justify-between gap-3 mb-3">
           <div>
-            <p className="text-sm font-semibold text-gray-900">Confirm the SKU column</p>
+            <p className="text-sm font-semibold text-gray-900">How are products listed in this file?</p>
             <p className="text-[11px] text-gray-600 mt-0.5">
-              {result.skuReasoning || 'Pick which source column holds the product SKU.'}
+              {result.skuReasoning || 'Tell us how to read the products and SKUs out of your source data.'}
               {result.skuConfidence && (
                 <span className="ml-2 text-gray-500">
                   AI confidence:&nbsp;<span className="font-semibold uppercase">{result.skuConfidence}</span>
@@ -643,51 +822,103 @@ function ReviewPanel({
               )}
             </p>
           </div>
-          {skuConfirmed && (
-            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-white border border-emerald-200 rounded-full px-2 py-0.5">
+          {(skuStrategy === 'column' ? skuConfirmed : productMapComplete) && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-white border border-emerald-200 rounded-full px-2 py-0.5 flex-shrink-0">
               <Check className="w-3 h-3" />
               Confirmed
             </span>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 mb-3">
-          <label className="text-xs text-gray-700">SKU column:</label>
-          <select
-            value={skuCol}
-            onChange={e => updateMapping('Product Sku (Required)', e.target.value)}
-            className="px-2 py-1 text-xs border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
-          >
-            <option value="">— None / unsure —</option>
-            {sourceHeaders.map(h => (
-              <option key={h} value={h}>{h}</option>
-            ))}
-          </select>
+        {/* Strategy toggle */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+          {([
+            { key: 'column' as const, title: 'Each row has a SKU column', sub: 'Pick which column in the file holds the SKU.' },
+            { key: 'product-mapping' as const, title: "Rows have product names — I'll provide SKUs", sub: 'For files like the one above with only product names (often multiple per row).' },
+          ]).map(opt => {
+            const active = skuStrategy === opt.key;
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => {
+                  setSkuStrategy(opt.key);
+                  if (opt.key === 'product-mapping') setSkuConfirmed(false);
+                }}
+                className={`text-left p-3 rounded-lg border transition-colors ${
+                  active ? 'border-[#015280] bg-white shadow-sm' : 'border-gray-200 bg-white/60 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 ${active ? 'border-[#015280] bg-[#015280]' : 'border-gray-300 bg-white'}`}>
+                    {active && <span className="block w-1.5 h-1.5 m-auto mt-[3px] rounded-full bg-white" />}
+                  </span>
+                  <span className="text-xs font-semibold text-gray-900">{opt.title}</span>
+                </div>
+                <p className="text-[11px] text-gray-600 ml-5">{opt.sub}</p>
+              </button>
+            );
+          })}
         </div>
 
-        {skuCol && skuSamples.length > 0 && (
-          <div className="mb-3">
-            <p className="text-[11px] font-semibold text-gray-600 uppercase tracking-wider mb-1">
-              Sample values from this column
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {skuSamples.map((s, i) => (
-                <span key={i} className="text-[11px] font-mono bg-white border border-gray-200 text-gray-700 px-1.5 py-0.5 rounded">
-                  {s}
-                </span>
-              ))}
+        {/* Strategy A — SKU column flow */}
+        {skuStrategy === 'column' && (
+          <div className="bg-white rounded-lg p-3 border border-gray-100">
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <label className="text-xs text-gray-700">SKU column:</label>
+              <select
+                value={skuCol}
+                onChange={e => updateMapping('Product Sku (Required)', e.target.value)}
+                className="px-2 py-1 text-xs border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
+              >
+                <option value="">— None / unsure —</option>
+                {sourceHeaders.map(h => (
+                  <option key={h} value={h}>{h}</option>
+                ))}
+              </select>
             </div>
+            {skuCol && skuSamples.length > 0 && (
+              <div className="mb-3">
+                <p className="text-[11px] font-semibold text-gray-600 uppercase tracking-wider mb-1">
+                  Sample values from this column
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {skuSamples.map((s, i) => (
+                    <span key={i} className="text-[11px] font-mono bg-gray-50 border border-gray-200 text-gray-700 px-1.5 py-0.5 rounded">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            <button
+              onClick={() => setSkuConfirmed(true)}
+              disabled={!skuCol || skuConfirmed}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#015280] text-white text-xs font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+            >
+              <Check className="w-3.5 h-3.5" />
+              {skuConfirmed ? 'SKU confirmed' : 'These are the SKUs'}
+            </button>
           </div>
         )}
 
-        <button
-          onClick={() => setSkuConfirmed(true)}
-          disabled={!skuCol || skuConfirmed}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#015280] text-white text-xs font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
-        >
-          <Check className="w-3.5 h-3.5" />
-          {skuConfirmed ? 'SKU confirmed' : 'These are the SKUs'}
-        </button>
+        {/* Strategy B — product-name → SKU lookup */}
+        {skuStrategy === 'product-mapping' && (
+          <ProductMappingPanel
+            sourceHeaders={sourceHeaders}
+            sourceRows={sourceRows}
+            productNameCol={productNameCol}
+            setProductNameCol={setProductNameCol}
+            delimiters={delimiters}
+            setDelimiters={setDelimiters}
+            customDelim={customDelim}
+            setCustomDelim={setCustomDelim}
+            productSkuMap={productSkuMap}
+            setProductSkuMap={setProductSkuMap}
+            uniqueProductNames={uniqueProductNames}
+            productMapComplete={productMapComplete}
+          />
+        )}
       </div>
 
       {/* Country code map */}
@@ -793,11 +1024,184 @@ function ReviewPanel({
           onClick={onDownload}
           disabled={!canDownload}
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-[#015280] text-white text-sm font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
-          title={!canDownload ? 'Confirm the SKU column first' : 'Download CSV'}
+          title={!canDownload ? 'Finish the SKU step first' : 'Download CSV'}
         >
           <Download className="w-4 h-4" />
           Download CSV
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Product-name → SKU mapping (strategy B) ─────────────────────────────────
+// Shows the source column picker, the delimiter selector, and a scrollable
+// table of unique product names with an empty SKU input next to each. Used
+// when the file only has product names — usually one cell holds multiple
+// products separated by commas, &, or +.
+function ProductMappingPanel({
+  sourceHeaders, sourceRows,
+  productNameCol, setProductNameCol,
+  delimiters, setDelimiters,
+  customDelim, setCustomDelim,
+  productSkuMap, setProductSkuMap,
+  uniqueProductNames, productMapComplete,
+}: {
+  sourceHeaders: string[];
+  sourceRows: Record<string, unknown>[];
+  productNameCol: string;
+  setProductNameCol: (s: string) => void;
+  delimiters: string[];
+  setDelimiters: React.Dispatch<React.SetStateAction<string[]>>;
+  customDelim: string;
+  setCustomDelim: (s: string) => void;
+  productSkuMap: Record<string, string>;
+  setProductSkuMap: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  uniqueProductNames: string[];
+  productMapComplete: boolean;
+}) {
+  const toggleDelim = (key: string) => {
+    setDelimiters(prev => prev.includes(key) ? prev.filter(d => d !== key) : [...prev, key]);
+  };
+  const setSkuForProduct = (name: string, sku: string) => {
+    const key = name.toLowerCase();
+    setProductSkuMap(prev => ({ ...prev, [key]: sku }));
+  };
+  // Show a couple of raw source cells so the user can see what they're
+  // splitting on — handy when the file mixes commas and pluses.
+  const sampleCells = productNameCol
+    ? sourceRows.slice(0, 3).map(r => String(r[productNameCol] ?? '').trim()).filter(Boolean)
+    : [];
+  const filledCount = uniqueProductNames.filter(n => (productSkuMap[n.toLowerCase()] ?? '').trim() !== '').length;
+
+  return (
+    <div className="bg-white rounded-lg p-3 border border-gray-100 space-y-3">
+      {/* Product name source column */}
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="text-xs text-gray-700">Product name column:</label>
+        <select
+          value={productNameCol}
+          onChange={e => setProductNameCol(e.target.value)}
+          className="px-2 py-1 text-xs border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
+        >
+          <option value="">— Pick a column —</option>
+          {sourceHeaders.map(h => (
+            <option key={h} value={h}>{h}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Sample cells */}
+      {sampleCells.length > 0 && (
+        <div>
+          <p className="text-[11px] font-semibold text-gray-600 uppercase tracking-wider mb-1">
+            Sample cells from this column
+          </p>
+          <div className="space-y-1">
+            {sampleCells.map((s, i) => (
+              <p key={i} className="text-[11px] font-mono bg-gray-50 border border-gray-200 text-gray-700 px-1.5 py-0.5 rounded truncate" title={s}>
+                {s}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Delimiter picker */}
+      <div>
+        <p className="text-xs font-semibold text-gray-800 mb-1">
+          When a cell holds more than one product, how are they separated?
+        </p>
+        <p className="text-[11px] text-gray-500 mb-2">
+          Pick every separator the file uses. Comma is the most common; some files mix in
+          <span className="font-mono"> &amp; </span> or <span className="font-mono">+</span>.
+        </p>
+        <div className="flex flex-wrap gap-2 mb-2">
+          {CANDIDATE_DELIMS.map(d => {
+            const on = delimiters.includes(d.key);
+            return (
+              <button
+                key={d.key}
+                type="button"
+                onClick={() => toggleDelim(d.key)}
+                className={`px-2 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
+                  on
+                    ? 'border-[#43c7ff] bg-[#e6f8ff] text-[#015280]'
+                    : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                {on ? '✓ ' : ''}{d.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-[11px] text-gray-600">Custom:</label>
+          <input
+            type="text"
+            value={customDelim}
+            onChange={e => setCustomDelim(e.target.value)}
+            placeholder='e.g. " | "'
+            className="flex-1 max-w-[180px] px-2 py-0.5 text-xs font-mono border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
+          />
+          {customDelim && (
+            <span className="text-[10px] text-gray-500">
+              Will also split on <span className="font-mono">{customDelim}</span>
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Product → SKU table */}
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-xs font-semibold text-gray-800">
+            Map products to SKUs
+          </p>
+          <p className="text-[11px] text-gray-500">
+            {uniqueProductNames.length === 0
+              ? 'Pick a product name column above to start'
+              : <>
+                  {filledCount} / {uniqueProductNames.length} mapped
+                  {productMapComplete && (
+                    <span className="ml-2 inline-flex items-center gap-0.5 text-emerald-700 font-semibold">
+                      <Check className="w-3 h-3" /> All set
+                    </span>
+                  )}
+                </>}
+          </p>
+        </div>
+        {uniqueProductNames.length === 0 ? (
+          <div className="text-[11px] text-gray-500 italic px-3 py-4 bg-gray-50 border border-dashed border-gray-200 rounded">
+            No products to map yet. Pick the column that holds product names above.
+          </div>
+        ) : (
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <div className="grid grid-cols-[1fr_140px] gap-0 bg-gray-50 px-3 py-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+              <span>Product name</span>
+              <span>SKU</span>
+            </div>
+            <div className="max-h-72 overflow-y-auto divide-y divide-gray-100">
+              {uniqueProductNames.map(name => {
+                const sku = productSkuMap[name.toLowerCase()] ?? '';
+                return (
+                  <div key={name} className="grid grid-cols-[1fr_140px] gap-2 items-center px-3 py-1.5">
+                    <span className="text-xs text-gray-800 truncate" title={name}>{name}</span>
+                    <input
+                      type="text"
+                      value={sku}
+                      onChange={e => setSkuForProduct(name, e.target.value)}
+                      placeholder="Enter SKU"
+                      className={`px-2 py-1 text-xs font-mono border rounded focus:outline-none focus:ring-1 focus:ring-[#43c7ff] ${
+                        sku ? 'border-emerald-300 bg-emerald-50/30' : 'border-red-200 bg-white'
+                      }`}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
