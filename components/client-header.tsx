@@ -51,6 +51,58 @@ function isPlatformActive(portalText: string, token: 'AppDot' | 'Portal'): boole
     .includes(token.toLowerCase());
 }
 
+// ── ConfirmDialog ──────────────────────────────────────────────────────────
+// Small modal used to gate destructive-feeling changes (Platform toggle,
+// Warehouse switch) since both flow through to Monday and downstream
+// shipping ops. ESC and backdrop click cancel.
+function ConfirmDialog({
+  title, description, confirmLabel = 'Confirm', onCancel, onConfirm, busy,
+}: {
+  title: string;
+  description: React.ReactNode;
+  confirmLabel?: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+  busy: boolean;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onCancel(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCancel, busy]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onMouseDown={e => { if (e.target === e.currentTarget && !busy) onCancel(); }}
+    >
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-5">
+        <h3 className="text-base font-semibold text-gray-900 mb-1">{title}</h3>
+        <div className="text-sm text-gray-600 mb-4">{description}</div>
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className="px-3 py-1.5 text-sm font-medium text-white bg-[#015280] hover:bg-[#01416a] rounded inline-flex items-center gap-1.5 disabled:opacity-60"
+          >
+            {busy && <Loader2 className="w-3 h-3 animate-spin" />}
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Inline editable text field with optional copy-on-hover ─────────────────
 function InlineField({
   value, icon, columnId, clientId, placeholder, copyable, hrefBuilder, onSaved,
@@ -175,36 +227,43 @@ function InlineField({
 }
 
 // ── Platform pills (AppDot + Portal) ───────────────────────────────────────
+// Clicks no longer fire PATCH immediately — they stage a pending change that
+// the user has to confirm. Both pills are gated by the same ConfirmDialog.
 function PlatformPills({ value, clientId, onSaved }: {
   value: string;
   clientId: string;
   onSaved: (newValue: string) => void;
 }) {
+  const [pending, setPending] = useState<{ token: 'AppDot' | 'Portal'; nextValue: string; turningOn: boolean } | null>(null);
   const [saving, setSaving] = useState(false);
   const appDotOn = isPlatformActive(value, 'AppDot');
   const portalOn = isPlatformActive(value, 'Portal');
 
-  const toggle = async (token: 'AppDot' | 'Portal') => {
-    if (saving) return;
+  const requestToggle = (token: 'AppDot' | 'Portal') => {
+    if (saving || pending) return;
     const currentlyOn = isPlatformActive(value, token);
-    const set = new Set(
-      value.split(',').map(s => s.trim()).filter(Boolean)
-    );
+    const set = new Set(value.split(',').map(s => s.trim()).filter(Boolean));
     if (currentlyOn) set.delete(token); else set.add(token);
     const next = Array.from(set).join(', ');
+    setPending({ token, nextValue: next, turningOn: !currentlyOn });
+  };
+
+  const confirm = async () => {
+    if (!pending) return;
     setSaving(true);
     try {
       const res = await fetch(`/api/client/${clientId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ columnId: 'dropdown_mktrbeyg', value: next, valueType: 'dropdown' }),
+        body: JSON.stringify({ columnId: 'dropdown_mktrbeyg', value: pending.nextValue, valueType: 'dropdown' }),
       });
       if (!res.ok) throw new Error(`${res.status}`);
-      onSaved(next);
+      onSaved(pending.nextValue);
     } catch (err) {
       console.error('[PlatformPills] save failed:', err);
     } finally {
       setSaving(false);
+      setPending(null);
     }
   };
 
@@ -213,8 +272,8 @@ function PlatformPills({ value, clientId, onSaved }: {
       key={label}
       type="button"
       onClick={onClick}
-      disabled={saving}
-      className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border transition-colors ${
+      disabled={saving || pending !== null}
+      className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border transition-colors disabled:opacity-60 ${
         on
           ? 'border-[#43c7ff] bg-[#e6f8ff] text-[#015280]'
           : 'border-gray-200 bg-white text-gray-400 hover:bg-gray-50'
@@ -226,31 +285,138 @@ function PlatformPills({ value, clientId, onSaved }: {
   );
 
   return (
-    <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5">
-      <Box className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-      <div className="flex flex-col gap-0.5 min-w-0">
-        <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider leading-none">Platform</p>
-        <div className="flex items-center gap-1">
-          {pill('AppDot', appDotOn, () => toggle('AppDot'))}
-          {pill('Portal', portalOn, () => toggle('Portal'))}
+    <>
+      <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5">
+        <Box className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider leading-none">Platform</p>
+          <div className="flex items-center gap-1">
+            {pill('AppDot', appDotOn, () => requestToggle('AppDot'))}
+            {pill('Portal', portalOn, () => requestToggle('Portal'))}
+          </div>
         </div>
       </div>
-    </div>
+      {pending && (
+        <ConfirmDialog
+          title={pending.turningOn ? `Enable ${pending.token}?` : `Disable ${pending.token}?`}
+          description={
+            <span>
+              This will {pending.turningOn ? 'turn on' : 'turn off'} <strong>{pending.token}</strong> for this client and sync to Monday.com.
+            </span>
+          }
+          confirmLabel={pending.turningOn ? `Enable ${pending.token}` : `Disable ${pending.token}`}
+          onCancel={() => setPending(null)}
+          onConfirm={confirm}
+          busy={saving}
+        />
+      )}
+    </>
   );
 }
 
-// ── Warehouse pill (read-only here; edit through Client Info) ──────────────
-function WarehousePill({ value }: { value: string }) {
+// ── Warehouse pill (editable dropdown) ─────────────────────────────────────
+// Options come from the Monday Warehouse Location column via
+// /api/client/column-options. Selecting an option opens a ConfirmDialog so
+// warehouse moves can't happen by accident.
+function WarehousePill({ value, options, clientId, onSaved }: {
+  value: string;
+  options: string[];
+  clientId: string;
+  onSaved: (newValue: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const onSelect = (option: string) => {
+    setOpen(false);
+    if (option === value) return;
+    setPending(option);
+  };
+
+  const confirm = async () => {
+    if (!pending) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/client/${clientId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ columnId: 'dropdown_mktxaege', value: pending, valueType: 'dropdown' }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      onSaved(pending);
+    } catch (err) {
+      console.error('[WarehousePill] save failed:', err);
+    } finally {
+      setSaving(false);
+      setPending(null);
+    }
+  };
+
+  const disabled = options.length === 0;
+
   return (
-    <div className="flex items-center gap-2 bg-[#e6f8ff]/60 border border-[#43c7ff]/40 rounded-lg px-2.5 py-1.5 max-w-[260px]">
-      <Warehouse className="w-3.5 h-3.5 text-[#015280] flex-shrink-0" />
-      <div className="flex flex-col gap-0.5 min-w-0">
-        <p className="text-[9px] font-semibold text-[#015280] uppercase tracking-wider leading-none">Warehouse</p>
-        <p className="text-xs font-semibold text-gray-900 truncate" title={value || 'Not set'}>
-          {value || <span className="text-gray-400 italic font-normal">Not set</span>}
-        </p>
+    <>
+      <div ref={menuRef} className="relative">
+        <button
+          type="button"
+          onClick={() => { if (!disabled) setOpen(o => !o); }}
+          disabled={disabled}
+          className="flex items-center gap-2 bg-[#e6f8ff]/60 border border-[#43c7ff]/40 hover:bg-[#e6f8ff] disabled:hover:bg-[#e6f8ff]/60 rounded-lg px-2.5 py-1.5 max-w-[260px] transition-colors"
+          title={disabled ? 'Loading warehouse options…' : 'Change warehouse'}
+        >
+          <Warehouse className="w-3.5 h-3.5 text-[#015280] flex-shrink-0" />
+          <div className="flex flex-col gap-0.5 min-w-0 text-left">
+            <p className="text-[9px] font-semibold text-[#015280] uppercase tracking-wider leading-none">Warehouse</p>
+            <p className="text-xs font-semibold text-gray-900 truncate" title={value || 'Not set'}>
+              {value || <span className="text-gray-400 italic font-normal">Not set</span>}
+            </p>
+          </div>
+          <ChevronDown className="w-3 h-3 text-[#015280] flex-shrink-0" />
+        </button>
+        {open && options.length > 0 && (
+          <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 min-w-[180px] py-1 max-h-64 overflow-y-auto">
+            {options.map(opt => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => onSelect(opt)}
+                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 flex items-center justify-between gap-2 ${
+                  opt === value ? 'font-semibold text-[#015280] bg-[#e6f8ff]/40' : 'text-gray-700'
+                }`}
+              >
+                <span className="truncate">{opt}</span>
+                {opt === value && <Check className="w-3 h-3 text-[#015280] flex-shrink-0" />}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-    </div>
+      {pending && (
+        <ConfirmDialog
+          title="Change warehouse?"
+          description={
+            <span>
+              Set warehouse to <strong>{pending}</strong>{value ? <> (currently <strong>{value}</strong>)</> : null}? This will sync to Monday.com.
+            </span>
+          }
+          confirmLabel="Change warehouse"
+          onCancel={() => setPending(null)}
+          onConfirm={confirm}
+          busy={saving}
+        />
+      )}
+    </>
   );
 }
 
@@ -462,6 +628,21 @@ export function ClientHeader({
   const [collapsed, setCollapsed] = useState<boolean>(loadCollapsed);
   useEffect(() => { saveCollapsed(collapsed); }, [collapsed]);
 
+  // Warehouse dropdown options — fetched once, shared across all clients.
+  // Pulled from /api/client/column-options which reads settings_str of the
+  // Warehouse Location dropdown on the Clients board.
+  const [warehouseOptions, setWarehouseOptions] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/client/column-options')
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`${r.status}`)))
+      .then((data: Record<string, string[]>) => {
+        if (!cancelled) setWarehouseOptions(data['dropdown_mktxaege'] ?? []);
+      })
+      .catch(err => console.error('[ClientHeader] warehouse options fetch failed:', err));
+    return () => { cancelled = true; };
+  }, []);
+
   // ── Make-primary swap (relocated from client-info-tab) ──────────────────
   const [promoting, setPromoting] = useState<2 | 3 | null>(null);
   const handleMakePrimary = useCallback(async (slot: 2 | 3) => {
@@ -535,7 +716,12 @@ export function ClientHeader({
             clientId={clientId}
             onSaved={next => onClientChanged({ portalDropdown: next })}
           />
-          <WarehousePill value={client.warehouseLocation} />
+          <WarehousePill
+            value={client.warehouseLocation}
+            options={warehouseOptions}
+            clientId={clientId}
+            onSaved={next => onClientChanged({ warehouseLocation: next })}
+          />
           {actionsSlot}
         </div>
       </div>
