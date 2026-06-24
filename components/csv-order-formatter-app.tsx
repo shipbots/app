@@ -1145,18 +1145,57 @@ function ReviewPanel({
         <p className="text-[11px] text-gray-600 mb-3">
           ShipHero columns on the left, your source columns on the right. Empty values stay blank in the output.
         </p>
-        <div className="space-y-1 max-h-96 overflow-y-auto pr-1">
+        <div className="space-y-1.5">
           {result.columns.map(col => {
             const isReq = (REQUIRED_COLS as readonly string[]).includes(col);
             const src = mappingEdits[col] ?? '';
             const isOrderRow = col === 'Order Number (Required)';
             const isQuantityRow = col === 'Quantity';
             const isSkuRow = col === 'Product Sku (Required)';
+            const isSkuFromProductMapping = isSkuRow && skuStrategy === 'product-mapping';
             const showAutoGenInput = isOrderRow && src === AUTO_GEN_ORDER_VAL;
-            const showQuantityDefault = isQuantityRow && !src;
+
+            // SKU row when the upstream strategy box is handling it via the
+            // product → SKU table: just show a read-only note instead of
+            // letting the user pick another column down here.
+            if (isSkuFromProductMapping) {
+              return (
+                <div key={col} className="grid grid-cols-2 gap-2 items-center text-xs">
+                  <span className="truncate font-semibold text-gray-900" title={col}>
+                    {col}
+                  </span>
+                  <div className="px-2 py-1 text-xs bg-[#e6f8ff]/40 border border-[#43c7ff]/40 rounded text-[#015280] flex items-center gap-1.5">
+                    <Check className="w-3 h-3" />
+                    <span className="truncate">Using SKUs from product mapping above</span>
+                  </div>
+                </div>
+              );
+            }
+
             const reqMissing = isReq && (
               !src || (isOrderRow && src === AUTO_GEN_ORDER_VAL && !autoGenPrefix.trim())
-            ) && !(isSkuRow); // SKU handled by the strategy box above
+            );
+
+            // Quantity: when there's no mapped column, the picker label
+            // should reassure the user that we'll default — not say
+            // "Not mapped". Required dot disappears too because the
+            // default IS the mapping.
+            const quantityHasDefault = isQuantityRow && !src && defaultQuantity.trim() !== '';
+            const reqMissingFinal = reqMissing && !quantityHasDefault;
+
+            const notMappedLabel = quantityHasDefault
+              ? `Defaulting to ${defaultQuantity}`
+              : '— Not mapped —';
+
+            const extraOptions: PickerExtraOption[] = isOrderRow
+              ? [{
+                  value: AUTO_GEN_ORDER_VAL,
+                  label: 'Auto-generate from prefix…',
+                  description: 'Use a prefix and we\'ll number every order sequentially.',
+                  icon: <Sparkles className="w-3 h-3" />,
+                }]
+              : [];
+
             return (
               <div key={col} className="grid grid-cols-2 gap-2 items-start text-xs">
                 <span
@@ -1164,26 +1203,18 @@ function ReviewPanel({
                   title={col}
                 >
                   {col}
-                  {reqMissing && <span className="ml-1 text-red-500">•</span>}
+                  {reqMissingFinal && <span className="ml-1 text-red-500">•</span>}
                 </span>
                 <div className="flex flex-col gap-1">
-                  <select
+                  <SingleColumnPicker
                     value={src}
-                    onChange={e => updateMapping(col, e.target.value)}
-                    className={`px-2 py-1 text-xs border rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#43c7ff] ${
-                      reqMissing ? 'border-red-300' : 'border-gray-200'
-                    }`}
-                  >
-                    <option value="">— Not mapped —</option>
-                    {isOrderRow && (
-                      <option value={AUTO_GEN_ORDER_VAL}>
-                        ✨ Auto-generate from prefix…
-                      </option>
-                    )}
-                    {sourceHeaders.map(h => (
-                      <option key={h} value={h}>{h}</option>
-                    ))}
-                  </select>
+                    onChange={v => updateMapping(col, v)}
+                    sourceHeaders={sourceHeaders}
+                    sourceRows={sourceRows}
+                    notMappedLabel={notMappedLabel}
+                    extraOptions={extraOptions}
+                    highlightError={reqMissingFinal}
+                  />
                   {showAutoGenInput && (
                     <div className="border border-[#43c7ff]/50 bg-[#e6f8ff]/40 rounded p-2 flex flex-col gap-1">
                       <label className="flex items-center gap-1.5">
@@ -1206,7 +1237,7 @@ function ReviewPanel({
                       </p>
                     </div>
                   )}
-                  {showQuantityDefault && (
+                  {isQuantityRow && !src && (
                     <div className="border border-[#43c7ff]/30 bg-[#e6f8ff]/30 rounded p-2 flex items-center gap-2">
                       <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">
                         Default to
@@ -1219,7 +1250,7 @@ function ReviewPanel({
                         className="w-16 px-2 py-0.5 text-xs font-mono border border-gray-300 rounded bg-white text-center focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
                       />
                       <span className="text-[10px] text-gray-600">
-                        per order line (no Quantity column mapped)
+                        per order line
                       </span>
                     </div>
                   )}
@@ -1550,6 +1581,149 @@ function MultiColumnPicker({
                   );
                 })}
               </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── SingleColumnPicker ────────────────────────────────────────────────────
+// Replacement for native <select> in the column mapping list. Shows a
+// content preview for every source column so the user can tell apart
+// "Column J" and "Column N" without opening their file. Supports extra
+// non-column options (e.g. "Auto-generate from prefix"). When `value` is
+// empty, displays the configurable notMappedLabel instead of "— Not
+// mapped —" — used by the Quantity row to say "Defaulting to 1".
+interface PickerExtraOption {
+  value: string;
+  label: string;
+  description?: string;
+  icon?: React.ReactNode;
+}
+
+function SingleColumnPicker({
+  value,
+  onChange,
+  sourceHeaders,
+  sourceRows,
+  notMappedLabel = '— Not mapped —',
+  extraOptions = [],
+  highlightError = false,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  sourceHeaders: string[];
+  sourceRows: Record<string, unknown>[];
+  notMappedLabel?: string;
+  extraOptions?: PickerExtraOption[];
+  highlightError?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const extraMatch = extraOptions.find(o => o.value === value);
+  const isColumn = !!value && !extraMatch;
+  const isEmpty = !value;
+  const selectedPreview = isColumn ? previewValuesForColumn(sourceRows, value, 2) : [];
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={`w-full text-left px-2 py-1 text-xs border rounded bg-white hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] flex items-center justify-between gap-1.5 ${
+          highlightError ? 'border-red-300' : 'border-gray-200'
+        }`}
+      >
+        <span className="truncate flex-1 min-w-0">
+          {extraMatch ? (
+            <span className="font-semibold text-[#015280]">{extraMatch.label}</span>
+          ) : isColumn ? (
+            <>
+              <span className="text-gray-800 font-medium">{value}</span>
+              {selectedPreview.length > 0 && (
+                <span className="text-gray-400 ml-1.5">· {selectedPreview.join(' · ')}</span>
+              )}
+            </>
+          ) : (
+            <span className="text-gray-500 italic">{notMappedLabel}</span>
+          )}
+        </span>
+        <ChevronLeft className="w-3 h-3 text-gray-400 flex-shrink-0 -rotate-90" />
+      </button>
+      {open && (
+        <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 min-w-[320px] max-w-[440px] max-h-80 overflow-y-auto py-1">
+          {/* Not mapped */}
+          <button
+            type="button"
+            onClick={() => { onChange(''); setOpen(false); }}
+            className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 ${isEmpty ? 'bg-[#e6f8ff]/40 font-semibold text-[#015280]' : 'text-gray-700 italic'}`}
+          >
+            {notMappedLabel}
+          </button>
+
+          {extraOptions.length > 0 && (
+            <>
+              <div className="border-t border-gray-100 my-1" />
+              {extraOptions.map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => { onChange(opt.value); setOpen(false); }}
+                  className={`w-full text-left px-3 py-1.5 hover:bg-gray-50 ${value === opt.value ? 'bg-[#e6f8ff]/40' : ''}`}
+                >
+                  <p className={`text-xs ${value === opt.value ? 'font-semibold text-[#015280]' : 'font-semibold text-gray-800'} flex items-center gap-1`}>
+                    {opt.icon}
+                    {opt.label}
+                  </p>
+                  {opt.description && (
+                    <p className="text-[10px] text-gray-500">{opt.description}</p>
+                  )}
+                </button>
+              ))}
+            </>
+          )}
+
+          {sourceHeaders.length > 0 && (
+            <>
+              <div className="border-t border-gray-100 my-1" />
+              <p className="px-3 py-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                Source columns
+              </p>
+              {sourceHeaders.map(h => {
+                const preview = previewValuesForColumn(sourceRows, h, 3);
+                const active = value === h;
+                return (
+                  <button
+                    key={h}
+                    type="button"
+                    onClick={() => { onChange(h); setOpen(false); }}
+                    className={`w-full text-left px-3 py-1.5 hover:bg-gray-50 ${active ? 'bg-[#e6f8ff]/40' : ''}`}
+                  >
+                    <p className={`text-xs truncate ${active ? 'font-semibold text-[#015280]' : 'font-semibold text-gray-900'}`}>
+                      {h}
+                    </p>
+                    {preview.length > 0 ? (
+                      <p className="text-[10px] text-gray-500 truncate" title={preview.join(' · ')}>
+                        {preview.join(' · ')}
+                      </p>
+                    ) : (
+                      <p className="text-[10px] text-gray-400 italic">(empty in the first rows)</p>
+                    )}
+                  </button>
+                );
+              })}
             </>
           )}
         </div>
