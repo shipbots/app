@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="ShipHero">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f0f0f0"/>
+      <stop offset="1" stop-color="#c6c6c6"/>
+    </linearGradient>
+  </defs>
+  <!-- iOS-tile background -->
+  <rect width="512" height="512" rx="115" fill="url(#tile)"/>
+
+  <!-- Soft white halo behind the hexagon -->
+  <polygon points="256,72 414,164 414,348 256,440 98,348 98,164" fill="#ffffff" opacity="0.45"/>
+
+  <!-- Orange hexagon (ShipHero brand mark, pointed top/bottom) -->
+  <polygon points="256,88 398,172 398,340 256,424 114,340 114,172" fill="#EA4E1F"/>
+
+  <!-- Stylized white "S" inside the hexagon -->
+  <g fill="#ffffff">
+    <!-- Top bar -->
+    <path d="M174 184 L342 184 L342 224 L228 224 Z"/>
+    <!-- Right vertical connector (top to middle) -->
+    <rect x="304" y="216" width="38" height="80"/>
+    <!-- Middle bar -->
+    <path d="M174 244 L342 244 L342 284 L174 284 Z"/>
+    <!-- Left vertical connector (middle to bottom) -->
+    <rect x="170" y="276" width="38" height="80"/>
+    <!-- Bottom bar -->
+    <path d="M170 304 L342 304 L284 344 L170 344 Z"/>
+  </g>
+</svg>

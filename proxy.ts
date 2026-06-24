@@ -13,7 +13,12 @@ export default auth((req) => {
   if (pathname.startsWith('/api/health')) return NextResponse.next();
 
   // Always allow public static assets
-  if (pathname.startsWith('/_next') || pathname === '/favicon.ico' || pathname === '/shipbots-icon.png') {
+  if (
+    pathname.startsWith('/_next') ||
+    pathname === '/favicon.ico' ||
+    pathname === '/shipbots-icon.png' ||
+    pathname.startsWith('/mini-apps/')
+  ) {
     return NextResponse.next();
   }
 
@@ -54,5 +59,5 @@ export default auth((req) => {
 
 export const config = {
   // Run on all routes except Next.js internals and static files
-  matcher: ['/((?!_next/static|_next/image|shipbots-icon.png|favicon.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|shipbots-icon.png|favicon.ico|mini-apps/).*)'],
 };
