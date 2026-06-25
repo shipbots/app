@@ -77,10 +77,7 @@ const APPS: AppDef[] = [
     description: 'Opens the ShipHero login (shipbots.com/login) in a new tab.',
     bg: 'from-gray-100 to-gray-300',
     iconBg: '#cbd5e1',
-    // SVG replica I built since I can't write binary files. Swap this to
-    // /mini-apps/ship-hero.png any time — the AppTile auto-falls back to
-    // the Warehouse lucide icon if the file is missing.
-    iconSrc: '/mini-apps/ship-hero.svg',
+    iconSrc: '/mini-apps/ship-hero.png',
     iconFallback: Warehouse,
     externalUrl: 'https://www.shipbots.com/login',
   },
