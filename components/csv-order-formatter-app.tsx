@@ -27,7 +27,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
-  Upload, FileSpreadsheet, Loader2, Check, AlertTriangle, ChevronLeft, Download, Sparkles, Info, Hash,
+  Upload, FileSpreadsheet, Loader2, Check, AlertTriangle, ChevronLeft, Download, Sparkles, Info, Hash, Plus, Trash2, Package,
 } from 'lucide-react';
 
 const REQUIRED_COLS = [
@@ -198,7 +198,22 @@ function detectDelimitersFromCells(cells: string[]): string[] {
 }
 
 type Stage = 'idle' | 'parsing' | 'header-confirm' | 'analyzing' | 'review' | 'error';
-type SkuStrategy = 'column' | 'product-mapping';
+type SkuStrategy = 'column' | 'product-mapping' | 'global-products';
+
+// A single product line that gets applied to every order under the
+// 'global-products' strategy. Each row in the source file is duplicated
+// once per valid entry here.
+interface GlobalProductEntry {
+  id: string;
+  sku: string;
+  name: string;
+  quantity: string;
+}
+
+// Browser-only id generator for adding/removing global product rows.
+function genId(): string {
+  return Math.random().toString(36).slice(2, 10);
+}
 
 interface MapResult {
   columns: string[];
@@ -261,6 +276,11 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
   const [delimiters, setDelimiters] = useState<string[]>([',']);
   const [customDelim, setCustomDelim] = useState<string>('');
   const [productSkuMap, setProductSkuMap] = useState<Record<string, string>>({});
+  // Global products applied to every order under the 'global-products'
+  // strategy. Each entry becomes one extra output row per source row.
+  const [globalProducts, setGlobalProducts] = useState<GlobalProductEntry[]>(
+    () => [{ id: genId(), sku: '', name: '', quantity: '' }],
+  );
   // When the column strategy is active but some cells still hold multiple
   // products, the user can opt in to splitting them positionally — each
   // mapped column (Product Name, SKU, Quantity) gets split with the same
@@ -294,6 +314,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     setDelimiters([',']);
     setCustomDelim('');
     setProductSkuMap({});
+    setGlobalProducts([{ id: genId(), sku: '', name: '', quantity: '' }]);
     setColumnExpandMulti(false);
     setDefaultQuantity('1');
     setAutoGenPrefix('');
@@ -395,6 +416,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       setDelimiters(detectDelimitersFromCells(sampleCells));
       setCustomDelim('');
       setProductSkuMap({});
+      setGlobalProducts([{ id: genId(), sku: '', name: '', quantity: '' }]);
       setColumnExpandMulti(false);
       // Quantity default stays at whatever the user previously typed,
       // resetting only on a brand-new upload (handled by reset()).
@@ -508,6 +530,30 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       return expanded;
     }
 
+    // Strategy C: global products. Each source row is duplicated once
+    // per user-defined product. Order-level fields are shared; Product
+    // Name / SKU / Quantity come from the global entries.
+    if (skuStrategy === 'global-products') {
+      const valid = globalProducts.filter(p => p.sku.trim() && p.name.trim());
+      const out: Record<string, string>[] = [];
+      sourceRows.forEach((row, idx) => {
+        const base = buildBaseRow(row, idx);
+        if (valid.length === 0) {
+          out.push({ ...base, 'Product Name': '', 'Product Sku (Required)': '' });
+          return;
+        }
+        for (const p of valid) {
+          out.push({
+            ...base,
+            'Product Name': p.name,
+            'Product Sku (Required)': p.sku,
+            'Quantity': p.quantity.trim() || defaultQuantity || '1',
+          });
+        }
+      });
+      return out;
+    }
+
     // Strategy B: product → SKU lookup. Each source row's product cells
     // (one or more selected columns) are split into N products and we
     // emit one output row per product, sharing the order info but with
@@ -563,6 +609,14 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     return uniqueProductNames.every(n => (productSkuMap[n.toLowerCase()] ?? '').trim() !== '');
   }, [skuStrategy, uniqueProductNames, productSkuMap]);
 
+  // Global-products strategy needs at least one row where BOTH SKU and
+  // product name are filled in. Empty SKU rows are dropped at download.
+  const validGlobalProducts = useMemo(
+    () => globalProducts.filter(p => p.sku.trim() && p.name.trim()),
+    [globalProducts],
+  );
+  const globalProductsValid = skuStrategy === 'global-products' && validGlobalProducts.length > 0;
+
   // Forecast the number of output rows. Useful preview so the user can
   // see "12 source rows → 47 output rows" before they download.
   const projectedOutputRows = useMemo(() => {
@@ -574,6 +628,10 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
         return sum + Math.max(1, names.length);
       }, 0);
     }
+    if (skuStrategy === 'global-products') {
+      const count = Math.max(1, validGlobalProducts.length);
+      return sourceRows.length * count;
+    }
     if (columnExpandMulti) {
       const productCol = mappingEdits['Product Name'];
       if (!productCol) return sourceRows.length;
@@ -583,7 +641,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       }, 0);
     }
     return sourceRows.length;
-  }, [result, skuStrategy, productNameCols, sourceRows, allActiveDelims, columnExpandMulti, mappingEdits]);
+  }, [result, skuStrategy, productNameCols, sourceRows, allActiveDelims, columnExpandMulti, mappingEdits, validGlobalProducts.length]);
 
   // Missing required columns based on current mapping edits. Auto-gen for
   // Order Number counts as "mapped" only if the user has typed a prefix.
@@ -591,8 +649,9 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
   // every unique product has a SKU.
   const missingRequired = useMemo(() => {
     return REQUIRED_COLS.filter(col => {
-      if (col === 'Product Sku (Required)' && skuStrategy === 'product-mapping') {
-        return !productMapComplete;
+      if (col === 'Product Sku (Required)') {
+        if (skuStrategy === 'product-mapping') return !productMapComplete;
+        if (skuStrategy === 'global-products') return !globalProductsValid;
       }
       const v = mappingEdits[col];
       if (!v) return true;
@@ -601,10 +660,13 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       }
       return false;
     });
-  }, [mappingEdits, autoGenPrefix, skuStrategy, productMapComplete]);
+  }, [mappingEdits, autoGenPrefix, skuStrategy, productMapComplete, globalProductsValid]);
 
   const orderIsAutoGen = mappingEdits['Order Number (Required)'] === AUTO_GEN_ORDER_VAL;
-  const skuOk = skuStrategy === 'column' ? skuConfirmed : productMapComplete;
+  const skuOk =
+    skuStrategy === 'column' ? skuConfirmed :
+    skuStrategy === 'product-mapping' ? productMapComplete :
+    globalProductsValid;
   const canDownload =
     !!result &&
     skuOk &&
@@ -798,6 +860,10 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
               setProductSkuMap={setProductSkuMap}
               uniqueProductNames={uniqueProductNames}
               productMapComplete={productMapComplete}
+              globalProducts={globalProducts}
+              setGlobalProducts={setGlobalProducts}
+              globalProductsValid={globalProductsValid}
+              validGlobalProductCount={validGlobalProducts.length}
               columnExpandMulti={columnExpandMulti}
               setColumnExpandMulti={setColumnExpandMulti}
               defaultQuantity={defaultQuantity}
@@ -827,6 +893,8 @@ function ReviewPanel({
   customDelim, setCustomDelim,
   productSkuMap, setProductSkuMap,
   uniqueProductNames, productMapComplete,
+  globalProducts, setGlobalProducts,
+  globalProductsValid, validGlobalProductCount,
   columnExpandMulti, setColumnExpandMulti,
   defaultQuantity, setDefaultQuantity,
   projectedOutputRows,
@@ -857,6 +925,10 @@ function ReviewPanel({
   setProductSkuMap: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   uniqueProductNames: string[];
   productMapComplete: boolean;
+  globalProducts: GlobalProductEntry[];
+  setGlobalProducts: React.Dispatch<React.SetStateAction<GlobalProductEntry[]>>;
+  globalProductsValid: boolean;
+  validGlobalProductCount: number;
   columnExpandMulti: boolean;
   setColumnExpandMulti: (b: boolean) => void;
   defaultQuantity: string;
@@ -886,6 +958,13 @@ function ReviewPanel({
     setMappingEdits(prev => ({ ...prev, [template]: source }));
     if (template === 'Product Sku (Required)') setSkuConfirmed(false);
   };
+
+  // Local mirror of the parent's skuOk — keeps the strategy box color and
+  // the "Confirmed" badge in sync regardless of which strategy is active.
+  const skuOk =
+    skuStrategy === 'column' ? skuConfirmed :
+    skuStrategy === 'product-mapping' ? productMapComplete :
+    globalProductsValid;
 
   return (
     <div className="space-y-4">
@@ -939,9 +1018,7 @@ function ReviewPanel({
 
       {/* SKU section — strategy toggle on top, sub-UI below */}
       <div className={`rounded-xl border-2 p-4 ${
-        (skuStrategy === 'column' && skuConfirmed) || (skuStrategy === 'product-mapping' && productMapComplete)
-          ? 'border-emerald-300 bg-emerald-50/40'
-          : 'border-[#43c7ff] bg-[#e6f8ff]/40'
+        skuOk ? 'border-emerald-300 bg-emerald-50/40' : 'border-[#43c7ff] bg-[#e6f8ff]/40'
       }`}>
         <div className="flex items-start justify-between gap-3 mb-3">
           <div>
@@ -955,7 +1032,7 @@ function ReviewPanel({
               )}
             </p>
           </div>
-          {(skuStrategy === 'column' ? skuConfirmed : productMapComplete) && (
+          {skuOk && (
             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-white border border-emerald-200 rounded-full px-2 py-0.5 flex-shrink-0">
               <Check className="w-3 h-3" />
               Confirmed
@@ -964,10 +1041,11 @@ function ReviewPanel({
         </div>
 
         {/* Strategy toggle */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
           {([
             { key: 'column' as const, title: 'Each row has a SKU column', sub: 'Pick which column in the file holds the SKU.' },
-            { key: 'product-mapping' as const, title: "Rows have product names — I'll provide SKUs", sub: 'For files like the one above with only product names (often multiple per row).' },
+            { key: 'product-mapping' as const, title: "Rows have product names — I'll provide SKUs", sub: 'For files with only product names (often multiple per row).' },
+            { key: 'global-products' as const, title: "Products aren't in the file — I'll add them", sub: 'Define one or more products that get added to every order.' },
           ]).map(opt => {
             const active = skuStrategy === opt.key;
             return (
@@ -976,7 +1054,7 @@ function ReviewPanel({
                 type="button"
                 onClick={() => {
                   setSkuStrategy(opt.key);
-                  if (opt.key === 'product-mapping') setSkuConfirmed(false);
+                  if (opt.key !== 'column') setSkuConfirmed(false);
                 }}
                 className={`text-left p-3 rounded-lg border transition-colors ${
                   active ? 'border-[#015280] bg-white shadow-sm' : 'border-gray-200 bg-white/60 hover:border-gray-300'
@@ -1111,6 +1189,16 @@ function ReviewPanel({
             sourceRowCount={sourceRows.length}
           />
         )}
+
+        {skuStrategy === 'global-products' && (
+          <GlobalProductsPanel
+            globalProducts={globalProducts}
+            setGlobalProducts={setGlobalProducts}
+            sourceRowCount={sourceRows.length}
+            validCount={validGlobalProductCount}
+            defaultQuantity={defaultQuantity}
+          />
+        )}
       </div>
 
       {/* Country code map */}
@@ -1152,13 +1240,17 @@ function ReviewPanel({
             const isOrderRow = col === 'Order Number (Required)';
             const isQuantityRow = col === 'Quantity';
             const isSkuRow = col === 'Product Sku (Required)';
-            const isSkuFromProductMapping = isSkuRow && skuStrategy === 'product-mapping';
+            const isSkuFromUpstream = isSkuRow && (skuStrategy === 'product-mapping' || skuStrategy === 'global-products');
             const showAutoGenInput = isOrderRow && src === AUTO_GEN_ORDER_VAL;
 
             // SKU row when the upstream strategy box is handling it via the
-            // product → SKU table: just show a read-only note instead of
-            // letting the user pick another column down here.
-            if (isSkuFromProductMapping) {
+            // product → SKU table OR the global products list: just show a
+            // read-only note instead of letting the user pick another
+            // column down here.
+            if (isSkuFromUpstream) {
+              const note = skuStrategy === 'product-mapping'
+                ? 'Using SKUs from product mapping above'
+                : 'Using SKUs from global product list above';
               return (
                 <div key={col} className="grid grid-cols-2 gap-2 items-center text-xs">
                   <span className="truncate font-semibold text-gray-900" title={col}>
@@ -1166,7 +1258,7 @@ function ReviewPanel({
                   </span>
                   <div className="px-2 py-1 text-xs bg-[#e6f8ff]/40 border border-[#43c7ff]/40 rounded text-[#015280] flex items-center gap-1.5">
                     <Check className="w-3 h-3" />
-                    <span className="truncate">Using SKUs from product mapping above</span>
+                    <span className="truncate">{note}</span>
                   </div>
                 </div>
               );
@@ -1727,6 +1819,133 @@ function SingleColumnPicker({
             </>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── GlobalProductsPanel ───────────────────────────────────────────────────
+// Sub-UI for the 'global-products' SKU strategy. The user defines one or
+// more products (SKU + name + optional qty) that get attached to every
+// order in the source file. Each entry expands the output by one row per
+// source row at download time.
+function GlobalProductsPanel({
+  globalProducts, setGlobalProducts,
+  sourceRowCount, validCount, defaultQuantity,
+}: {
+  globalProducts: GlobalProductEntry[];
+  setGlobalProducts: React.Dispatch<React.SetStateAction<GlobalProductEntry[]>>;
+  sourceRowCount: number;
+  validCount: number;
+  defaultQuantity: string;
+}) {
+  const update = (id: string, patch: Partial<GlobalProductEntry>) => {
+    setGlobalProducts(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
+  };
+  const addRow = () => {
+    setGlobalProducts(prev => [...prev, { id: genId(), sku: '', name: '', quantity: '' }]);
+  };
+  const removeRow = (id: string) => {
+    setGlobalProducts(prev => prev.length <= 1 ? prev : prev.filter(p => p.id !== id));
+  };
+
+  const projected = sourceRowCount * Math.max(1, validCount);
+
+  return (
+    <div className="bg-white rounded-lg p-3 border border-gray-100 space-y-3">
+      <div className="flex items-start gap-2">
+        <Package className="w-4 h-4 text-[#015280] mt-0.5 flex-shrink-0" />
+        <div className="flex-1">
+          <p className="text-xs font-semibold text-gray-900">
+            Products to add to every order
+          </p>
+          <p className="text-[11px] text-gray-600">
+            Each product becomes one line item on every order. Add as many as you need.
+          </p>
+        </div>
+      </div>
+
+      {/* Row count preview */}
+      {sourceRowCount > 0 && (
+        <div className="text-[11px] bg-[#015280]/5 border border-[#015280]/20 rounded p-2 text-[#015280] leading-snug">
+          <span className="font-semibold">{sourceRowCount} order{sourceRowCount === 1 ? '' : 's'}</span>
+          {' × '}
+          <span className="font-semibold">{Math.max(1, validCount)} product{Math.max(1, validCount) === 1 ? '' : 's'}</span>
+          {' = '}
+          <span className="font-semibold">{projected} output row{projected === 1 ? '' : 's'}</span>.
+          Every order shares its name, address, and shipping fields across all product lines.
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="grid grid-cols-[1fr_1.5fr_80px_28px] gap-2 px-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+        <span>SKU</span>
+        <span>Product name</span>
+        <span>Qty</span>
+        <span />
+      </div>
+
+      {/* Rows */}
+      <div className="space-y-1.5">
+        {globalProducts.map(p => {
+          const valid = p.sku.trim() && p.name.trim();
+          return (
+            <div key={p.id} className="grid grid-cols-[1fr_1.5fr_80px_28px] gap-2 items-center">
+              <input
+                type="text"
+                value={p.sku}
+                onChange={e => update(p.id, { sku: e.target.value })}
+                placeholder="SKU-001"
+                className={`px-2 py-1 text-xs font-mono border rounded focus:outline-none focus:ring-1 focus:ring-[#43c7ff] ${
+                  valid ? 'border-emerald-300 bg-emerald-50/30' : 'border-gray-300 bg-white'
+                }`}
+              />
+              <input
+                type="text"
+                value={p.name}
+                onChange={e => update(p.id, { name: e.target.value })}
+                placeholder="Product name"
+                className={`px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-[#43c7ff] ${
+                  valid ? 'border-emerald-300 bg-emerald-50/30' : 'border-gray-300 bg-white'
+                }`}
+              />
+              <input
+                type="number"
+                min="1"
+                value={p.quantity}
+                onChange={e => update(p.id, { quantity: e.target.value })}
+                placeholder={defaultQuantity || '1'}
+                title={`Defaults to ${defaultQuantity || '1'} if left blank`}
+                className="px-2 py-1 text-xs font-mono border border-gray-300 rounded bg-white text-center focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
+              />
+              <button
+                type="button"
+                onClick={() => removeRow(p.id)}
+                disabled={globalProducts.length <= 1}
+                title={globalProducts.length <= 1 ? 'Keep at least one row' : 'Remove this product'}
+                className="p-1 rounded hover:bg-red-50 hover:text-red-500 text-gray-400 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Add row */}
+      <button
+        type="button"
+        onClick={addRow}
+        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-[#015280] hover:bg-[#e6f8ff]/40 rounded transition-colors"
+      >
+        <Plus className="w-3.5 h-3.5" />
+        Add product
+      </button>
+
+      {validCount === 0 && (
+        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+          Add at least one product with a SKU and name before downloading.
+        </p>
       )}
     </div>
   );
