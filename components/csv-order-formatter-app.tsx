@@ -28,7 +28,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { normalizeCountry, normalizeUSState } from '@/lib/country-state-lookup';
 import {
-  Upload, FileSpreadsheet, Loader2, Check, AlertTriangle, ChevronLeft, Download, Sparkles, Info, Hash, Plus, Trash2, Package,
+  Upload, FileSpreadsheet, Loader2, Check, AlertTriangle, ChevronLeft, Download, Sparkles, Info, Hash, Plus, Trash2, Package, Eye,
 } from 'lucide-react';
 
 const REQUIRED_COLS = [
@@ -477,7 +477,13 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
   // run through the user-confirmed value map; quantity defaults to 1 if
   // not mapped; the Order Number column either comes from a source column
   // or is generated from the user's prefix.
-  const generateRows = (): Record<string, string>[] => {
+  // Build the output rows. Pass sourceSliceLimit to cheaply compute a
+  // preview from just the first N source rows (used by the live preview
+  // at the bottom of the review step); leave undefined for download.
+  // Either way, totalForPadding stays at sourceRows.length so auto-gen
+  // order numbers in the preview match what the full download would
+  // produce.
+  const generateRows = (sourceSliceLimit?: number): Record<string, string>[] => {
     if (!result) return [];
     const orderNumCol = mappingEdits['Order Number (Required)'];
     const isAutoGenOrder = orderNumCol === AUTO_GEN_ORDER_VAL;
@@ -485,6 +491,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     const billingCountryCol = mappingEdits['Billing Country Code'];
     const quantityCol = mappingEdits['Quantity'];
     const total = sourceRows.length;
+    const inputRows = sourceSliceLimit ? sourceRows.slice(0, sourceSliceLimit) : sourceRows;
     const allDelims = [...delimiters, ...(customDelim ? [customDelim] : [])];
 
     // Build the canonical "shipping fields" output for a source row.
@@ -527,7 +534,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     if (skuStrategy === 'column') {
       // A1. Single product per row — straight passthrough.
       if (!columnExpandMulti) {
-        return sourceRows.map((row, idx) => buildBaseRow(row, idx));
+        return inputRows.map((row, idx) => buildBaseRow(row, idx));
       }
       // A2. Multi-product cells. Split product/SKU/quantity cells with
       // the active delimiters and zip them positionally. A row whose
@@ -538,7 +545,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       const productCol = mappingEdits['Product Name'];
       const skuCol = mappingEdits['Product Sku (Required)'];
       const expanded: Record<string, string>[] = [];
-      sourceRows.forEach((row, idx) => {
+      inputRows.forEach((row, idx) => {
         const base = buildBaseRow(row, idx);
         const names = productCol
           ? splitProducts(String(row[productCol] ?? ''), allDelims)
@@ -572,7 +579,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     if (skuStrategy === 'global-products') {
       const valid = globalProducts.filter(p => p.sku.trim() && p.name.trim());
       const out: Record<string, string>[] = [];
-      sourceRows.forEach((row, idx) => {
+      inputRows.forEach((row, idx) => {
         const base = buildBaseRow(row, idx);
         if (valid.length === 0) {
           out.push({ ...base, 'Product Name': '', 'Product Sku (Required)': '' });
@@ -596,7 +603,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     // the product's name + SKU substituted in. Unknown products keep the
     // name and leave SKU blank so the user can spot them in the output.
     const expanded: Record<string, string>[] = [];
-    sourceRows.forEach((row, idx) => {
+    inputRows.forEach((row, idx) => {
       const base = buildBaseRow(row, idx);
       const names = rowProductNames(row, productNameCols, allDelims);
       if (names.length === 0) {
@@ -627,6 +634,11 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     const baseName = fileName.replace(/\.(csv|xlsx?|tsv)$/i, '') || 'orders';
     downloadCSV(`${baseName} — shiphero.csv`, result.columns, rows);
   };
+
+  // Live output preview — run the generator on just the first few source
+  // rows so it stays cheap even when the file is huge, then take the
+  // first 8 output rows (multi-product expansion can balloon counts).
+  const previewRows = result ? generateRows(5).slice(0, 8) : [];
 
   // List of products that need a SKU under the product-mapping strategy.
   // Recomputes when the user toggles delimiters / changes the product
@@ -905,6 +917,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
               defaultQuantity={defaultQuantity}
               setDefaultQuantity={setDefaultQuantity}
               projectedOutputRows={projectedOutputRows}
+              previewRows={previewRows}
               missingRequired={missingRequired}
               canDownload={canDownload}
               onDownload={onDownload}
@@ -933,7 +946,7 @@ function ReviewPanel({
   globalProductsValid, validGlobalProductCount,
   columnExpandMulti, setColumnExpandMulti,
   defaultQuantity, setDefaultQuantity,
-  projectedOutputRows,
+  projectedOutputRows, previewRows,
   missingRequired, canDownload, onDownload,
 }: {
   result: MapResult;
@@ -970,6 +983,7 @@ function ReviewPanel({
   defaultQuantity: string;
   setDefaultQuantity: (s: string) => void;
   projectedOutputRows: number;
+  previewRows: Record<string, string>[];
   missingRequired: readonly string[];
   canDownload: boolean;
   onDownload: () => void;
@@ -1389,6 +1403,13 @@ function ReviewPanel({
         </div>
       </div>
 
+      {/* Live output preview — shows exactly what'll be in the CSV */}
+      <OutputPreview
+        columns={result.columns}
+        rows={previewRows}
+        projectedOutputRows={projectedOutputRows}
+      />
+
       {/* Download CTA at the bottom too */}
       <div className="flex justify-end">
         <button
@@ -1400,6 +1421,98 @@ function ReviewPanel({
           <Download className="w-4 h-4" />
           Download CSV
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ── OutputPreview ─────────────────────────────────────────────────────────
+// Live table of the first few generated rows, so the user can see what
+// they're about to download before pressing the button. Shows only the
+// columns that are required OR populated in the preview — otherwise all
+// 47 ShipHero columns would overwhelm the panel. Horizontal scroll
+// handles wide rows; the first column is sticky so the row reference
+// (Order Number, etc.) stays in view as the user scrolls right.
+function OutputPreview({
+  columns, rows, projectedOutputRows,
+}: {
+  columns: string[];
+  rows: Record<string, string>[];
+  projectedOutputRows: number;
+}) {
+  const REQ = REQUIRED_COLS as readonly string[];
+
+  // Keep the column set tight: required + anything that actually has a
+  // value in at least one preview row. Preserves template order.
+  const displayedColumns = useMemo(() => {
+    return columns.filter(col => {
+      if (REQ.includes(col)) return true;
+      return rows.some(r => (r[col] ?? '').trim() !== '');
+    });
+  }, [columns, rows, REQ]);
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="bg-white border-2 border-[#43c7ff]/40 rounded-xl p-4">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2">
+          <Eye className="w-4 h-4 text-[#015280]" />
+          <p className="text-sm font-semibold text-gray-900">Output preview</p>
+        </div>
+        <p className="text-[11px] text-gray-500">
+          First {rows.length} of {projectedOutputRows.toLocaleString()} output row{projectedOutputRows === 1 ? '' : 's'}
+          {displayedColumns.length < columns.length && (
+            <> · {displayedColumns.length} of {columns.length} columns shown</>
+          )}
+        </p>
+      </div>
+      <p className="text-[11px] text-gray-600 mb-2">
+        Live preview — every mapping or strategy change above updates this table. Only required
+        columns and columns with data are shown to keep things readable.
+      </p>
+      <div className="overflow-x-auto border border-gray-200 rounded-lg">
+        <table className="text-[11px] min-w-full">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              {displayedColumns.map((col, i) => {
+                const isReq = REQ.includes(col);
+                return (
+                  <th
+                    key={col}
+                    className={`px-2 py-1.5 text-left font-semibold uppercase tracking-wider whitespace-nowrap ${
+                      isReq ? 'text-[#015280]' : 'text-gray-500'
+                    } ${i === 0 ? 'sticky left-0 bg-gray-50 border-r border-gray-200 z-10' : ''}`}
+                  >
+                    {col}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {rows.map((row, ri) => (
+              <tr key={ri} className="hover:bg-gray-50/60">
+                {displayedColumns.map((col, ci) => {
+                  const v = (row[col] ?? '').trim();
+                  return (
+                    <td
+                      key={col}
+                      className={`px-2 py-1.5 whitespace-nowrap ${
+                        v ? 'text-gray-800' : 'text-gray-300 italic'
+                      } ${ci === 0 ? 'sticky left-0 bg-white border-r border-gray-200 font-medium' : ''}`}
+                      title={v}
+                    >
+                      {v || '—'}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
