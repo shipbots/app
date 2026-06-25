@@ -81,6 +81,16 @@ const APPS: AppDef[] = [
     iconFallback: Warehouse,
     externalUrl: 'https://www.shipbots.com/login',
   },
+  {
+    id: 'sh-portal',
+    label: 'SH Portal',
+    description: 'Opens the ShipBots 3PL portal (shipbots.com/portal) in a new tab.',
+    bg: 'from-white to-gray-100',
+    iconBg: '#ffffff',
+    iconSrc: '/mini-apps/sh-portal.svg',
+    iconFallback: Warehouse,
+    externalUrl: 'https://www.shipbots.com/portal',
+  },
 ];
 
 export function MiniAppsView() {
@@ -122,7 +132,7 @@ export function MiniAppsView() {
 
           {/* Placeholder slots so the grid hints at being a real iOS-style
               springboard with room to grow. Disabled, no click. */}
-          {Array.from({ length: 3 }).map((_, i) => (
+          {Array.from({ length: 2 }).map((_, i) => (
             <div key={`ph-${i}`} className="flex flex-col items-center gap-1.5 opacity-30 select-none">
               <div className="w-16 h-16 rounded-[18px] border-2 border-dashed border-gray-300" />
               <p className="text-[11px] text-gray-400">Coming soon</p>

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SH Portal — 3PL">
+  <!-- White tile -->
+  <rect width="512" height="512" rx="115" fill="#ffffff"/>
+  <!-- 3PL text in brand navy, centered -->
+  <text
+    x="256"
+    y="256"
+    fill="#015280"
+    font-family="-apple-system, BlinkMacSystemFont, 'Inter', 'Helvetica Neue', Arial, sans-serif"
+    font-weight="900"
+    font-size="200"
+    text-anchor="middle"
+    dominant-baseline="central"
+    letter-spacing="-6"
+  >3PL</text>
+</svg>
