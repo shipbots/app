@@ -5,9 +5,9 @@
  * Why a built-in table instead of letting Claude do it:
  *   - The AI only sees a few sample rows, so it misses country values that
  *     appear later in the file.
- *   - Customers requested "England -> UK" specifically, not "England -> GB"
- *     (ISO 3166-1 alpha-2 says GB, but ShipHero/ShipBots convention is UK
- *     here). A deterministic table makes that promise stick.
+ *   - Strict ISO 3166-1 alpha-2 codes are required by ShipHero, so e.g.
+ *     "England" → "GB" (not "UK"). A deterministic table makes that
+ *     promise stick across uploads.
  *
  * Coverage notes:
  *   - All 50 US states + DC + the most common territories.
@@ -40,18 +40,18 @@ export const COUNTRY_LOOKUP: Record<string, string> = {
   'méxico': 'MX',
   'estados unidos mexicanos': 'MX',
 
-  // United Kingdom — customer preference is UK (not GB)
-  'uk': 'UK',
-  'gb': 'UK',
-  'gbr': 'UK',
-  'great britain': 'UK',
-  'united kingdom': 'UK',
-  'united kingdom of great britain': 'UK',
-  'united kingdom of great britain and northern ireland': 'UK',
-  'england': 'UK',
-  'scotland': 'UK',
-  'wales': 'UK',
-  'northern ireland': 'UK',
+  // United Kingdom — strict ISO 3166-1 alpha-2 (GB, not UK)
+  'gb': 'GB',
+  'gbr': 'GB',
+  'uk': 'GB',
+  'great britain': 'GB',
+  'united kingdom': 'GB',
+  'united kingdom of great britain': 'GB',
+  'united kingdom of great britain and northern ireland': 'GB',
+  'england': 'GB',
+  'scotland': 'GB',
+  'wales': 'GB',
+  'northern ireland': 'GB',
 
   // Ireland
   'ie': 'IE',
@@ -207,11 +207,12 @@ export function normalizeCountry(value: string): string {
   if (!value) return '';
   const trimmed = value.trim();
   if (!trimmed) return '';
-  // If it's already a known 2-letter code, return it uppercased.
+  // If it's already a 2-letter code, return it uppercased. UK → GB is
+  // routed through the lookup below so "UK" normalizes to the strict
+  // ISO 3166-1 alpha-2 code (GB).
   if (/^[a-zA-Z]{2}$/.test(trimmed)) {
     const upper = trimmed.toUpperCase();
-    // Map GB → UK to honor the user-stated convention.
-    if (upper === 'GB') return 'UK';
+    if (upper === 'UK') return 'GB';
     return upper;
   }
   const key = trimmed.toLowerCase().replace(/\s+/g, ' ');
