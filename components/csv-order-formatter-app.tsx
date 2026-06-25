@@ -26,6 +26,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
+import { normalizeCountry, normalizeUSState } from '@/lib/country-state-lookup';
 import {
   Upload, FileSpreadsheet, Loader2, Check, AlertTriangle, ChevronLeft, Download, Sparkles, Info, Hash, Plus, Trash2, Package,
 } from 'lucide-react';
@@ -399,7 +400,33 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       const out = (await res.json()) as MapResult;
       setResult(out);
       setMappingEdits({ ...out.columnMapping });
-      setCountryEdits({ ...out.countryValueMap });
+
+      // Build the comprehensive country-value map: scan EVERY row of the
+      // dataset for unique country values, then prefill each with the
+      // built-in lookup → AI's suggestion → '' (unknown). This guarantees
+      // we surface every country in the file, not just the handful the AI
+      // saw in the 6 sample rows.
+      const countryCol = out.columnMapping['Country Code (Required)'] || '';
+      const billingCountryCol = out.columnMapping['Billing Country Code'] || '';
+      const seenCountries = new Set<string>();
+      const accumulate = (col: string) => {
+        if (!col) return;
+        for (const row of dataRows) {
+          const v = String(row[col] ?? '').trim();
+          if (v) seenCountries.add(v);
+        }
+      };
+      accumulate(countryCol);
+      accumulate(billingCountryCol);
+      const fullCountryMap: Record<string, string> = {};
+      for (const raw of Array.from(seenCountries).sort()) {
+        // Priority: built-in lookup (canonical/per-customer convention) →
+        // AI suggestion → empty (user fills in via the UI).
+        const builtIn = normalizeCountry(raw);
+        const aiVal = out.countryValueMap?.[raw] ?? '';
+        fullCountryMap[raw] = builtIn || aiVal || '';
+      }
+      setCountryEdits(fullCountryMap);
       setSkuConfirmed(false);
       setAutoGenPrefix('');
 
@@ -477,11 +504,20 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       }
       if (countryCol) {
         const raw = String(row[countryCol] ?? '').trim();
-        out['Country Code (Required)'] = countryEdits[raw] ?? raw;
+        out['Country Code (Required)'] = countryEdits[raw] ?? normalizeCountry(raw) ?? raw;
       }
       if (billingCountryCol) {
         const raw = String(row[billingCountryCol] ?? '').trim();
-        out['Billing Country Code'] = countryEdits[raw] ?? raw;
+        out['Billing Country Code'] = countryEdits[raw] ?? normalizeCountry(raw) ?? raw;
+      }
+      // State normalization — only for US addresses. Other countries keep
+      // their state/province value verbatim so we don't mangle, say, a
+      // Canadian province or a UK county.
+      if (out['Country Code (Required)'] === 'US' && out['State / Province']) {
+        out['State / Province'] = normalizeUSState(out['State / Province']);
+      }
+      if (out['Billing Country Code'] === 'US' && out['Billing State / Province']) {
+        out['Billing State / Province'] = normalizeUSState(out['Billing State / Province']);
       }
       if (!quantityCol && !out['Quantity']) out['Quantity'] = (defaultQuantity || '1');
       return out;
