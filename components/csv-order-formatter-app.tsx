@@ -24,7 +24,7 @@
  * except as the downloaded CSV.
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Upload, FileSpreadsheet, Loader2, Check, AlertTriangle, ChevronLeft, Download, Sparkles, Info, Hash,
