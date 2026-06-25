@@ -8,7 +8,7 @@
  *   2. We parse it client-side with SheetJS and grab headers + sample rows
  *   3. /api/mini-apps/csv-order-format runs the rows through Claude and
  *      returns a column mapping onto ShipHero's order CSV template,
- *      a country-value normalization map, and a confidence score for the
+ *      a country-value normalization mp, and a confidence score for the
  *      SKU column
  *   4. The user reviews the mapping. SKU column always requires explicit
  *      confirmation (per spec — even when AI is confident). User can also
@@ -583,7 +583,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       }, 0);
     }
     return sourceRows.length;
-  }, [result, skuStrategy, productNameCol, sourceRows, allActiveDelims, columnExpandMulti, mappingEdits]);
+  }, [result, skuStrategy, productNameCols, sourceRows, allActiveDelims, columnExpandMulti, mappingEdits]);
 
   // Missing required columns based on current mapping edits. Auto-gen for
   // Order Number counts as "mapped" only if the user has typed a prefix.
