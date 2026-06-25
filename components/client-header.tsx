@@ -314,10 +314,13 @@ function PlatformPills({ value, clientId, onSaved }: {
   );
 }
 
-// ── Warehouse pill (editable dropdown) ─────────────────────────────────────
+// ── Warehouse pill (editable multi-select dropdown) ────────────────────────
 // Options come from the Monday Warehouse Location column via
-// /api/client/column-options. Selecting an option opens a ConfirmDialog so
-// warehouse moves can't happen by accident.
+// /api/client/column-options. Users can pick one OR many warehouses; the
+// final list saves as a comma-separated string the same way Monday stores
+// multi-value dropdowns (matches the PlatformPills convention upstairs).
+// Edits batch into one ConfirmDialog so a single click on Save reviews
+// every checkbox change before syncing to Monday.
 function WarehousePill({ value, options, clientId, onSaved }: {
   value: string;
   options: string[];
@@ -325,93 +328,186 @@ function WarehousePill({ value, options, clientId, onSaved }: {
   onSaved: (newValue: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [pending, setPending] = useState<string | null>(null);
+  const [draft, setDraft] = useState<string[]>([]);
+  const [pending, setPending] = useState<string[] | null>(null);
   const [saving, setSaving] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Comma-separated string ↔ array. Trims + drops blanks defensively.
+  const currentList = useMemo(
+    () => value.split(',').map(s => s.trim()).filter(Boolean),
+    [value],
+  );
 
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        // Outside-click is "cancel": close without applying draft changes.
+        setOpen(false);
+        setDraft([]);
+      }
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, [open]);
 
-  const onSelect = (option: string) => {
+  const openMenu = () => {
+    setDraft([...currentList]);
+    setOpen(true);
+  };
+
+  const toggle = (option: string) => {
+    setDraft(prev =>
+      prev.includes(option) ? prev.filter(o => o !== option) : [...prev, option],
+    );
+  };
+
+  const apply = () => {
     setOpen(false);
-    if (option === value) return;
-    setPending(option);
+    // Compare sorted lists so reorder-only edits don't show a confirm.
+    const sortedDraft = [...draft].sort();
+    const sortedCurrent = [...currentList].sort();
+    if (sortedDraft.join('|') === sortedCurrent.join('|')) {
+      setDraft([]);
+      return;
+    }
+    setPending(draft);
+  };
+
+  const cancel = () => {
+    setOpen(false);
+    setDraft([]);
   };
 
   const confirm = async () => {
     if (!pending) return;
     setSaving(true);
     try {
+      const next = pending.join(', ');
       const res = await fetch(`/api/client/${clientId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ columnId: 'dropdown_mktxaege', value: pending, valueType: 'dropdown' }),
+        body: JSON.stringify({ columnId: 'dropdown_mktxaege', value: next, valueType: 'dropdown' }),
       });
       if (!res.ok) throw new Error(`${res.status}`);
-      onSaved(pending);
+      onSaved(next);
     } catch (err) {
       console.error('[WarehousePill] save failed:', err);
     } finally {
       setSaving(false);
       setPending(null);
+      setDraft([]);
     }
   };
 
   const disabled = options.length === 0;
+
+  // Pill label: empty → "Not set"; one → its name; many → "Gardena +2".
+  const displayLabel: React.ReactNode = (() => {
+    if (currentList.length === 0) return <span className="text-gray-400 italic font-normal">Not set</span>;
+    if (currentList.length === 1) return currentList[0];
+    return <>{currentList[0]} <span className="text-[#015280]/70 font-normal">+{currentList.length - 1}</span></>;
+  })();
+
+  // Diff helpers for the confirm dialog summary.
+  const added = pending ? pending.filter(p => !currentList.includes(p)) : [];
+  const removed = pending ? currentList.filter(c => !pending.includes(c)) : [];
 
   return (
     <>
       <div ref={menuRef} className="relative">
         <button
           type="button"
-          onClick={() => { if (!disabled) setOpen(o => !o); }}
+          onClick={() => { if (!disabled) { open ? cancel() : openMenu(); } }}
           disabled={disabled}
           className="flex items-center gap-2 bg-[#e6f8ff]/60 border border-[#43c7ff]/40 hover:bg-[#e6f8ff] disabled:hover:bg-[#e6f8ff]/60 rounded-lg px-2.5 py-1.5 max-w-[260px] transition-colors"
-          title={disabled ? 'Loading warehouse options…' : 'Change warehouse'}
+          title={disabled ? 'Loading warehouse options…' : currentList.length > 1 ? `Warehouses: ${currentList.join(', ')}` : 'Change warehouses'}
         >
           <Warehouse className="w-3.5 h-3.5 text-[#015280] flex-shrink-0" />
           <div className="flex flex-col gap-0.5 min-w-0 text-left">
-            <p className="text-[9px] font-semibold text-[#015280] uppercase tracking-wider leading-none">Warehouse</p>
-            <p className="text-xs font-semibold text-gray-900 truncate" title={value || 'Not set'}>
-              {value || <span className="text-gray-400 italic font-normal">Not set</span>}
+            <p className="text-[9px] font-semibold text-[#015280] uppercase tracking-wider leading-none">
+              Warehouse{currentList.length > 1 ? 's' : ''}
             </p>
+            <p className="text-xs font-semibold text-gray-900 truncate">{displayLabel}</p>
           </div>
           <ChevronDown className="w-3 h-3 text-[#015280] flex-shrink-0" />
         </button>
         {open && options.length > 0 && (
-          <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 min-w-[180px] py-1 max-h-64 overflow-y-auto">
-            {options.map(opt => (
+          <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 min-w-[220px] py-1 flex flex-col">
+            <p className="px-3 py-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100">
+              {draft.length === 0 ? 'Pick one or more' : `${draft.length} selected`}
+            </p>
+            <div className="max-h-56 overflow-y-auto">
+              {options.map(opt => {
+                const on = draft.includes(opt);
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => toggle(opt)}
+                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 flex items-center gap-2 ${
+                      on ? 'bg-[#e6f8ff]/40' : ''
+                    }`}
+                  >
+                    <span className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center ${
+                      on ? 'bg-[#015280] border-[#015280]' : 'bg-white border-gray-300'
+                    }`}>
+                      {on && <Check className="w-2.5 h-2.5 text-white" />}
+                    </span>
+                    <span className={`truncate flex-1 ${on ? 'font-semibold text-[#015280]' : 'text-gray-700'}`}>
+                      {opt}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="border-t border-gray-100 px-2 py-1.5 flex items-center justify-end gap-2">
               <button
-                key={opt}
                 type="button"
-                onClick={() => onSelect(opt)}
-                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 flex items-center justify-between gap-2 ${
-                  opt === value ? 'font-semibold text-[#015280] bg-[#e6f8ff]/40' : 'text-gray-700'
-                }`}
+                onClick={cancel}
+                className="px-2 py-1 text-[11px] text-gray-600 hover:bg-gray-100 rounded"
               >
-                <span className="truncate">{opt}</span>
-                {opt === value && <Check className="w-3 h-3 text-[#015280] flex-shrink-0" />}
+                Cancel
               </button>
-            ))}
+              <button
+                type="button"
+                onClick={apply}
+                className="px-2 py-1 text-[11px] font-semibold text-white bg-[#015280] hover:bg-[#01416a] rounded"
+              >
+                Save changes
+              </button>
+            </div>
           </div>
         )}
       </div>
       {pending && (
         <ConfirmDialog
-          title="Change warehouse?"
+          title={pending.length === 0 ? 'Clear all warehouses?' : currentList.length === 0 ? 'Set warehouses?' : 'Update warehouses?'}
           description={
-            <span>
-              Set warehouse to <strong>{pending}</strong>{value ? <> (currently <strong>{value}</strong>)</> : null}? This will sync to Monday.com.
-            </span>
+            <div className="space-y-1.5">
+              <div>
+                Set to{' '}
+                {pending.length === 0
+                  ? <em>none</em>
+                  : pending.map((p, i) => (
+                      <span key={p}>
+                        <strong>{p}</strong>{i < pending.length - 1 ? ', ' : ''}
+                      </span>
+                    ))}
+                .
+              </div>
+              {(added.length > 0 || removed.length > 0) && (
+                <ul className="text-[11px] text-gray-500 list-disc pl-5">
+                  {added.map(a => <li key={`a-${a}`}>Add <strong>{a}</strong></li>)}
+                  {removed.map(r => <li key={`r-${r}`}>Remove <strong>{r}</strong></li>)}
+                </ul>
+              )}
+              <div className="text-[11px] text-gray-500">This will sync to Monday.com.</div>
+            </div>
           }
-          confirmLabel="Change warehouse"
-          onCancel={() => setPending(null)}
+          confirmLabel="Update warehouses"
+          onCancel={() => { setPending(null); setDraft([]); }}
           onConfirm={confirm}
           busy={saving}
         />
