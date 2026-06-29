@@ -14,7 +14,25 @@
     </div>
   </header>
 
-  <main class="body">
+  <!-- Detail view: shown when the user picks a client from search. Holds
+       its own header (back button + Open in dashboard) and renders every
+       saved field as a collapsible section. -->
+  <section id="client-detail" class="client-detail" hidden>
+    <div class="detail-header">
+      <button id="detail-back" class="detail-back" type="button" aria-label="Back to search">←</button>
+      <div class="detail-title">
+        <p id="detail-name" class="detail-name"></p>
+        <p id="detail-meta" class="detail-meta"></p>
+      </div>
+      <button id="detail-open" class="detail-open" type="button" title="Open in the full dashboard">
+        Edit ↗
+      </button>
+    </div>
+    <div id="detail-status" class="detail-status" hidden></div>
+    <div id="detail-sections" class="detail-sections"></div>
+  </section>
+
+  <main id="search-view" class="body">
     <p class="hint">Search a client to open their full info panel:</p>
     <form id="search-form" class="search-form">
       <input
