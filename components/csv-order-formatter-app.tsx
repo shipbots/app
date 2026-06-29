@@ -26,7 +26,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { normalizeCountry, normalizeUSState } from '@/lib/country-state-lookup';
+import {
+  normalizeCountry, normalizeUSState, normalizeCAProvince, detectStateMatch,
+  type StateMatchOutcome,
+} from '@/lib/country-state-lookup';
 import {
   Upload, FileSpreadsheet, Loader2, Check, AlertTriangle, ChevronLeft, Download, Sparkles, Info, Hash, Plus, Trash2, Package, Eye,
 } from 'lucide-react';
@@ -204,6 +207,30 @@ type SkuStrategy = 'column' | 'product-mapping' | 'global-products';
 // A single product line that gets applied to every order under the
 // 'global-products' strategy. Each row in the source file is duplicated
 // once per valid entry here.
+// State-spell-check result. Each entry tracks one unique misspelled or
+// "City, State"-collapsed value from the source file, the corrected
+// suggestion, and the user's action so the generator knows which ones
+// to apply.
+interface StateCorrection {
+  // original cell value as it appears in the source (preserved verbatim
+  // for matching at generation time).
+  original: string;
+  country: 'US' | 'CA';
+  // 2-letter code we'd write to the output if accepted.
+  code: string;
+  // human-readable suggestion ("Pennsylvania", "Ontario") used in the UI.
+  suggestion: string;
+  // 'typo' = fuzzy match; 'extracted' = pulled from "City, State" cell.
+  reason: 'typo' | 'extracted';
+  // distance 0 = pulled cleanly out of a comma; 1 = single-char typo;
+  // 2-3 = looser fuzzy match (kept under a confirmation prompt by default).
+  distance: number;
+  // 'auto' = distance ≤ 1, applied silently with banner.
+  // 'pending' = needs explicit user confirm.
+  // 'accepted' / 'rejected' = user has made a decision.
+  action: 'auto' | 'pending' | 'accepted' | 'rejected';
+}
+
 interface GlobalProductEntry {
   id: string;
   sku: string;
@@ -268,6 +295,10 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
   // User edits live in these mirrors so we don't mutate the AI result.
   const [mappingEdits, setMappingEdits] = useState<Record<string, string>>({});
   const [countryEdits, setCountryEdits] = useState<Record<string, string>>({});
+  // State-spell-check entries surfaced during proceedWithHeaders. Keyed by
+  // the original (lowercased) source value so the generator can look up
+  // an accepted correction in O(1) regardless of which row it lands on.
+  const [stateCorrections, setStateCorrections] = useState<StateCorrection[]>([]);
   const [skuConfirmed, setSkuConfirmed] = useState(false);
   // SKU strategy — either pick a SKU column from the source or, when the
   // source only has product names, ask the user to assign a SKU per
@@ -309,6 +340,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     setResult(null);
     setMappingEdits({});
     setCountryEdits({});
+    setStateCorrections([]);
     setSkuConfirmed(false);
     setSkuStrategy('column');
     setProductNameCols([]);
@@ -427,6 +459,52 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
         fullCountryMap[raw] = builtIn || aiVal || '';
       }
       setCountryEdits(fullCountryMap);
+
+      // ── State spell-check & extraction ───────────────────────────────
+      // Walk every (state, country) pair and flag values that need
+      // normalization beyond the simple lookup. We do this for both the
+      // primary and billing state columns. Auto-accept distance-1 typos
+      // and clean "City, State" extractions; surface anything looser for
+      // the user to confirm.
+      const stateCol = out.columnMapping['State / Province'] || '';
+      const billingStateCol = out.columnMapping['Billing State / Province'] || '';
+      const stateCountryPairs: Array<{ stateCol: string; countryCol: string }> = [];
+      if (stateCol && countryCol) stateCountryPairs.push({ stateCol, countryCol });
+      if (billingStateCol && billingCountryCol) stateCountryPairs.push({ stateCol: billingStateCol, countryCol: billingCountryCol });
+
+      const seenCorrections = new Map<string, StateCorrection>();
+      for (const { stateCol: sc, countryCol: cc } of stateCountryPairs) {
+        for (const row of dataRows) {
+          const stateRaw = String(row[sc] ?? '').trim();
+          if (!stateRaw) continue;
+          const countryRaw = String(row[cc] ?? '').trim();
+          const countryCode = fullCountryMap[countryRaw] || normalizeCountry(countryRaw);
+          if (countryCode !== 'US' && countryCode !== 'CA') continue;
+
+          const dedupKey = `${countryCode}|${stateRaw.toLowerCase()}`;
+          if (seenCorrections.has(dedupKey)) continue;
+
+          const outcome: StateMatchOutcome = detectStateMatch(stateRaw, countryCode);
+          if (outcome.type !== 'suggestion') continue;
+
+          // Distance 0 (clean comma extraction) or 1 (single-char typo)
+          // are obvious — apply silently with a banner the user can
+          // override. Distance ≥ 2 needs explicit confirmation.
+          const action: StateCorrection['action'] =
+            outcome.distance <= 1 ? 'auto' : 'pending';
+
+          seenCorrections.set(dedupKey, {
+            original: stateRaw,
+            country: countryCode,
+            code: outcome.code,
+            suggestion: outcome.suggestion,
+            reason: outcome.reason,
+            distance: outcome.distance,
+            action,
+          });
+        }
+      }
+      setStateCorrections(Array.from(seenCorrections.values()));
       setSkuConfirmed(false);
       setAutoGenPrefix('');
 
@@ -494,6 +572,16 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     const inputRows = sourceSliceLimit ? sourceRows.slice(0, sourceSliceLimit) : sourceRows;
     const allDelims = [...delimiters, ...(customDelim ? [customDelim] : [])];
 
+    // Spell-check corrections the user has approved (or that auto-applied
+    // for very-close matches). Keyed "<country>|<lowercased original>" so
+    // the per-row lookup is O(1) and country-aware.
+    const stateFixByKey = new Map<string, string>();
+    for (const c of stateCorrections) {
+      if (c.action === 'auto' || c.action === 'accepted') {
+        stateFixByKey.set(`${c.country}|${c.original.toLowerCase().trim()}`, c.code);
+      }
+    }
+
     // Build the canonical "shipping fields" output for a source row.
     // Per-product overrides (Product Name / Product Sku) are applied
     // afterward so multi-product rows can share order-level info.
@@ -517,14 +605,26 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
         const raw = String(row[billingCountryCol] ?? '').trim();
         out['Billing Country Code'] = countryEdits[raw] ?? normalizeCountry(raw) ?? raw;
       }
-      // State normalization — only for US addresses. Other countries keep
-      // their state/province value verbatim so we don't mangle, say, a
-      // Canadian province or a UK county.
-      if (out['Country Code (Required)'] === 'US' && out['State / Province']) {
-        out['State / Province'] = normalizeUSState(out['State / Province']);
+      // State normalization. Three-stage pipeline:
+      //   1. If the user accepted / auto-applied a spell-check correction
+      //      for this exact source value, use that 2-letter code.
+      //   2. Otherwise, run the value through the country-specific
+      //      normalizer (US → US lookup, CA → CA lookup).
+      //   3. Other countries pass through unchanged so we don't mangle,
+      //      say, a UK county or a Mexican state.
+      const applyStateFix = (rawValue: string, countryCode: string): string => {
+        if (!rawValue) return rawValue;
+        if (countryCode !== 'US' && countryCode !== 'CA') return rawValue;
+        const key = `${countryCode}|${rawValue.toLowerCase().trim()}`;
+        const fix = stateFixByKey.get(key);
+        if (fix) return fix;
+        return countryCode === 'US' ? normalizeUSState(rawValue) : normalizeCAProvince(rawValue);
+      };
+      if (out['State / Province']) {
+        out['State / Province'] = applyStateFix(out['State / Province'], out['Country Code (Required)']);
       }
-      if (out['Billing Country Code'] === 'US' && out['Billing State / Province']) {
-        out['Billing State / Province'] = normalizeUSState(out['Billing State / Province']);
+      if (out['Billing State / Province']) {
+        out['Billing State / Province'] = applyStateFix(out['Billing State / Province'], out['Billing Country Code']);
       }
       if (!quantityCol && !out['Quantity']) out['Quantity'] = (defaultQuantity || '1');
       return out;
@@ -892,6 +992,8 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
               setMappingEdits={setMappingEdits}
               countryEdits={countryEdits}
               setCountryEdits={setCountryEdits}
+              stateCorrections={stateCorrections}
+              setStateCorrections={setStateCorrections}
               skuConfirmed={skuConfirmed}
               setSkuConfirmed={setSkuConfirmed}
               autoGenPrefix={autoGenPrefix}
@@ -934,6 +1036,7 @@ function ReviewPanel({
   result, fileName, hasHeaders, sourceHeaders, sourceRows,
   mappingEdits, setMappingEdits,
   countryEdits, setCountryEdits,
+  stateCorrections, setStateCorrections,
   skuConfirmed, setSkuConfirmed,
   autoGenPrefix, setAutoGenPrefix,
   skuStrategy, setSkuStrategy,
@@ -958,6 +1061,8 @@ function ReviewPanel({
   setMappingEdits: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   countryEdits: Record<string, string>;
   setCountryEdits: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  stateCorrections: StateCorrection[];
+  setStateCorrections: React.Dispatch<React.SetStateAction<StateCorrection[]>>;
   skuConfirmed: boolean;
   setSkuConfirmed: (b: boolean) => void;
   autoGenPrefix: string;
@@ -1250,6 +1355,14 @@ function ReviewPanel({
           />
         )}
       </div>
+
+      {/* State spell-check & extraction */}
+      {stateCorrections.length > 0 && (
+        <StateCorrectionsPanel
+          corrections={stateCorrections}
+          setCorrections={setStateCorrections}
+        />
+      )}
 
       {/* Country code map */}
       {Object.keys(countryEdits).length > 0 && (
@@ -2096,6 +2209,162 @@ function GlobalProductsPanel({
           Add at least one product with a SKU and name before downloading.
         </p>
       )}
+    </div>
+  );
+}
+
+// ── StateCorrectionsPanel ──────────────────────────────────────────────────
+// Shows every spell-check suggestion the formatter found. Auto-applied
+// fixes (distance 0–1) are grouped at the top with an "applied" badge so
+// the user can still undo them. Pending fixes (distance ≥ 2) are listed
+// with Accept / Reject buttons so the user makes the call. A "Reject all"
+// + "Accept all" pair lets them blanket-handle a long list.
+function StateCorrectionsPanel({
+  corrections, setCorrections,
+}: {
+  corrections: StateCorrection[];
+  setCorrections: React.Dispatch<React.SetStateAction<StateCorrection[]>>;
+}) {
+  const setAction = (original: string, country: string, action: StateCorrection['action']) => {
+    setCorrections(prev => prev.map(c =>
+      c.original === original && c.country === country ? { ...c, action } : c,
+    ));
+  };
+  const acceptAllPending = () => {
+    setCorrections(prev => prev.map(c => c.action === 'pending' ? { ...c, action: 'accepted' } : c));
+  };
+  const rejectAllPending = () => {
+    setCorrections(prev => prev.map(c => c.action === 'pending' ? { ...c, action: 'rejected' } : c));
+  };
+
+  const pending = corrections.filter(c => c.action === 'pending');
+  const auto = corrections.filter(c => c.action === 'auto');
+  const accepted = corrections.filter(c => c.action === 'accepted');
+  const rejected = corrections.filter(c => c.action === 'rejected');
+
+  // Visual treatment per status — keeps the row's intent readable at a
+  // glance even when the user has scrolled past the section header.
+  const rowClass = (status: StateCorrection['action']) => {
+    switch (status) {
+      case 'auto': return 'border-emerald-200 bg-emerald-50/40';
+      case 'accepted': return 'border-emerald-200 bg-emerald-50/40';
+      case 'rejected': return 'border-gray-200 bg-gray-50';
+      case 'pending': return 'border-amber-200 bg-amber-50/40';
+    }
+  };
+
+  return (
+    <div className="bg-white border border-amber-200 rounded-xl p-4">
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-gray-900">
+              State / Province corrections {pending.length > 0 && <span className="text-amber-700">({pending.length} need review)</span>}
+            </p>
+            <p className="text-[11px] text-gray-600">
+              Found {corrections.length} state value{corrections.length === 1 ? '' : 's'} that don&apos;t cleanly match US / CA codes.
+              Obvious fixes auto-applied; less certain ones are flagged for confirmation.
+            </p>
+          </div>
+        </div>
+        {pending.length > 0 && (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button
+              type="button"
+              onClick={rejectAllPending}
+              className="text-[11px] font-semibold px-2 py-1 text-gray-600 hover:bg-gray-100 rounded"
+            >
+              Reject all
+            </button>
+            <button
+              type="button"
+              onClick={acceptAllPending}
+              className="text-[11px] font-semibold px-2 py-1 text-white bg-[#015280] hover:bg-[#01416a] rounded"
+            >
+              Accept all
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        {[...pending, ...auto, ...accepted, ...rejected].map(c => {
+          const key = `${c.country}|${c.original}`;
+          const isApplied = c.action === 'auto' || c.action === 'accepted';
+          const isRejected = c.action === 'rejected';
+          return (
+            <div
+              key={key}
+              className={`border rounded p-2 grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-center text-xs ${rowClass(c.action)}`}
+            >
+              <div className="min-w-0">
+                <p className={`truncate ${isRejected ? 'text-gray-500 line-through' : 'text-gray-800'}`} title={c.original}>
+                  {c.original}
+                </p>
+                <p className="text-[10px] text-gray-500">
+                  {c.country} · {c.reason === 'extracted' ? 'extracted from "City, State"' : `typo (distance ${c.distance})`}
+                </p>
+              </div>
+              <span className="text-gray-400 flex-shrink-0">→</span>
+              <div className="min-w-0">
+                <p className={`truncate font-semibold ${isRejected ? 'text-gray-400 line-through' : 'text-emerald-700'}`} title={c.suggestion}>
+                  {c.suggestion} <span className="font-mono text-gray-500">({c.code})</span>
+                </p>
+                {c.action === 'auto' && (
+                  <p className="text-[10px] text-emerald-700 font-medium flex items-center gap-0.5">
+                    <Check className="w-2.5 h-2.5" /> Applied automatically
+                  </p>
+                )}
+                {c.action === 'accepted' && (
+                  <p className="text-[10px] text-emerald-700 font-medium flex items-center gap-0.5">
+                    <Check className="w-2.5 h-2.5" /> Accepted
+                  </p>
+                )}
+                {c.action === 'rejected' && (
+                  <p className="text-[10px] text-gray-500">Will keep original value</p>
+                )}
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                {isApplied ? (
+                  <button
+                    type="button"
+                    onClick={() => setAction(c.original, c.country, 'rejected')}
+                    className="text-[11px] font-semibold px-2 py-0.5 text-gray-600 hover:bg-gray-100 rounded"
+                  >
+                    Undo
+                  </button>
+                ) : isRejected ? (
+                  <button
+                    type="button"
+                    onClick={() => setAction(c.original, c.country, c.distance <= 1 ? 'auto' : 'accepted')}
+                    className="text-[11px] font-semibold px-2 py-0.5 text-[#015280] hover:bg-[#e6f8ff]/40 rounded"
+                  >
+                    Re-apply
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setAction(c.original, c.country, 'rejected')}
+                      className="text-[11px] font-semibold px-2 py-0.5 text-gray-600 hover:bg-gray-100 rounded"
+                    >
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAction(c.original, c.country, 'accepted')}
+                      className="text-[11px] font-semibold px-2 py-0.5 text-white bg-[#015280] hover:bg-[#01416a] rounded"
+                    >
+                      Accept
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

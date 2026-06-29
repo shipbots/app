@@ -301,3 +301,304 @@ export function normalizeUSState(value: string): string {
   const key = trimmed.toLowerCase().replace(/\s+/g, ' ').replace(/\./g, '');
   return US_STATE_LOOKUP[key] ?? US_STATE_LOOKUP[trimmed.toLowerCase()] ?? trimmed;
 }
+
+// ── Fuzzy state-name matcher ───────────────────────────────────────────────
+// Catches typos like "Flordia" → "Florida", "Texs" → "Texas". Uses
+// Levenshtein distance with a length-aware threshold so short codes
+// don't get over-matched.
+
+// Canonical full state/territory names — the targets we suggest against.
+// Kept separate from US_STATE_LOOKUP to avoid noise from 2-letter codes.
+const US_STATE_FULL_NAMES: Array<{ name: string; code: string }> = [
+  { name: 'Alabama', code: 'AL' },
+  { name: 'Alaska', code: 'AK' },
+  { name: 'Arizona', code: 'AZ' },
+  { name: 'Arkansas', code: 'AR' },
+  { name: 'California', code: 'CA' },
+  { name: 'Colorado', code: 'CO' },
+  { name: 'Connecticut', code: 'CT' },
+  { name: 'Delaware', code: 'DE' },
+  { name: 'Florida', code: 'FL' },
+  { name: 'Georgia', code: 'GA' },
+  { name: 'Hawaii', code: 'HI' },
+  { name: 'Idaho', code: 'ID' },
+  { name: 'Illinois', code: 'IL' },
+  { name: 'Indiana', code: 'IN' },
+  { name: 'Iowa', code: 'IA' },
+  { name: 'Kansas', code: 'KS' },
+  { name: 'Kentucky', code: 'KY' },
+  { name: 'Louisiana', code: 'LA' },
+  { name: 'Maine', code: 'ME' },
+  { name: 'Maryland', code: 'MD' },
+  { name: 'Massachusetts', code: 'MA' },
+  { name: 'Michigan', code: 'MI' },
+  { name: 'Minnesota', code: 'MN' },
+  { name: 'Mississippi', code: 'MS' },
+  { name: 'Missouri', code: 'MO' },
+  { name: 'Montana', code: 'MT' },
+  { name: 'Nebraska', code: 'NE' },
+  { name: 'Nevada', code: 'NV' },
+  { name: 'New Hampshire', code: 'NH' },
+  { name: 'New Jersey', code: 'NJ' },
+  { name: 'New Mexico', code: 'NM' },
+  { name: 'New York', code: 'NY' },
+  { name: 'North Carolina', code: 'NC' },
+  { name: 'North Dakota', code: 'ND' },
+  { name: 'Ohio', code: 'OH' },
+  { name: 'Oklahoma', code: 'OK' },
+  { name: 'Oregon', code: 'OR' },
+  { name: 'Pennsylvania', code: 'PA' },
+  { name: 'Rhode Island', code: 'RI' },
+  { name: 'South Carolina', code: 'SC' },
+  { name: 'South Dakota', code: 'SD' },
+  { name: 'Tennessee', code: 'TN' },
+  { name: 'Texas', code: 'TX' },
+  { name: 'Utah', code: 'UT' },
+  { name: 'Vermont', code: 'VT' },
+  { name: 'Virginia', code: 'VA' },
+  { name: 'Washington', code: 'WA' },
+  { name: 'West Virginia', code: 'WV' },
+  { name: 'Wisconsin', code: 'WI' },
+  { name: 'Wyoming', code: 'WY' },
+  { name: 'District of Columbia', code: 'DC' },
+  { name: 'Puerto Rico', code: 'PR' },
+];
+
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const m = a.length, n = b.length;
+  const dp: number[] = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j];
+      dp[j] = a.charCodeAt(i - 1) === b.charCodeAt(j - 1)
+        ? prev
+        : 1 + Math.min(prev, dp[j - 1], dp[j]);
+      prev = tmp;
+    }
+  }
+  return dp[n];
+}
+
+export type StateSuggestion =
+  | { type: 'exact'; code: string }
+  | { type: 'suggestion'; code: string; suggestion: string; distance: number }
+  | null;
+
+/**
+ * Best-guess US state correction for a free-text value.
+ *
+ * - `exact`: value already maps cleanly via US_STATE_LOOKUP (or is a
+ *   valid 2-letter code).
+ * - `suggestion`: value is close to a known full state name and is most
+ *   likely a typo. distance === 1 should be auto-applied silently;
+ *   distance >= 2 should be surfaced for user confirmation.
+ * - `null`: nothing close enough; the value is probably not a US state
+ *   (or is too garbled to guess at).
+ */
+export function suggestUSState(value: string): StateSuggestion {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  // Exact (already-known) match short-circuits — no suggestion needed.
+  const normalKey = trimmed.toLowerCase().replace(/\s+/g, ' ').replace(/\./g, '');
+  if (US_STATE_LOOKUP[normalKey]) {
+    return { type: 'exact', code: US_STATE_LOOKUP[normalKey] };
+  }
+  if (US_STATE_LOOKUP[trimmed.toLowerCase()]) {
+    return { type: 'exact', code: US_STATE_LOOKUP[trimmed.toLowerCase()] };
+  }
+
+  // Don't fuzz short inputs — too easy to mistake one 2-letter code for
+  // another (e.g. "NA" → "VA" would be wrong far more often than right).
+  if (normalKey.length < 4) return null;
+
+  let best: { name: string; code: string; distance: number } | null = null;
+  for (const { name, code } of US_STATE_FULL_NAMES) {
+    const dist = levenshtein(normalKey, name.toLowerCase());
+    if (best === null || dist < best.distance) {
+      best = { name, code, distance: dist };
+    }
+  }
+  if (!best) return null;
+
+  // Length-aware threshold: short names allow 1 typo, medium 2, long 3.
+  // Caps at 3 so "Disneyland" never silently becomes a state.
+  const threshold = Math.min(3, Math.max(1, Math.floor(normalKey.length / 4)));
+  if (best.distance > 0 && best.distance <= threshold) {
+    return {
+      type: 'suggestion',
+      code: best.code,
+      suggestion: best.name,
+      distance: best.distance,
+    };
+  }
+  return null;
+}
+
+// ── Canadian provinces & territories ───────────────────────────────────────
+// Same shape as the US tables. ShipHero rejects free-text values like
+// "British Colombia" or "Toronto, Ontario" for CA addresses, so we
+// normalize and spell-check these too.
+
+export const CA_PROVINCE_LOOKUP: Record<string, string> = {
+  'alberta': 'AB', 'ab': 'AB',
+  'british columbia': 'BC', 'bc': 'BC',
+  'manitoba': 'MB', 'mb': 'MB',
+  'new brunswick': 'NB', 'nb': 'NB',
+  'newfoundland': 'NL', 'newfoundland and labrador': 'NL', 'nl': 'NL', 'nf': 'NL',
+  'nova scotia': 'NS', 'ns': 'NS',
+  'northwest territories': 'NT', 'nt': 'NT',
+  'nunavut': 'NU', 'nu': 'NU',
+  'ontario': 'ON', 'on': 'ON',
+  'prince edward island': 'PE', 'pe': 'PE', 'pei': 'PE',
+  'quebec': 'QC', 'québec': 'QC', 'qc': 'QC', 'pq': 'QC',
+  'saskatchewan': 'SK', 'sk': 'SK',
+  'yukon': 'YT', 'yt': 'YT', 'yukon territory': 'YT',
+};
+
+const CA_PROVINCE_FULL_NAMES: Array<{ name: string; code: string }> = [
+  { name: 'Alberta', code: 'AB' },
+  { name: 'British Columbia', code: 'BC' },
+  { name: 'Manitoba', code: 'MB' },
+  { name: 'New Brunswick', code: 'NB' },
+  { name: 'Newfoundland and Labrador', code: 'NL' },
+  { name: 'Nova Scotia', code: 'NS' },
+  { name: 'Northwest Territories', code: 'NT' },
+  { name: 'Nunavut', code: 'NU' },
+  { name: 'Ontario', code: 'ON' },
+  { name: 'Prince Edward Island', code: 'PE' },
+  { name: 'Quebec', code: 'QC' },
+  { name: 'Saskatchewan', code: 'SK' },
+  { name: 'Yukon', code: 'YT' },
+];
+
+export function normalizeCAProvince(value: string): string {
+  if (!value) return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (/^[a-zA-Z]{2}$/.test(trimmed)) {
+    const upper = trimmed.toUpperCase();
+    return CA_PROVINCE_LOOKUP[upper.toLowerCase()] ? upper : trimmed;
+  }
+  const key = trimmed.toLowerCase().replace(/\s+/g, ' ').replace(/\./g, '');
+  return CA_PROVINCE_LOOKUP[key] ?? CA_PROVINCE_LOOKUP[trimmed.toLowerCase()] ?? trimmed;
+}
+
+export function suggestCAProvince(value: string): StateSuggestion {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const normalKey = trimmed.toLowerCase().replace(/\s+/g, ' ').replace(/\./g, '');
+  if (CA_PROVINCE_LOOKUP[normalKey]) {
+    return { type: 'exact', code: CA_PROVINCE_LOOKUP[normalKey] };
+  }
+  if (CA_PROVINCE_LOOKUP[trimmed.toLowerCase()]) {
+    return { type: 'exact', code: CA_PROVINCE_LOOKUP[trimmed.toLowerCase()] };
+  }
+  if (normalKey.length < 4) return null;
+
+  let best: { name: string; code: string; distance: number } | null = null;
+  for (const { name, code } of CA_PROVINCE_FULL_NAMES) {
+    const dist = levenshtein(normalKey, name.toLowerCase());
+    if (best === null || dist < best.distance) {
+      best = { name, code, distance: dist };
+    }
+  }
+  if (!best) return null;
+  const threshold = Math.min(3, Math.max(1, Math.floor(normalKey.length / 4)));
+  if (best.distance > 0 && best.distance <= threshold) {
+    return {
+      type: 'suggestion',
+      code: best.code,
+      suggestion: best.name,
+      distance: best.distance,
+    };
+  }
+  return null;
+}
+
+// ── Country dispatcher + comma-extraction ──────────────────────────────────
+// One entry point the formatter calls per (state, country) pair. Handles:
+//   - Bare lookups (Ontario → ON)
+//   - Typo correction (Pennslyvania → Pennsylvania → PA, British Colombia
+//     → British Columbia → BC)
+//   - "City, State" collapsed cells: tries the last comma-segment first,
+//     then the original. So "Toronto, Ontario" / CA → "Ontario" → ON.
+
+export type StateMatchOutcome =
+  | { type: 'exact'; code: string; from: string }
+  | { type: 'suggestion'; code: string; suggestion: string; distance: number; from: string; reason: 'typo' | 'extracted' }
+  | { type: 'unknown'; reason: 'no-match' | 'unsupported-country' };
+
+function suggestForCountry(value: string, country: string): StateSuggestion {
+  switch (country.toUpperCase()) {
+    case 'US': return suggestUSState(value);
+    case 'CA': return suggestCAProvince(value);
+    default: return null;
+  }
+}
+
+/**
+ * High-level helper used by the CSV Order Formatter. Returns enough info
+ * for the UI to show a confirmation badge ("typo" vs "extracted from
+ * 'Toronto, Ontario'") and for the generator to plug the right value in.
+ */
+export function detectStateMatch(value: string, country: string): StateMatchOutcome {
+  const upperCountry = (country || '').toUpperCase();
+  if (upperCountry !== 'US' && upperCountry !== 'CA') {
+    return { type: 'unknown', reason: 'unsupported-country' };
+  }
+  const trimmed = (value ?? '').trim();
+  if (!trimmed) return { type: 'unknown', reason: 'no-match' };
+
+  // 1) Direct attempt on the whole cell.
+  const direct = suggestForCountry(trimmed, upperCountry);
+  if (direct && direct.type === 'exact') {
+    return { type: 'exact', code: direct.code, from: trimmed };
+  }
+
+  // 2) Comma-split. The state name is usually the LAST segment in a
+  // "City, State" or "City, State, Country" layout. Try last → first.
+  if (trimmed.includes(',')) {
+    const segments = trimmed.split(',').map(s => s.trim()).filter(Boolean);
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const seg = segments[i];
+      const segMatch = suggestForCountry(seg, upperCountry);
+      if (segMatch && segMatch.type === 'exact') {
+        return { type: 'suggestion', code: segMatch.code, suggestion: seg, distance: 0, from: trimmed, reason: 'extracted' };
+      }
+      if (segMatch && segMatch.type === 'suggestion') {
+        return {
+          type: 'suggestion',
+          code: segMatch.code,
+          suggestion: segMatch.suggestion,
+          distance: segMatch.distance,
+          from: trimmed,
+          reason: 'extracted',
+        };
+      }
+    }
+  }
+
+  // 3) Fuzzy match on the original (typo case).
+  if (direct && direct.type === 'suggestion') {
+    return {
+      type: 'suggestion',
+      code: direct.code,
+      suggestion: direct.suggestion,
+      distance: direct.distance,
+      from: trimmed,
+      reason: 'typo',
+    };
+  }
+
+  return { type: 'unknown', reason: 'no-match' };
+}
