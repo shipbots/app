@@ -4,10 +4,11 @@
  * Sticky notes — top-right pane of the Customer Service expanded view.
  *
  * Each note is a draggable card with editable text and a swappable color.
- * Notes persist to localStorage keyed by clientBoardItemId, so they're
- * per-device + per-client. Switching to shared storage (a long_text column
- * on the Clients board, or Vercel KV) is a v2 — this v1 keeps the UX
- * working without requiring schema changes in Monday.
+ * Notes persist to a shared long_text column on the Monday Clients board
+ * via /api/client/[id]/sticky-notes — every signed-in user sees the same
+ * canvas. Initial load is a GET on mount; saves are debounced PUTs.
+ * Refresh fires whenever the tab regains focus so two reps editing at
+ * once don't drift too far apart.
  *
  * The drag implementation positions notes absolutely within the pane and
  * stores {x, y} as pixel offsets from the pane's top-left. New notes are
@@ -55,28 +56,40 @@ function genId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-function storageKey(clientBoardItemId: string): string {
-  return `shipbots:sticky-notes:${clientBoardItemId}`;
+// Prune any notes whose expiresAt is in the past. We do this both on
+// hydration (so expired notes never reappear) and again before saving (so
+// the persisted copy stays clean even across sessions).
+function pruneExpired(notes: unknown): StickyNote[] {
+  if (!Array.isArray(notes)) return [];
+  const now = Date.now();
+  return notes.filter((n): n is StickyNote => {
+    if (!n || typeof (n as StickyNote).id !== 'string') return false;
+    const exp = (n as StickyNote).expiresAt;
+    if (exp && new Date(exp).getTime() <= now) return false;
+    return true;
+  });
 }
 
-function loadNotes(clientBoardItemId: string): StickyNote[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = window.localStorage.getItem(storageKey(clientBoardItemId));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    const now = Date.now();
-    // Prune expired notes here so they never reappear after a refresh.
-    // Persistence runs on the next state change, so the localStorage copy
-    // gets cleaned up the next time the user touches anything.
-    return parsed.filter(n => {
-      if (!n || typeof n.id !== 'string') return false;
-      if (n.expiresAt && new Date(n.expiresAt).getTime() <= now) return false;
-      return true;
-    });
-  } catch {
-    return [];
+async function fetchNotes(clientBoardItemId: string): Promise<StickyNote[]> {
+  const res = await fetch(`/api/client/${encodeURIComponent(clientBoardItemId)}/sticky-notes`, {
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`load failed (${res.status})`);
+  const data = await res.json();
+  return pruneExpired(data?.notes);
+}
+
+async function pushNotes(clientBoardItemId: string, notes: StickyNote[]): Promise<void> {
+  const res = await fetch(`/api/client/${encodeURIComponent(clientBoardItemId)}/sticky-notes`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`save failed (${res.status}) ${detail.slice(0, 200)}`);
   }
 }
 
@@ -119,15 +132,6 @@ function inDays(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
   return d.toISOString();
-}
-
-function saveNotes(clientBoardItemId: string, notes: StickyNote[]) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(storageKey(clientBoardItemId), JSON.stringify(notes));
-  } catch {
-    /* localStorage full or disabled — fail silently */
-  }
 }
 
 // ── Individual sticky note ──────────────────────────────────────────────────
@@ -375,6 +379,8 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
 }
 
 // ── Main panel ──────────────────────────────────────────────────────────────
+type SyncStatus = 'idle' | 'loading' | 'saving' | 'synced' | 'error' | 'unconfigured';
+
 export function StickyNotesPanel({
   clientBoardItemId,
   className,
@@ -383,40 +389,113 @@ export function StickyNotesPanel({
   className?: string;
 }) {
   const [notes, setNotes] = useState<StickyNote[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const [status, setStatus] = useState<SyncStatus>('idle');
+  const [statusDetail, setStatusDetail] = useState<string>('');
+  // Track which client's notes the user is editing locally so we don't
+  // overwrite their unsaved work when they switch clients mid-edit.
+  const loadedForRef = useRef<string | null>(null);
+  // Skip the immediate save-on-hydrate that would fire when the load
+  // effect populates `notes`.
+  const skipNextSaveRef = useRef(false);
+  const saveTimerRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const { data: session } = useSession();
   const authorEmail = session?.user?.email ?? '';
 
-  // Hydrate from localStorage on client mount + when switching clients.
-  useEffect(() => {
-    if (!clientBoardItemId) { setNotes([]); setLoaded(true); return; }
-    setNotes(loadNotes(clientBoardItemId));
-    setLoaded(true);
-  }, [clientBoardItemId]);
+  // ── Hydrate from the server. Runs on mount and whenever the user
+  //    switches to a different client.
+  const hydrate = useCallback(async (clientId: string) => {
+    setStatus('loading');
+    setStatusDetail('');
+    try {
+      const list = await fetchNotes(clientId);
+      // Only apply if the user hasn't switched clients in the meantime.
+      if (loadedForRef.current !== clientId) {
+        skipNextSaveRef.current = true;
+        setNotes(list);
+        loadedForRef.current = clientId;
+      } else {
+        skipNextSaveRef.current = true;
+        setNotes(list);
+      }
+      setStatus('synced');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unknown';
+      // 503 from the API means the env var isn't set yet. Surface a
+      // clearer status so admins can see it without digging into logs.
+      if (/503/.test(msg)) {
+        setStatus('unconfigured');
+        setStatusDetail('Run /api/admin/setup-sticky-notes to bootstrap');
+      } else {
+        setStatus('error');
+        setStatusDetail(msg);
+      }
+    }
+  }, []);
 
-  // Persist after every change once loaded (avoid wiping notes on first render).
   useEffect(() => {
-    if (!loaded || !clientBoardItemId) return;
-    saveNotes(clientBoardItemId, notes);
-  }, [notes, loaded, clientBoardItemId]);
+    if (!clientBoardItemId) {
+      loadedForRef.current = null;
+      setNotes([]);
+      setStatus('idle');
+      return;
+    }
+    void hydrate(clientBoardItemId);
+  }, [clientBoardItemId, hydrate]);
+
+  // Refresh whenever the tab regains focus so other reps' edits show up.
+  useEffect(() => {
+    if (!clientBoardItemId) return;
+    const onFocus = () => { void hydrate(clientBoardItemId); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [clientBoardItemId, hydrate]);
+
+  // ── Debounced save. Skips the first run after a load.
+  useEffect(() => {
+    if (!clientBoardItemId || loadedForRef.current !== clientBoardItemId) return;
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    setStatus(s => s === 'unconfigured' ? s : 'saving');
+    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(async () => {
+      try {
+        await pushNotes(clientBoardItemId, pruneExpired(notes));
+        setStatus('synced');
+        setStatusDetail('');
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'unknown';
+        if (/503/.test(msg)) {
+          setStatus('unconfigured');
+          setStatusDetail('Run /api/admin/setup-sticky-notes to bootstrap');
+        } else {
+          setStatus('error');
+          setStatusDetail(msg);
+        }
+      }
+    }, 800);
+    return () => { if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current); };
+  }, [notes, clientBoardItemId]);
 
   const addNote = useCallback(() => {
-    const i = notes.length;
-    // Tile new notes diagonally so they don't pile on top of one another.
-    setNotes(prev => [
-      ...prev,
-      {
-        id: genId(),
-        text: '',
-        color: COLORS[i % COLORS.length],
-        x: 12 + (i % 4) * 24,
-        y: 12 + (i % 4) * 24,
-        createdAt: new Date().toISOString(),
-        authorEmail,
-      },
-    ]);
-  }, [notes.length, authorEmail]);
+    setNotes(prev => {
+      const i = prev.length;
+      return [
+        ...prev,
+        {
+          id: genId(),
+          text: '',
+          color: COLORS[i % COLORS.length],
+          x: 12 + (i % 4) * 24,
+          y: 12 + (i % 4) * 24,
+          createdAt: new Date().toISOString(),
+          authorEmail,
+        },
+      ];
+    });
+  }, [authorEmail]);
 
   const updateNote = useCallback((next: StickyNote) => {
     setNotes(prev => prev.map(n => (n.id === next.id ? next : n)));
@@ -426,8 +505,21 @@ export function StickyNotesPanel({
     setNotes(prev => prev.filter(n => n.id !== id));
   }, []);
 
-  // Memoize the styles header so changing notes doesn't churn it.
   const noteCount = useMemo(() => notes.length, [notes]);
+  const statusLabel = (() => {
+    switch (status) {
+      case 'loading':      return 'Loading…';
+      case 'saving':       return 'Saving…';
+      case 'synced':       return 'shared with the team';
+      case 'error':        return 'Sync failed';
+      case 'unconfigured': return 'Setup required';
+      default:             return 'shared with the team';
+    }
+  })();
+  const statusColor =
+    status === 'error' || status === 'unconfigured' ? 'text-red-600'
+    : status === 'saving' || status === 'loading'   ? 'text-gray-500'
+                                                    : 'text-gray-400';
 
   return (
     <section className={`bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden ${className ?? ''}`}>
@@ -435,14 +527,14 @@ export function StickyNotesPanel({
         <div className="flex items-center gap-2 min-w-0">
           <StickyNote className="w-4 h-4 text-[#015280]" />
           <h2 className="text-sm font-semibold text-gray-900">Sticky Notes</h2>
-          <span className="text-[11px] text-gray-400">
-            ({noteCount}) · saved to this browser
+          <span className={`text-[11px] ${statusColor}`} title={statusDetail || undefined}>
+            ({noteCount}) · {statusLabel}
           </span>
         </div>
         <button
           type="button"
           onClick={addNote}
-          disabled={!clientBoardItemId}
+          disabled={!clientBoardItemId || status === 'loading'}
           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#015280] text-white text-[11px] font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
         >
           <Plus className="w-3 h-3" />
@@ -460,7 +552,7 @@ export function StickyNotesPanel({
           backgroundColor: '#fbfaf6',
         }}
       >
-        {loaded && notes.length === 0 && <EmptyState onAdd={addNote} />}
+        {status !== 'loading' && notes.length === 0 && <EmptyState onAdd={addNote} />}
         {notes.map(note => (
           <StickyCard
             key={note.id}

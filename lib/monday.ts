@@ -644,6 +644,59 @@ function encodeColumnValuesArg(columnId: string, colValue: unknown): string {
     .replace(/"/g, '\\"');  // then escape double-quotes (" → \")
 }
 
+// ─── Fetch a single column's raw text value from a Clients-board item ──────
+// Lighter than fetchClientInfo when the caller only needs one column (e.g.
+// the sticky-notes payload). Returns the column's text representation, or
+// '' if the column doesn't exist / is empty on the item.
+export async function fetchClientColumn(itemId: string, columnId: string): Promise<string> {
+  const query = `query {
+    items(ids: [${itemId}]) {
+      column_values(ids: ["${columnId}"]) {
+        id
+        text
+        value
+      }
+    }
+  }`;
+  const data = await mondayQuery(query);
+  const cols: Array<{ id: string; text?: string; value?: string }> = data?.items?.[0]?.column_values ?? [];
+  const match = cols.find(c => c.id === columnId);
+  if (!match) return '';
+  // Prefer the `text` field (already-decoded display text). Fall through to
+  // `value` (raw JSON) for long_text columns where text can be truncated.
+  if (typeof match.text === 'string' && match.text.length > 0) return match.text;
+  if (typeof match.value === 'string' && match.value.length > 0) {
+    try {
+      const parsed = JSON.parse(match.value);
+      if (typeof parsed === 'string') return parsed;
+      if (parsed && typeof parsed.text === 'string') return parsed.text;
+    } catch { /* not JSON — fall through */ }
+    return match.value;
+  }
+  return '';
+}
+
+// ─── Create a long_text column on the Clients board ────────────────────────
+// One-shot helper used by /api/admin/setup-sticky-notes to bootstrap the
+// storage column without making the admin click around in Monday's UI.
+// Returns the new column's id.
+export async function createClientsLongTextColumn(title: string): Promise<string> {
+  const escaped = title.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const query = `mutation {
+    create_column(
+      board_id: ${CLIENTS_BOARD_ID},
+      title: "${escaped}",
+      column_type: long_text
+    ) {
+      id
+    }
+  }`;
+  const data = await mondayQuery(query);
+  const id = data?.create_column?.id;
+  if (!id || typeof id !== 'string') throw new Error('create_column did not return an id');
+  return id;
+}
+
 export async function updateClientField(
   itemId: string,
   columnId: string,
