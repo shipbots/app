@@ -17,12 +17,6 @@ function getBaseUrl() {
   });
 }
 
-function setBaseUrl(url) {
-  return new Promise(resolve => {
-    chrome.storage.local.set({ baseUrl: url.replace(/\/+$/, '') }, resolve);
-  });
-}
-
 async function openPath(path) {
   const base = await getBaseUrl();
   chrome.tabs.create({ url: base + path });
@@ -169,14 +163,6 @@ const MINI_APPS = {
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const baseUrlEl = document.getElementById('base-url');
-  const editUrlBtn = document.getElementById('edit-url');
-  const urlForm = document.getElementById('url-form');
-  const urlInput = document.getElementById('url-input');
-  const urlCancel = document.getElementById('url-cancel');
-
-  baseUrlEl.textContent = await getBaseUrl();
-
   // ── Live client search with autocomplete ─────────────────────────────
   const searchInput = document.getElementById('search-input');
   const searchForm = document.getElementById('search-form');
@@ -299,24 +285,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // ── Base URL editor (lets users point at staging without republishing)
-  editUrlBtn.addEventListener('click', async () => {
-    urlInput.value = await getBaseUrl();
-    urlForm.hidden = false;
-    editUrlBtn.hidden = true;
-    urlInput.focus();
-  });
-  urlCancel.addEventListener('click', () => {
-    urlForm.hidden = true;
-    editUrlBtn.hidden = false;
-  });
-  urlForm.addEventListener('submit', async e => {
-    e.preventDefault();
-    const newUrl = urlInput.value.trim();
-    if (!newUrl) return;
-    await setBaseUrl(newUrl);
-    baseUrlEl.textContent = await getBaseUrl();
-    urlForm.hidden = true;
-    editUrlBtn.hidden = false;
-  });
 });
