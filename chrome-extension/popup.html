@@ -15,7 +15,7 @@
   </header>
 
   <main class="body">
-    <p class="hint">Search a client to open them in the dashboard:</p>
+    <p class="hint">Search a client to open their full info panel:</p>
     <form id="search-form" class="search-form">
       <input
         id="search-input"
@@ -26,6 +26,9 @@
       />
       <button type="submit" aria-label="Search">→</button>
     </form>
+
+    <div id="search-status" class="search-status" hidden></div>
+    <ul id="search-results" class="search-results" role="listbox" hidden></ul>
 
     <div class="actions">
       <button id="open-calendar" class="action-btn">

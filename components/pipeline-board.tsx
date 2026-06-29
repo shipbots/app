@@ -49,6 +49,20 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     return isCustomerService ? 'clients' : 'pipeline';
   })();
   const [viewMode, setViewMode] = useState<'pipeline' | 'calendar' | 'tasks' | 'clients' | 'apps'>(initialView);
+
+  // Auto-open a client's detail panel when the URL carries
+  // ?clientId=<id>. The id can be either an onboarding-board item id OR
+  // a clients-board item id, since the extension's search-index returns
+  // the latter while in-app links use the former. Honored only once on
+  // mount so re-renders don't fight the user's later navigation.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const targetId = new URLSearchParams(window.location.search).get('clientId');
+    if (!targetId) return;
+    const match = items.find(i => i.id === targetId || i.clientBoardItemId === targetId);
+    if (match) setSelectedItem(match);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [allTasks, setAllTasks] = useState<SubItem[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [tasksFetched, setTasksFetched] = useState(false);
