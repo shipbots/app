@@ -21,7 +21,7 @@ import dynamic from 'next/dynamic';
 import { useSession } from 'next-auth/react';
 import {
   FileSpreadsheet, Sparkles, Loader2, Sheet, Warehouse,
-  LifeBuoy, BookOpen, GripVertical,
+  LifeBuoy, BookOpen, GripVertical, Camera,
 } from 'lucide-react';
 
 // Lazy-load the CSV formatter so the xlsx (~500KB) bundle only ships when
@@ -56,8 +56,11 @@ interface AppDef {
   iconFallback?: React.ComponentType<{ className?: string }>;
   // A tile is either an in-app surface (Component mounts inline) or a
   // shortcut to an external URL (opens in a new tab). Exactly one is set.
+  // When `comingSoon` is true, neither needs to be set — the tile is a
+  // visible-but-inert placeholder with a "Soon" badge.
   Component?: React.ComponentType<{ onBack: () => void }>;
   externalUrl?: string;
+  comingSoon?: boolean;
 }
 
 const APPS: AppDef[] = [
@@ -117,6 +120,15 @@ const APPS: AppDef[] = [
     iconBg: '#5b21b6',
     icon: BookOpen,
     externalUrl: 'https://helpportal.shipbots.com',
+  },
+  {
+    id: 'photo-to-po',
+    label: 'Photo to PO',
+    description: 'Snap a photo of an invoice or item list — Claude reads it and drafts a ShipHero purchase order. (In development.)',
+    bg: 'from-amber-400 to-orange-600',
+    iconBg: '#ea580c',
+    icon: Camera,
+    comingSoon: true,
   },
 ];
 
@@ -191,6 +203,9 @@ export function MiniAppsView() {
   }
 
   const handleTileClick = (app: AppDef) => {
+    // Coming-soon tiles are visible but inert — the tooltip says they're
+    // in development and the click does nothing on purpose.
+    if (app.comingSoon) return;
     if (app.externalUrl) {
       window.open(app.externalUrl, '_blank', 'noopener,noreferrer');
       return;
@@ -334,7 +349,9 @@ function AppTile({
       <div
         className={`relative w-16 h-16 rounded-[18px] overflow-hidden flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:-translate-y-0.5 transition-all ${
           useImage ? 'bg-white' : `bg-gradient-to-br ${app.bg} text-white`
-        } ${isDropTarget ? 'ring-2 ring-offset-2 ring-[#43c7ff]' : ''}`}
+        } ${isDropTarget ? 'ring-2 ring-offset-2 ring-[#43c7ff]' : ''} ${
+          app.comingSoon ? 'opacity-70 saturate-75' : ''
+        }`}
       >
         {useImage ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -348,8 +365,15 @@ function AppTile({
         ) : FallbackIcon ? (
           <FallbackIcon className="w-7 h-7" />
         ) : null}
+        {app.comingSoon && (
+          <span className="absolute top-0 right-0 text-[8px] font-bold uppercase tracking-wider bg-gray-900/85 text-white px-1.5 py-0.5 rounded-bl-md">
+            Soon
+          </span>
+        )}
       </div>
-      <p className="text-[11px] font-medium text-gray-700 text-center leading-tight line-clamp-2 max-w-[88px]">
+      <p className={`text-[11px] font-medium text-center leading-tight line-clamp-2 max-w-[88px] ${
+        app.comingSoon ? 'text-gray-500' : 'text-gray-700'
+      }`}>
         {app.label}
       </p>
       <span className="hidden group-hover:block absolute z-20 mt-20 max-w-xs text-[11px] leading-snug text-white bg-gray-900/95 rounded-md px-2.5 py-1.5 shadow-lg pointer-events-none">
