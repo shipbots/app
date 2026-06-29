@@ -5,7 +5,7 @@ import { OnboardingItem, ClientInfo, FirefliesMeeting, GmailThread } from '@/lib
 import { StatusBadge } from './status-badge';
 import { ClientInfoTab } from './client-info-tab';
 import { StickyNotesPanel } from './sticky-notes-panel';
-import { ClientHeader } from './client-header';
+import { ClientHeader, ConfirmDialog } from './client-header';
 import { OnboardingTab } from './onboarding-tab';
 import { MeetingsTab } from './meetings-tab';
 import { EmailsTab } from './emails-tab';
@@ -460,21 +460,33 @@ function ClientNavigator({
 function ActiveToggle({
   clientBoardItemId,
   initialActive,
+  clientName,
   onChanged,
 }: {
   clientBoardItemId: string;
   initialActive: boolean;
+  /** Used in the confirmation dialog ("Deactivate Bebonia?") so the
+   *  user can't accidentally click on the wrong card. */
+  clientName?: string;
   onChanged?: (active: boolean) => void;
 }) {
   const [active, setActive] = useState(initialActive);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(false);
+  // Pending = the value the click would set if confirmed. Null = no dialog.
+  const [pending, setPending] = useState<boolean | null>(null);
 
   useEffect(() => { setActive(initialActive); }, [initialActive]);
 
-  const toggle = async () => {
-    if (saving) return;
-    const next = !active;
+  const requestToggle = () => {
+    if (saving || pending !== null) return;
+    setPending(!active);
+  };
+
+  const confirm = async () => {
+    if (pending === null) return;
+    const next = pending;
+    setPending(null);
     setActive(next); // optimistic
     setSaving(true);
     setError(false);
@@ -500,32 +512,52 @@ function ActiveToggle({
     }
   };
 
+  const nameLabel = (clientName && clientName.trim()) ? clientName.trim() : 'this client';
+
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      disabled={saving}
-      title={active ? 'Click to mark inactive (moves to Exited group)' : 'Click to mark active (moves to Company group)'}
-      className={`inline-flex items-center gap-1.5 pl-1 pr-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition-colors select-none ${
-        active
-          ? 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100'
-          : 'border-gray-300 bg-gray-100 text-gray-600 hover:bg-gray-200'
-      } ${saving ? 'opacity-60 cursor-wait' : ''}`}
-    >
-      <span
-        className={`w-7 h-3.5 rounded-full relative transition-colors ${
-          active ? 'bg-green-500' : 'bg-gray-400'
-        }`}
-        aria-hidden
+    <>
+      <button
+        type="button"
+        onClick={requestToggle}
+        disabled={saving || pending !== null}
+        title={active ? 'Click to mark inactive (moves to Exited group)' : 'Click to mark active (moves to Company group)'}
+        className={`inline-flex items-center gap-1.5 pl-1 pr-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition-colors select-none ${
+          active
+            ? 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100'
+            : 'border-gray-300 bg-gray-100 text-gray-600 hover:bg-gray-200'
+        } ${saving ? 'opacity-60 cursor-wait' : ''}`}
       >
         <span
-          className={`absolute top-0.5 left-0.5 w-2.5 h-2.5 rounded-full bg-white shadow-sm transition-transform ${
-            active ? 'translate-x-3.5' : 'translate-x-0'
+          className={`w-7 h-3.5 rounded-full relative transition-colors ${
+            active ? 'bg-green-500' : 'bg-gray-400'
           }`}
+          aria-hidden
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 w-2.5 h-2.5 rounded-full bg-white shadow-sm transition-transform ${
+              active ? 'translate-x-3.5' : 'translate-x-0'
+            }`}
+          />
+        </span>
+        {error ? 'Save failed' : active ? 'Active' : 'Inactive'}
+      </button>
+      {pending !== null && (
+        <ConfirmDialog
+          title={pending ? `Reactivate ${nameLabel}?` : `Deactivate ${nameLabel}?`}
+          description={
+            <span>
+              {pending
+                ? <>This moves <strong>{nameLabel}</strong> back into the active company group on Monday.com.</>
+                : <>This moves <strong>{nameLabel}</strong> to the <strong>Exited</strong> group on Monday.com. They&apos;ll still be searchable, just flagged inactive.</>}
+            </span>
+          }
+          confirmLabel={pending ? 'Reactivate' : 'Deactivate'}
+          onCancel={() => setPending(null)}
+          onConfirm={confirm}
+          busy={saving}
         />
-      </span>
-      {error ? 'Save failed' : active ? 'Active' : 'Inactive'}
-    </button>
+      )}
+    </>
   );
 }
 
@@ -988,14 +1020,29 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
       />
     );
     const headerActiveSlot = item.clientBoardItemId ? (
-      <ActiveToggle
-        clientBoardItemId={item.clientBoardItemId}
-        initialActive={!isInactive}
-        onChanged={active => {
-          setClientInfo(prev => prev ? { ...prev, groupId: active ? '' : CLIENT_GROUP_EXITED } : prev);
-          if (item.clientBoardItemId) onClientActiveChanged?.(item.clientBoardItemId, active);
-        }}
-      />
+      <div className="flex items-center gap-2">
+        <ActiveToggle
+          clientBoardItemId={item.clientBoardItemId}
+          initialActive={!isInactive}
+          clientName={displayName}
+          onChanged={active => {
+            setClientInfo(prev => prev ? { ...prev, groupId: active ? '' : CLIENT_GROUP_EXITED } : prev);
+            if (item.clientBoardItemId) onClientActiveChanged?.(item.clientBoardItemId, active);
+          }}
+        />
+        {/* Agent indicator sits right next to Active so reps can see at a
+            glance who owns the client. Click opens the assign menu — same
+            component the onboarding chip row used to host. */}
+        <AgentAssignButton
+          clientId={item.clientBoardItemId}
+          currentEmail={agentEmail}
+          onAssigned={email => {
+            setAgentEmail(email);
+            if (clientInfo) setClientInfo({ ...clientInfo, supportAgentEmail: email });
+            if (item.clientBoardItemId) onAgentAssigned?.(item.clientBoardItemId, email);
+          }}
+        />
+      </div>
     ) : null;
     const headerActionsSlot = (
       <div className="flex items-center gap-1">
@@ -1056,17 +1103,9 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
             Call needed
           </span>
         )}
-        {item.clientBoardItemId && (
-          <AgentAssignButton
-            clientId={item.clientBoardItemId}
-            currentEmail={agentEmail}
-            onAssigned={email => {
-              setAgentEmail(email);
-              if (clientInfo) setClientInfo({ ...clientInfo, supportAgentEmail: email });
-              if (item.clientBoardItemId) onAgentAssigned?.(item.clientBoardItemId, email);
-            }}
-          />
-        )}
+        {/* AgentAssignButton lives next to the Active toggle now (see
+            headerActiveSlot above), so the chip row no longer duplicates
+            it here. */}
         <a
           href={item.url}
           target="_blank"
@@ -1266,6 +1305,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
                   <ActiveToggle
                     clientBoardItemId={item.clientBoardItemId}
                     initialActive={!isInactive}
+                    clientName={displayName}
                     onChanged={active => {
                       setClientInfo(prev => prev ? { ...prev, groupId: active ? '' : CLIENT_GROUP_EXITED } : prev);
                       if (item.clientBoardItemId) onClientActiveChanged?.(item.clientBoardItemId, active);

@@ -55,7 +55,7 @@ function isPlatformActive(portalText: string, token: 'AppDot' | 'Portal'): boole
 // Small modal used to gate destructive-feeling changes (Platform toggle,
 // Warehouse switch) since both flow through to Monday and downstream
 // shipping ops. ESC and backdrop click cancel.
-function ConfirmDialog({
+export function ConfirmDialog({
   title, description, confirmLabel = 'Confirm', onCancel, onConfirm, busy,
 }: {
   title: string;
