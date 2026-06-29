@@ -114,6 +114,21 @@ body {
   color: #015280;
   font-weight: 600;
 }
+.search-result-meta .matched {
+  color: #111827;
+  font-weight: 600;
+}
+.search-result-meta .matched-tag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+  border-radius: 999px;
+  padding: 1px 6px;
+}
 .search-result-empty {
   padding: 12px;
   text-align: center;

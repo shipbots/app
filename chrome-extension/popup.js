@@ -57,22 +57,75 @@ async function fetchClientIndex() {
 
 // Quick-and-dirty fuzzy match: case-insensitive contains across the most
 // useful client fields. Ranks exact-prefix matches above contains.
+// Searchable field registry. `contact` is 1/2/3 for contact slots, undefined
+// for client-level fields. `kind` controls extra matching strategies:
+//   'phone' enables digit-only matching so "555 1234" matches "(555) 555-1234"
+//   'email' / default fall through to plain lowercased substring matching
+const SEARCHABLE_FIELDS = [
+  { key: 'name',          label: 'Client name',     isName: true },
+  { key: 'shipHeroName',  label: 'ShipHero name' },
+  { key: 'storeName',     label: 'Store' },
+  { key: 'legalEntity',   label: 'Legal entity' },
+  { key: 'contactName',   label: 'Primary contact', contact: 1 },
+  { key: 'contactEmail',  label: 'Primary email',   contact: 1, kind: 'email' },
+  { key: 'contactPhone',  label: 'Primary phone',   contact: 1, kind: 'phone' },
+  { key: 'contact2Name',  label: 'Contact 2',       contact: 2 },
+  { key: 'contact2Email', label: 'Contact 2 email', contact: 2, kind: 'email' },
+  { key: 'contact2Phone', label: 'Contact 2 phone', contact: 2, kind: 'phone' },
+  { key: 'contact3Name',  label: 'Contact 3',       contact: 3 },
+  { key: 'contact3Email', label: 'Contact 3 email', contact: 3, kind: 'email' },
+  { key: 'contact3Phone', label: 'Contact 3 phone', contact: 3, kind: 'phone' },
+];
+
+function digitsOnly(s) {
+  return String(s ?? '').replace(/\D+/g, '');
+}
+
+// Pick the single best-scoring field match for this client + query.
+// Returns null when nothing matches. Returns { score, field, value } on hit.
 function matchScore(client, query) {
-  const q = query.toLowerCase();
-  const fields = [client.name, client.shipHeroName, client.storeName, client.legalEntity, client.contactEmail, client.contactName]
-    .filter(Boolean)
-    .map(s => String(s).toLowerCase());
-  let best = -1;
-  for (const f of fields) {
-    if (!f.includes(q)) continue;
-    // Lower index = better. Name field counts double.
-    const idx = f.indexOf(q);
-    const score = idx === 0 ? 1000 - idx : 100 - idx;
-    if (score > best) best = score;
+  const q = query.toLowerCase().trim();
+  if (!q) return null;
+  const qDigits = digitsOnly(q);
+  // 3+ consecutive digits implies the user is searching by phone — so do
+  // digit-only comparison against all phone fields in addition to substring
+  // matching on everything else.
+  const phoneMode = qDigits.length >= 3;
+
+  let best = null;
+  for (const field of SEARCHABLE_FIELDS) {
+    const raw = client[field.key];
+    if (raw === undefined || raw === null || String(raw).trim() === '') continue;
+    const value = String(raw);
+    const valueLower = value.toLowerCase();
+
+    let score = -1;
+    if (field.kind === 'phone' && phoneMode) {
+      const vDigits = digitsOnly(valueLower);
+      if (vDigits.includes(qDigits)) {
+        const idx = vDigits.indexOf(qDigits);
+        // Match-at-start of the phone scores higher than mid-string match.
+        score = (idx === 0 ? 800 : 200) - idx;
+      }
+    }
+    if (score < 0 && valueLower.includes(q)) {
+      const idx = valueLower.indexOf(q);
+      score = (idx === 0 ? 1000 : 100) - idx;
+    }
+    if (score < 0) continue;
+
+    // Boosts to push the right kind of hit to the top:
+    //   - Hits on the client-name field always win ties.
+    //   - Primary contact (1) > secondaries (2 > 3).
+    if (field.isName) score += 200;
+    if (field.contact === 1) score += 40;
+    else if (field.contact === 2) score += 20;
+    else if (field.contact === 3) score += 10;
+
+    if (!best || score > best.score) {
+      best = { score, field, value };
+    }
   }
-  // Bonus when the name field hits at all.
-  const nameLower = String(client.name || '').toLowerCase();
-  if (nameLower.includes(q)) best += 50;
   return best;
 }
 
@@ -80,11 +133,13 @@ function filterClients(clients, query, limit = 8) {
   const q = query.trim();
   if (!q) return [];
   return clients
-    .map(c => ({ c, score: matchScore(c, q) }))
-    .filter(x => x.score >= 0)
+    .map(c => {
+      const m = matchScore(c, q);
+      return m ? { ...m, c } : null;
+    })
+    .filter(Boolean)
     .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map(x => x.c);
+    .slice(0, limit);
 }
 
 function renderResults(results, container, activeIdx) {
@@ -97,7 +152,8 @@ function renderResults(results, container, activeIdx) {
     container.hidden = false;
     return;
   }
-  results.forEach((client, i) => {
+  results.forEach((result, i) => {
+    const { c: client, field, value } = result;
     const li = document.createElement('li');
     li.setAttribute('role', 'option');
     li.setAttribute('data-client-id', client.id);
@@ -116,17 +172,39 @@ function renderResults(results, container, activeIdx) {
     }
     li.appendChild(nameRow);
 
-    const metaParts = [];
-    if (client.contactEmail) metaParts.push(client.contactEmail);
-    else if (client.contactName) metaParts.push(client.contactName);
-    if (client.warehouse) metaParts.push(`<span class="warehouse">${escapeHtml(client.warehouse)}</span>`);
-
-    if (metaParts.length > 0) {
-      const meta = document.createElement('div');
-      meta.className = 'search-result-meta';
-      meta.innerHTML = metaParts.join(' · ');
-      li.appendChild(meta);
+    // Meta line. If the match was via a contact field, surface that value
+    // and tag it ("contact 2") so the user sees why this row appeared.
+    // Otherwise fall back to the standard primary-email · warehouse line.
+    const isContactMatch = !!field.contact && !field.isName;
+    const meta = document.createElement('div');
+    meta.className = 'search-result-meta';
+    if (isContactMatch) {
+      const matchedSpan = document.createElement('span');
+      matchedSpan.className = 'matched';
+      matchedSpan.textContent = value;
+      meta.appendChild(matchedSpan);
+      const tag = document.createElement('span');
+      tag.className = 'matched-tag';
+      tag.textContent = field.contact === 1 ? 'primary' : `contact ${field.contact}`;
+      meta.appendChild(tag);
+      if (client.warehouse) {
+        const sep = document.createElement('span');
+        sep.textContent = '·';
+        sep.style.color = '#9ca3af';
+        meta.appendChild(sep);
+        const wh = document.createElement('span');
+        wh.className = 'warehouse';
+        wh.textContent = client.warehouse;
+        meta.appendChild(wh);
+      }
+    } else {
+      const metaParts = [];
+      if (client.contactEmail) metaParts.push(client.contactEmail);
+      else if (client.contactName) metaParts.push(client.contactName);
+      if (client.warehouse) metaParts.push(`<span class="warehouse">${escapeHtml(client.warehouse)}</span>`);
+      if (metaParts.length > 0) meta.innerHTML = metaParts.join(' · ');
     }
+    if (meta.childNodes.length > 0 || meta.innerHTML) li.appendChild(meta);
     container.appendChild(li);
   });
   container.hidden = false;
@@ -644,7 +722,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // back to the dashboard's own kanban search via ?q= so the user still
     // gets something useful.
     if (activeIdx >= 0 && activeResults[activeIdx]) {
-      openSelectedClient(activeResults[activeIdx]);
+      openSelectedClient(activeResults[activeIdx].c);
       return;
     }
     const q = searchInput.value.trim();
@@ -655,8 +733,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const li = e.target.closest('li[data-client-id]');
     if (!li) return;
     const id = li.getAttribute('data-client-id');
-    const client = activeResults.find(c => c.id === id);
-    openSelectedClient(client);
+    const hit = activeResults.find(r => r.c.id === id);
+    if (hit) openSelectedClient(hit.c);
   });
 
   // Eager-load the index in the background so the first keystroke is
