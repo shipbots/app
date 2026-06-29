@@ -41,6 +41,9 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     if (typeof window === 'undefined') return isCustomerService ? 'clients' : 'pipeline';
     const v = new URLSearchParams(window.location.search).get('view');
     if (v === 'tasks' || v === 'calendar' || v === 'pipeline' || v === 'clients') return v;
+    // 'apps' is CS-only; render-side guard already prevents it leaking
+    // into the onboarding surface even if the URL is wrong.
+    if (v === 'apps' && isCustomerService) return 'apps';
     // CS reps land on the per-client browser by default — their primary
     // workflow is "look up a client" rather than "see the kanban".
     return isCustomerService ? 'clients' : 'pipeline';

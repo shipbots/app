@@ -29,6 +29,25 @@ async function openPath(path) {
   window.close();
 }
 
+function openExternal(url) {
+  chrome.tabs.create({ url });
+  window.close();
+}
+
+// Mini Apps registry — kept in sync with components/mini-apps-view.tsx.
+// Each entry is either { external: <absolute URL> } or { dashPath: <path on
+// our deploy> }. CSV Order Formatter has to render in-app, so it deep-links
+// the dashboard's Mini Apps tab; everything else opens its own URL directly
+// so the user doesn't pay an extra hop through the dashboard.
+const MINI_APPS = {
+  'csv-order-formatter': { dashPath: '/customer-service?view=apps' },
+  'sheet':              { external: 'https://www.shipbots.com/sheet' },
+  'ship-hero':          { external: 'https://www.shipbots.com/login' },
+  'sh-portal':          { external: 'https://www.shipbots.com/portal' },
+  'help-shiphero':      { external: 'https://help.shipbots.com' },
+  'help-portal':        { external: 'https://helpportal.shipbots.com' },
+};
+
 document.addEventListener('DOMContentLoaded', async () => {
   const baseUrlEl = document.getElementById('base-url');
   const editUrlBtn = document.getElementById('edit-url');
@@ -49,8 +68,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // ── Quick-launch buttons
-  document.getElementById('open-calendar').addEventListener('click', () => openPath('/customer-service'));
+  document.getElementById('open-calendar').addEventListener('click', () => openPath('/customer-service?view=calendar'));
   document.getElementById('open-tasks').addEventListener('click', () => openPath('/customer-service?view=tasks'));
+
+  // ── Mini Apps tiles. Each .tile carries data-app pointing at a
+  // MINI_APPS registry entry. External tiles open their URL directly,
+  // CSV Order Formatter deep-links the dashboard's mini-apps tab.
+  document.getElementById('open-all-apps').addEventListener('click', () => {
+    openPath('/customer-service?view=apps');
+  });
+  document.querySelectorAll('.mini-apps-grid .tile').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const appId = btn.getAttribute('data-app');
+      const entry = appId ? MINI_APPS[appId] : null;
+      if (!entry) return;
+      if ('external' in entry) {
+        openExternal(entry.external);
+      } else if ('dashPath' in entry) {
+        openPath(entry.dashPath);
+      }
+    });
+  });
 
   // ── Base URL editor (lets users point at staging without republishing)
   editUrlBtn.addEventListener('click', async () => {

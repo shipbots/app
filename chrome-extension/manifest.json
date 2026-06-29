@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "ShipBots Customer Service",
   "short_name": "ShipBots CS",
-  "version": "0.1.0",
-  "description": "Quick access to the ShipBots Customer Service dashboard — client info, tasks, docs, and calendar.",
+  "version": "0.2.0",
+  "description": "Quick access to the ShipBots Customer Service dashboard — client search, calendar, tasks, and the Mini Apps launcher (CSV Order Formatter, SHEET, ShipHero, SH Portal, help articles).",
   "icons": {
     "16": "icons/icon-16.png",
     "48": "icons/icon-48.png",
