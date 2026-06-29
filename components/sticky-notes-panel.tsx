@@ -16,7 +16,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, X, GripVertical, StickyNote, Clock } from 'lucide-react';
+import { Plus, X, GripVertical, StickyNote, Clock, Wrench, Copy, Check, Loader2 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 
 // ── Palette ─────────────────────────────────────────────────────────────────
@@ -401,6 +401,47 @@ export function StickyNotesPanel({
   const containerRef = useRef<HTMLDivElement>(null);
   const { data: session } = useSession();
   const authorEmail = session?.user?.email ?? '';
+  const isAdmin = Boolean((session?.user as { isAdmin?: boolean } | undefined)?.isAdmin);
+
+  // Self-service column bootstrap for admins. Setup state lives outside
+  // the main sync state machine because the user explicitly initiates it
+  // and the result has to stick around long enough to be copy-pasted into
+  // Vercel — no auto-dismiss.
+  const [setupRunning, setSetupRunning] = useState(false);
+  const [setupResult, setSetupResult] = useState<{ columnId: string } | null>(null);
+  const [setupError, setSetupError] = useState<string>('');
+  const [copied, setCopied] = useState(false);
+
+  const runSetup = async () => {
+    if (setupRunning) return;
+    setSetupRunning(true);
+    setSetupError('');
+    try {
+      const res = await fetch('/api/admin/setup-sticky-notes', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.detail || data?.error || `setup failed (${res.status})`);
+      }
+      if (!data?.columnId) throw new Error('No column id in response');
+      setSetupResult({ columnId: data.columnId });
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'unknown error');
+    } finally {
+      setSetupRunning(false);
+    }
+  };
+
+  const copyColumnId = async () => {
+    if (!setupResult) return;
+    try {
+      await navigator.clipboard.writeText(setupResult.columnId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch { /* clipboard denied — user can select manually */ }
+  };
 
   // ── Hydrate from the server. Runs on mount and whenever the user
   //    switches to a different client.
@@ -524,23 +565,39 @@ export function StickyNotesPanel({
   return (
     <section className={`bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden ${className ?? ''}`}>
       <header className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200 bg-gray-50 flex-shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <StickyNote className="w-4 h-4 text-[#015280]" />
           <h2 className="text-sm font-semibold text-gray-900">Sticky Notes</h2>
           <span className={`text-[11px] ${statusColor}`} title={statusDetail || undefined}>
             ({noteCount}) · {statusLabel}
           </span>
+          {status === 'unconfigured' && isAdmin && (
+            <button
+              type="button"
+              onClick={runSetup}
+              disabled={setupRunning}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-50 border border-red-200 text-red-700 text-[11px] font-semibold hover:bg-red-100 disabled:opacity-60 transition-colors"
+            >
+              {setupRunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wrench className="w-3 h-3" />}
+              {setupRunning ? 'Setting up…' : 'Run setup'}
+            </button>
+          )}
         </div>
         <button
           type="button"
           onClick={addNote}
-          disabled={!clientBoardItemId || status === 'loading'}
+          disabled={!clientBoardItemId || status === 'loading' || status === 'unconfigured'}
           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#015280] text-white text-[11px] font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
         >
           <Plus className="w-3 h-3" />
           Add note
         </button>
       </header>
+      {setupError && (
+        <div className="px-4 py-2 bg-red-50 border-b border-red-200 text-[11px] text-red-700">
+          Setup failed: {setupError}
+        </div>
+      )}
 
       <div
         ref={containerRef}
@@ -563,6 +620,54 @@ export function StickyNotesPanel({
           />
         ))}
       </div>
+
+      {setupResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-5">
+            <h3 className="text-base font-semibold text-gray-900 mb-1 flex items-center gap-1.5">
+              <Check className="w-4 h-4 text-emerald-600" />
+              Column created
+            </h3>
+            <p className="text-xs text-gray-600 mb-3">
+              A long_text column called <strong>Sticky Notes</strong> was added to the Clients board. Copy the id below and paste it into Vercel.
+            </p>
+
+            <div className="bg-gray-50 border border-gray-200 rounded p-2.5 mb-3 flex items-center gap-2">
+              <code className="flex-1 text-xs font-mono text-gray-800 break-all select-all">
+                {setupResult.columnId}
+              </code>
+              <button
+                type="button"
+                onClick={copyColumnId}
+                title="Copy to clipboard"
+                className="px-2 py-1 rounded bg-white border border-gray-300 hover:bg-gray-50 text-xs font-medium text-gray-700 flex items-center gap-1"
+              >
+                {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+
+            <ol className="text-xs text-gray-700 space-y-1.5 list-decimal pl-5 mb-4">
+              <li>Open <strong>Vercel → Project → Settings → Environment Variables</strong>.</li>
+              <li>
+                Add <code className="font-mono text-[11px] bg-gray-100 border border-gray-200 px-1 py-0.5 rounded">MONDAY_STICKY_NOTES_COL_ID</code> with the id above for <strong>Production, Preview, and Development</strong>.
+              </li>
+              <li>Redeploy (Deployments → ⋯ → Redeploy on the latest deployment).</li>
+              <li>Come back here and refresh — the panel should flip to <em>shared with the team</em>.</li>
+            </ol>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSetupResult(null)}
+                className="px-3 py-1.5 text-sm font-medium text-white bg-[#015280] hover:bg-[#01416a] rounded"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
