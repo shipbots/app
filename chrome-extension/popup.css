@@ -2,22 +2,26 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 
-/* macOS Chrome draws a thick rounded -webkit-focus-ring-color outline on
-   whichever element ends up with :focus-visible when the popup opens —
-   could be <body>, <section>, or whatever's next in tab order. The
-   previous html/body-only override didn't catch it. Kill the auto ring
-   universally; explicit interactive controls below get their own custom
-   focus styling, so accessibility for keyboard nav is preserved on the
-   things people actually click. */
-:focus, :focus-visible {
-  outline: none;
+/* Belt-and-suspenders against the cyan ring macOS Chrome paints on
+   focused elements at popup-open time. Previous attempts targeted
+   :focus / :focus-visible without !important and the user-agent
+   stylesheet kept winning on certain Chrome builds. Now we sledgehammer
+   the auto ring everywhere with !important on both outline and any
+   box-shadow contribution; explicit controls below get a clean
+   keyboard-focus ring restored. */
+:focus, :focus-visible, :focus-within {
+  outline: none !important;
+}
+html, body, header, main, section, aside, footer, nav, div {
+  outline: none !important;
+  box-shadow: none;
 }
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 a:focus-visible {
-  outline: 2px solid rgba(67, 199, 255, .6);
+  outline: 2px solid rgba(67, 199, 255, .6) !important;
   outline-offset: 1px;
 }
 body {
