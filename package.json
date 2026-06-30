@@ -9,7 +9,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "zip:extension": "rm -f public/chrome-extension.zip && cd chrome-extension && zip -qr ../public/chrome-extension.zip . -x '*.DS_Store' && cd ..",
+    "prebuild": "npm run zip:extension",
+    "predev": "npm run zip:extension"
   },
   "dependencies": {
     "@types/jsonwebtoken": "^9.0.10",
