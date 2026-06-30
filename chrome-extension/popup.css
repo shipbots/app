@@ -6,6 +6,12 @@ body {
   width: 380px;
   background: #f9fafb;
   color: #111827;
+  transition: width .15s ease-out;
+}
+/* When the user opens a client, the popup doubles in width so the
+   sticky-notes pane has room next to the existing detail panels. */
+body.detail-open {
+  width: 760px;
 }
 
 .header {
@@ -294,11 +300,95 @@ body {
 }
 .detail-status.error { color: #b91c1c; }
 
-.detail-sections {
+/* Detail body splits the scroll area into left = info sections,
+   right = sticky-notes pane. They share the available height and each
+   scrolls independently. */
+.detail-body {
   flex: 1;
+  display: flex;
+  min-height: 0;
+  background: #f9fafb;
+}
+.detail-sections {
+  flex: 1 1 0;
   overflow-y: auto;
   padding: 8px 12px 14px;
-  background: #f9fafb;
+  min-width: 0;
+}
+.detail-notes {
+  flex: 1 1 0;
+  border-left: 1px solid #e5e7eb;
+  background: #fbfaf6;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.detail-notes-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid #eee;
+  background: #fff;
+}
+.detail-notes-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #015280;
+}
+.detail-notes-status {
+  font-size: 10px;
+  color: #9ca3af;
+  font-style: italic;
+}
+.detail-notes-status.error { color: #b91c1c; font-style: normal; }
+.detail-notes-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.detail-notes-empty {
+  text-align: center;
+  font-size: 11px;
+  color: #9ca3af;
+  font-style: italic;
+  padding: 24px 12px;
+}
+
+.note-card {
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  padding: 8px 10px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  line-height: 1.35;
+  background: #fef9c3;
+  border-color: #facc15;
+  color: #713f12;
+}
+.note-card.color-yellow { background: #fef9c3; border-color: #facc15; color: #713f12; }
+.note-card.color-pink   { background: #fce7f3; border-color: #f472b6; color: #831843; }
+.note-card.color-blue   { background: #dbeafe; border-color: #60a5fa; color: #1e3a8a; }
+.note-card.color-green  { background: #d1fae5; border-color: #34d399; color: #064e3b; }
+.note-card.color-purple { background: #ede9fe; border-color: #a78bfa; color: #4c1d95; }
+.note-card.color-orange { background: #ffedd5; border-color: #fb923c; color: #7c2d12; }
+.note-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  opacity: .7;
+  margin-bottom: 4px;
 }
 
 /* Pills row at the top of the detail (summary chips) */
@@ -320,6 +410,8 @@ body {
 }
 .detail-pill.inactive { background: #f3f4f6; color: #6b7280; border-color: #e5e7eb; }
 .detail-pill.warehouse { background: #ecfdf5; color: #047857; border-color: #6ee7b7; }
+.detail-pill.agent { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+.detail-pill.agent-none { background: #f3f4f6; color: #6b7280; border-color: #e5e7eb; font-style: italic; }
 
 /* Collapsible section */
 .detail-section {

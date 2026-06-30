@@ -576,10 +576,142 @@ function renderClientDetail(client) {
       pills.appendChild(p);
     }
   }
+  // Agent pill — always present so the rep can tell at a glance who owns
+  // the client. Falls back to a muted "No agent assigned" chip so the
+  // absence is visible, not silent.
+  const agentEmail = (client.supportAgentEmail || '').trim();
+  const agentPill = document.createElement('span');
+  if (agentEmail) {
+    agentPill.className = 'detail-pill agent';
+    agentPill.textContent = `Agent: ${agentEmail}`;
+    agentPill.title = `Support agent: ${agentEmail}`;
+  } else {
+    agentPill.className = 'detail-pill agent-none';
+    agentPill.textContent = 'No agent assigned';
+  }
+  pills.appendChild(agentPill);
   if (pills.childElementCount > 0) sectionsEl.appendChild(pills);
 
   for (const section of DETAIL_SECTIONS) {
     sectionsEl.appendChild(buildSection(section, client));
+  }
+}
+
+// Sticky notes for the active client. Same shape as the dashboard's
+// shared storage; rendered read-only here (editing routes through Edit ↗
+// in the detail header).
+async function fetchClientStickyNotes(id) {
+  const base = await getBaseUrl();
+  const res = await fetch(`${base}/api/client/${encodeURIComponent(id)}/sticky-notes`, {
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+  });
+  if (res.status === 401) {
+    const err = new Error('Not signed in');
+    err.code = 'unauthorized';
+    throw err;
+  }
+  if (res.status === 503) {
+    const err = new Error('Setup required');
+    err.code = 'unconfigured';
+    throw err;
+  }
+  if (!res.ok) throw new Error(`load failed (${res.status})`);
+  const data = await res.json();
+  const arr = Array.isArray(data?.notes) ? data.notes : [];
+  // Drop expired notes — same rule the dashboard applies on the way in.
+  const now = Date.now();
+  return arr.filter(n => {
+    if (!n || typeof n.id !== 'string') return false;
+    if (n.expiresAt && new Date(n.expiresAt).getTime() <= now) return false;
+    return true;
+  });
+}
+
+function noteShortDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function noteInitials(email) {
+  return String(email ?? '').trim().slice(0, 2).toUpperCase();
+}
+
+function renderClientStickyNotes(notes) {
+  const list = document.getElementById('detail-notes-list');
+  const statusEl = document.getElementById('detail-notes-status');
+  list.innerHTML = '';
+  statusEl.classList.remove('error');
+
+  if (notes.length === 0) {
+    statusEl.textContent = '';
+    const empty = document.createElement('div');
+    empty.className = 'detail-notes-empty';
+    empty.textContent = 'No sticky notes for this client yet.';
+    list.appendChild(empty);
+    return;
+  }
+
+  statusEl.textContent = `${notes.length} note${notes.length === 1 ? '' : 's'}`;
+
+  for (const note of notes) {
+    const card = document.createElement('div');
+    const color = note.color && /^[a-z]+$/i.test(note.color) ? `color-${note.color}` : 'color-yellow';
+    card.className = `note-card ${color}`;
+
+    const date = noteShortDate(note.createdAt);
+    const initials = noteInitials(note.authorEmail);
+    if (date || initials) {
+      const meta = document.createElement('div');
+      meta.className = 'note-card-meta';
+      if (date) {
+        const s = document.createElement('span');
+        s.textContent = date;
+        meta.appendChild(s);
+      }
+      if (date && initials) {
+        const sep = document.createElement('span');
+        sep.textContent = '·';
+        meta.appendChild(sep);
+      }
+      if (initials) {
+        const s = document.createElement('span');
+        s.textContent = initials;
+        meta.appendChild(s);
+      }
+      card.appendChild(meta);
+    }
+
+    const body = document.createElement('div');
+    body.textContent = note.text || '(empty)';
+    card.appendChild(body);
+    list.appendChild(card);
+  }
+}
+
+function showStickyNotesStatus(message, isError) {
+  const list = document.getElementById('detail-notes-list');
+  const statusEl = document.getElementById('detail-notes-status');
+  list.innerHTML = '';
+  statusEl.textContent = message;
+  statusEl.classList.toggle('error', !!isError);
+}
+
+async function loadStickyNotesPane(clientId) {
+  showStickyNotesStatus('Loading…', false);
+  try {
+    const notes = await fetchClientStickyNotes(clientId);
+    renderClientStickyNotes(notes);
+  } catch (err) {
+    if (err.code === 'unconfigured') {
+      showStickyNotesStatus('Setup required', true);
+    } else if (err.code === 'unauthorized') {
+      showStickyNotesStatus('Sign in to the dashboard first', true);
+    } else {
+      showStickyNotesStatus('Failed to load notes', true);
+    }
   }
 }
 
@@ -592,6 +724,9 @@ async function showClientDetail(clientStub) {
 
   searchView.hidden = true;
   detailView.hidden = false;
+  // Resize the popup so the sticky-notes column has room. CSS handles the
+  // actual width via the body class; Chrome respects the change live.
+  document.body.classList.add('detail-open');
 
   // Header placeholders fill from search-index right away so the user sees
   // something while the full fetch runs.
@@ -604,6 +739,10 @@ async function showClientDetail(clientStub) {
   statusEl.textContent = 'Loading client info…';
 
   openBtn.onclick = () => openPath(`/customer-service?clientId=${encodeURIComponent(clientStub.id)}`);
+
+  // Kick off sticky notes in parallel with the full client info fetch so
+  // the right column populates as soon as Monday returns the column.
+  void loadStickyNotesPane(clientStub.id);
 
   try {
     const client = await fetchClientFull(clientStub.id);
@@ -622,6 +761,7 @@ async function showClientDetail(clientStub) {
 function backToSearch() {
   document.getElementById('client-detail').hidden = true;
   document.getElementById('search-view').hidden = false;
+  document.body.classList.remove('detail-open');
   document.getElementById('search-input').focus();
 }
 
