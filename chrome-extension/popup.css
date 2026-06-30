@@ -1,6 +1,15 @@
 /* ShipBots Customer Service — popup styles */
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+
+/* Chrome / the OS sometimes draws a focus ring around the whole popup
+   window when it opens (because <body> ends up as the focused element
+   for a moment before autofocus moves it). Suppress it on the document
+   wrappers — individual inputs/buttons still get their own focus rings. */
+html:focus, body:focus,
+html:focus-visible, body:focus-visible {
+  outline: none;
+}
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   width: 380px;
@@ -231,6 +240,10 @@ body.detail-open {
   max-height: 580px;
   overflow: hidden;
 }
+/* display:flex above beats the browser default for [hidden] (display:none),
+   so without this override the panel — and its "Sticky Notes" header —
+   leaks into the search view. */
+.client-detail[hidden] { display: none; }
 .detail-header {
   display: flex;
   align-items: center;
