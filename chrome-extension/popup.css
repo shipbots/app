@@ -2,13 +2,23 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 
-/* Chrome / the OS sometimes draws a focus ring around the whole popup
-   window when it opens (because <body> ends up as the focused element
-   for a moment before autofocus moves it). Suppress it on the document
-   wrappers — individual inputs/buttons still get their own focus rings. */
-html:focus, body:focus,
-html:focus-visible, body:focus-visible {
+/* macOS Chrome draws a thick rounded -webkit-focus-ring-color outline on
+   whichever element ends up with :focus-visible when the popup opens —
+   could be <body>, <section>, or whatever's next in tab order. The
+   previous html/body-only override didn't catch it. Kill the auto ring
+   universally; explicit interactive controls below get their own custom
+   focus styling, so accessibility for keyboard nav is preserved on the
+   things people actually click. */
+:focus, :focus-visible {
   outline: none;
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+  outline: 2px solid rgba(67, 199, 255, .6);
+  outline-offset: 1px;
 }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
