@@ -1,13 +1,19 @@
 'use client';
 
 /**
- * ClientPostitsSummary — compact read-only preview of a client's sticky
- * notes, meant to sit at the top of ClientInfoTab so a rep sees any
- * pinned annotations before scrolling into the account details.
+ * ClientStickyNotesSummary — compact read-only preview of a client's
+ * sticky notes, meant to sit at the top of ClientInfoTab in the
+ * non-fullscreen (side-panel) view so a rep sees any pinned
+ * annotations before scrolling into the account details.
+ *
+ * The fullscreen view already renders the full draggable
+ * StickyNotesPanel on the right, so ClientInfoTab suppresses this
+ * summary when fullscreen=true to avoid duplication.
  *
  * Fetches from the same shared endpoint the full sticky-notes panel
- * uses. Renders one small color-matched chip per note. Click a chip to
- * toggle the full text inline; the chip re-collapses on second click.
+ * uses. Renders one small color-matched chip per note. Click a chip
+ * to toggle the full text inline; the chip re-collapses on second
+ * click.
  *
  * Renders NOTHING when:
  *   - no notes are attached to this client
@@ -38,7 +44,7 @@ function initials(email: string | undefined): string {
   return (email ?? '').trim().slice(0, 2).toUpperCase();
 }
 
-export function ClientPostitsSummary({ clientBoardItemId }: { clientBoardItemId: string }) {
+export function ClientStickyNotesSummary({ clientBoardItemId }: { clientBoardItemId: string }) {
   const [notes, setNotes] = useState<StickyNote[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -67,12 +73,12 @@ export function ClientPostitsSummary({ clientBoardItemId }: { clientBoardItemId:
   return (
     <section
       className="rounded-lg border border-amber-200 bg-amber-50/60 p-2 mb-3"
-      aria-label={`${notes.length} post-it note${notes.length === 1 ? '' : 's'}`}
+      aria-label={`${notes.length} sticky note${notes.length === 1 ? '' : 's'}`}
     >
       <div className="flex items-center gap-1.5 mb-1.5">
         <StickyNoteIcon className="w-3 h-3 text-amber-700" />
         <span className="text-[9px] font-bold text-amber-900 uppercase tracking-wider">
-          Post-its · {notes.length}
+          Sticky Notes · {notes.length}
         </span>
       </div>
       <div className="flex flex-wrap gap-1.5">
