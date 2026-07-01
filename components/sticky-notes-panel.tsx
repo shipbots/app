@@ -20,9 +20,9 @@ import { Plus, X, GripVertical, StickyNote, Clock, Wrench, Copy, Check, Loader2 
 import { useSession } from 'next-auth/react';
 
 // ── Palette ─────────────────────────────────────────────────────────────────
-type NoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'purple' | 'orange';
+export type NoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'purple' | 'orange';
 
-const COLOR_STYLES: Record<NoteColor, { bg: string; border: string; accent: string }> = {
+export const COLOR_STYLES: Record<NoteColor, { bg: string; border: string; accent: string }> = {
   yellow: { bg: '#fef9c3', border: '#facc15', accent: '#a16207' },
   pink:   { bg: '#fce7f3', border: '#f472b6', accent: '#9d174d' },
   blue:   { bg: '#dbeafe', border: '#60a5fa', accent: '#1d4ed8' },
@@ -36,7 +36,7 @@ const COLORS: NoteColor[] = ['yellow', 'pink', 'blue', 'green', 'purple', 'orang
 const NOTE_W = 180;
 const NOTE_H = 160;
 
-type StickyNote = {
+export type StickyNote = {
   id: string;
   text: string;
   color: NoteColor;

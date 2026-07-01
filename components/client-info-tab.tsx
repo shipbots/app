@@ -8,6 +8,7 @@ import {
   UserCheck, UserPlus, X, Loader2, ShieldCheck, Users, Copy, KeyRound, LogIn,
   ArrowUpDown,
 } from 'lucide-react';
+import { ClientPostitsSummary } from './client-postits-summary';
 
 interface ClientInfoTabProps {
   client: ClientInfo;
@@ -1307,6 +1308,13 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
 
   return (
     <div className="p-4 overflow-y-auto h-full">
+
+      {/* Compact preview of any sticky notes attached to this client, so
+          reps see pinned annotations before scrolling into account
+          details. Renders nothing when there are no notes / setup is
+          incomplete, so this section never adds noise on a client that
+          hasn't been annotated. */}
+      {id && <ClientPostitsSummary clientBoardItemId={id} />}
 
       {/* ── Client Name (editable — renames both boards) ── */}
       {!hideHeader && (
