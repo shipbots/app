@@ -28,6 +28,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   normalizeCountry, normalizeUSState, normalizeCAProvince, detectStateMatch,
+  isCountryValue,
   type StateMatchOutcome,
 } from '@/lib/country-state-lookup';
 import {
@@ -231,6 +232,31 @@ interface StateCorrection {
   action: 'auto' | 'pending' | 'accepted' | 'rejected';
 }
 
+// Pre-flight validation issue detected in the projected output. Rendered
+// as a warning banner in the review panel so the user can fix problems
+// before downloading (and before ShipHero rejects the upload).
+interface PreflightIssue {
+  key: string;                 // stable React key
+  kind: 'missing-required' | 'state-is-country' | 'unresolved-country';
+  field: string;
+  count: number;
+  sampleRowNums?: number[];    // 1-indexed OUTPUT row numbers
+  sampleValues?: string[];
+  severity: 'error' | 'warning';
+  message: string;
+  autoFixLabel?: string;
+  autoFixApply?: () => void;
+}
+
+// AI-reported issue from /api/mini-apps/csv-order-validate.
+interface AiIssue {
+  rowIndex: number;   // 0-based within the sample we sent
+  field: string;
+  current: string;
+  message: string;
+  suggestion?: string;
+}
+
 interface GlobalProductEntry {
   id: string;
   sku: string;
@@ -299,6 +325,10 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
   // the original (lowercased) source value so the generator can look up
   // an accepted correction in O(1) regardless of which row it lands on.
   const [stateCorrections, setStateCorrections] = useState<StateCorrection[]>([]);
+  // Set of "COUNTRY|lowercased-original" keys whose State/Province value
+  // should be blanked in the output. Populated by the "state is a country"
+  // pre-flight auto-fix ("Canada" ending up in a CA-country row → blank).
+  const [blankedStateKeys, setBlankedStateKeys] = useState<Set<string>>(new Set());
   const [skuConfirmed, setSkuConfirmed] = useState(false);
   // SKU strategy — either pick a SKU column from the source or, when the
   // source only has product names, ask the user to assign a SKU per
@@ -341,6 +371,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     setMappingEdits({});
     setCountryEdits({});
     setStateCorrections([]);
+    setBlankedStateKeys(new Set());
     setSkuConfirmed(false);
     setSkuStrategy('column');
     setProductNameCols([]);
@@ -616,6 +647,9 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
         if (!rawValue) return rawValue;
         if (countryCode !== 'US' && countryCode !== 'CA') return rawValue;
         const key = `${countryCode}|${rawValue.toLowerCase().trim()}`;
+        // Pre-flight auto-fix: user marked this value to be blanked (e.g.
+        // "Canada" showing up in the State field of a CA-country row).
+        if (blankedStateKeys.has(key)) return '';
         const fix = stateFixByKey.get(key);
         if (fix) return fix;
         return countryCode === 'US' ? normalizeUSState(rawValue) : normalizeCAProvince(rawValue);
@@ -790,6 +824,143 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     }
     return sourceRows.length;
   }, [result, skuStrategy, productNameCols, sourceRows, allActiveDelims, columnExpandMulti, mappingEdits, validGlobalProducts.length]);
+
+  // ── Pre-flight validation ─────────────────────────────────────────────
+  // Runs on the projected output so it reflects every user tweak (mapping,
+  // country map, state corrections, blanks). Capped at ~2000 source rows so
+  // huge files don't stall the review UI while we scan.
+  const preflightIssues = useMemo(() => {
+    if (!result) return [] as PreflightIssue[];
+    const rows = generateRows(2000);
+    const issues: PreflightIssue[] = [];
+
+    // 1) Missing required fields. Order Number under auto-gen is filled
+    //    from the prefix so we skip it here (the field-level check upstairs
+    //    already flags a missing prefix).
+    const REQ_FIELDS = [
+      'Order Number (Required)',
+      'First Name (Required)',
+      'Address (Required)',
+      'City (Required)',
+      'Zip (Required)',
+      'Country Code (Required)',
+      'Product Sku (Required)',
+    ] as const;
+    for (const field of REQ_FIELDS) {
+      const bad: number[] = [];
+      rows.forEach((row, i) => {
+        const v = String(row[field] ?? '').trim();
+        if (!v) bad.push(i + 1);
+      });
+      if (bad.length === 0) continue;
+      issues.push({
+        key: `missing|${field}`,
+        kind: 'missing-required',
+        field,
+        count: bad.length,
+        sampleRowNums: bad.slice(0, 5),
+        severity: 'error',
+        message: `${bad.length} output row${bad.length === 1 ? '' : 's'} missing “${field}”. ShipHero will reject these.`,
+      });
+    }
+
+    // 2) Country name accidentally in the State field. This is the
+    //    "Invalid state 'Canada' for country 'CA'" case the user hit.
+    const stateBadRows: number[] = [];
+    const stateBadKeys = new Set<string>(); // country|lowered-original
+    const stateBadSamples: Set<string> = new Set();
+    rows.forEach((row, i) => {
+      const countryCode = String(row['Country Code (Required)'] ?? '').trim().toUpperCase();
+      const state = String(row['State / Province'] ?? '').trim();
+      if (state && (countryCode === 'US' || countryCode === 'CA') && isCountryValue(state)) {
+        stateBadRows.push(i + 1);
+        stateBadKeys.add(`${countryCode}|${state.toLowerCase()}`);
+        stateBadSamples.add(state);
+      }
+    });
+    if (stateBadRows.length > 0) {
+      issues.push({
+        key: 'state-is-country',
+        kind: 'state-is-country',
+        field: 'State / Province',
+        count: stateBadRows.length,
+        sampleRowNums: stateBadRows.slice(0, 5),
+        sampleValues: Array.from(stateBadSamples).slice(0, 3),
+        severity: 'error',
+        message: `${stateBadRows.length} row${stateBadRows.length === 1 ? '' : 's'} have a country name (e.g. “${Array.from(stateBadSamples)[0]}”) in the State field.`,
+        autoFixLabel: 'Blank the State on these rows',
+        autoFixApply: () => setBlankedStateKeys(prev => {
+          const next = new Set(prev);
+          for (const k of stateBadKeys) next.add(k);
+          return next;
+        }),
+      });
+    }
+
+    // 3) Country values that couldn't be resolved to a 2-letter ISO code.
+    const unresolvedCountries = Object.entries(countryEdits)
+      .filter(([, code]) => !code || !/^[A-Z]{2}$/.test(code))
+      .map(([raw]) => raw);
+    if (unresolvedCountries.length > 0) {
+      issues.push({
+        key: 'unresolved-country',
+        kind: 'unresolved-country',
+        field: 'Country Code (Required)',
+        count: unresolvedCountries.length,
+        sampleValues: unresolvedCountries.slice(0, 5),
+        severity: 'warning',
+        message: `${unresolvedCountries.length} unresolved country value${unresolvedCountries.length === 1 ? '' : 's'}. Edit them in the Country Codes section below.`,
+      });
+    }
+    return issues;
+    // generateRows uses many pieces of state; listing them all here would
+    // be noisy and error-prone. The output shape is fully derived from the
+    // dependencies below; anything else that changes generateRows would be
+    // reflected via one of these.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    result, sourceRows, mappingEdits, countryEdits, stateCorrections,
+    blankedStateKeys, skuStrategy, productSkuMap, productNameCols, delimiters,
+    customDelim, globalProducts, columnExpandMulti, defaultQuantity, autoGenPrefix,
+  ]);
+
+  // ── AI double-check ─────────────────────────────────────────────────
+  // Optional broader validation via Claude. Sends up to 20 output rows to
+  // /api/mini-apps/csv-order-validate and merges Claude's findings with
+  // the deterministic issues. Kicked off by a button in the preflight panel.
+  const [aiIssues, setAiIssues] = useState<AiIssue[]>([]);
+  const [aiRunning, setAiRunning] = useState(false);
+  const [aiError, setAiError] = useState<string>('');
+  const [aiLastRunAt, setAiLastRunAt] = useState<string>('');
+  const runAiDoubleCheck = useCallback(async () => {
+    if (!result || aiRunning) return;
+    setAiRunning(true);
+    setAiError('');
+    try {
+      const rows = generateRows(20);
+      const res = await fetch('/api/mini-apps/csv-order-validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows }),
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || `AI validation failed (${res.status})`);
+      }
+      const data = await res.json();
+      setAiIssues(Array.isArray(data.issues) ? data.issues : []);
+      setAiLastRunAt(`checked ${new Date().toLocaleTimeString()}`);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'AI validation failed');
+    } finally {
+      setAiRunning(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    result, aiRunning, mappingEdits, countryEdits, stateCorrections,
+    blankedStateKeys, skuStrategy, productSkuMap, productNameCols, delimiters,
+    customDelim, globalProducts, columnExpandMulti, defaultQuantity, autoGenPrefix,
+  ]);
 
   // Missing required columns based on current mapping edits. Auto-gen for
   // Order Number counts as "mapped" only if the user has typed a prefix.
@@ -1021,6 +1192,12 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
               projectedOutputRows={projectedOutputRows}
               previewRows={previewRows}
               missingRequired={missingRequired}
+              preflightIssues={preflightIssues}
+              aiIssues={aiIssues}
+              aiRunning={aiRunning}
+              aiError={aiError}
+              aiLastRunAt={aiLastRunAt}
+              onRunAiDoubleCheck={runAiDoubleCheck}
               canDownload={canDownload}
               onDownload={onDownload}
             />
@@ -1050,7 +1227,9 @@ function ReviewPanel({
   columnExpandMulti, setColumnExpandMulti,
   defaultQuantity, setDefaultQuantity,
   projectedOutputRows, previewRows,
-  missingRequired, canDownload, onDownload,
+  missingRequired,
+  preflightIssues, aiIssues, aiRunning, aiError, aiLastRunAt, onRunAiDoubleCheck,
+  canDownload, onDownload,
 }: {
   result: MapResult;
   fileName: string;
@@ -1090,6 +1269,12 @@ function ReviewPanel({
   projectedOutputRows: number;
   previewRows: Record<string, string>[];
   missingRequired: readonly string[];
+  preflightIssues: PreflightIssue[];
+  aiIssues: AiIssue[];
+  aiRunning: boolean;
+  aiError: string;
+  aiLastRunAt: string;
+  onRunAiDoubleCheck: () => void;
   canDownload: boolean;
   onDownload: () => void;
 }) {
@@ -1170,6 +1355,17 @@ function ReviewPanel({
           </div>
         </div>
       )}
+
+      {/* Pre-flight validation — catches missing zip, "Canada" in state,
+          unresolved country codes, plus optional AI double-check. */}
+      <PreflightPanel
+        issues={preflightIssues}
+        aiIssues={aiIssues}
+        aiRunning={aiRunning}
+        aiError={aiError}
+        aiLastRunAt={aiLastRunAt}
+        onRunAiDoubleCheck={onRunAiDoubleCheck}
+      />
 
       {/* SKU section — strategy toggle on top, sub-UI below */}
       <div className={`rounded-xl border-2 p-4 ${
@@ -2368,3 +2564,166 @@ function StateCorrectionsPanel({
     </div>
   );
 }
+
+// ─────────────────────────────────────────────────────────────
+// PreflightPanel
+//   Compact review card that surfaces problems ShipHero would
+//   reject before the CSV is generated. Two sources:
+//     - `issues`     → deterministic scan of the projected rows
+//                      (missing required fields, country names
+//                      in State, unresolved country codes)
+//     - `aiIssues`   → optional Claude second-opinion pass over
+//                      the first 20 output rows, kicked off by
+//                      the "Run AI double-check" button
+//   Errors (severity='error') block the download implicitly by
+//   virtue of the required-column check in canDownload; the
+//   panel itself is purely informational + offers one-click
+//   auto-fixes when the fix is unambiguous.
+// ─────────────────────────────────────────────────────────────
+function PreflightPanel({
+  issues, aiIssues, aiRunning, aiError, aiLastRunAt, onRunAiDoubleCheck,
+}: {
+  issues: PreflightIssue[];
+  aiIssues: AiIssue[];
+  aiRunning: boolean;
+  aiError: string;
+  aiLastRunAt: string;
+  onRunAiDoubleCheck: () => void;
+}) {
+  const hasIssues = issues.length > 0;
+  const hasAi = aiIssues.length > 0;
+  const clean = !hasIssues && !hasAi;
+
+  return (
+    <div className={`rounded-xl border-2 p-4 ${
+      clean ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-300 bg-amber-50/60'
+    }`}>
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-start gap-2 min-w-0">
+          {clean ? (
+            <Check className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+          )}
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-slate-900">
+              Pre-flight validation
+              {clean && (
+                <span className="ml-2 text-xs font-normal text-emerald-700">
+                  No blocking issues detected.
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-slate-600 mt-0.5">
+              Catches missing zips, country names in the State field, and other things ShipHero rejects before you download.
+              {aiLastRunAt && <span className="ml-1 text-slate-400">· {aiLastRunAt}</span>}
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onRunAiDoubleCheck}
+          disabled={aiRunning}
+          className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-violet-300 bg-white text-violet-700 hover:bg-violet-50 disabled:opacity-60 disabled:cursor-not-allowed"
+          title="Send the first 20 output rows to Claude for a second-opinion check"
+        >
+          {aiRunning ? (
+            <>
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Checking…
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-3 h-3" />
+              Run AI double-check
+            </>
+          )}
+        </button>
+      </div>
+
+      {aiError && (
+        <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+          AI double-check failed: {aiError}
+        </div>
+      )}
+
+      {hasIssues && (
+        <div className="space-y-2">
+          {issues.map(issue => (
+            <div
+              key={issue.key}
+              className={`rounded-md border px-3 py-2 ${
+                issue.severity === 'error'
+                  ? 'border-rose-200 bg-rose-50'
+                  : 'border-amber-200 bg-amber-50/80'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className={`text-xs font-semibold ${
+                    issue.severity === 'error' ? 'text-rose-900' : 'text-amber-900'
+                  }`}>
+                    {issue.field}
+                  </div>
+                  <div className={`text-xs mt-0.5 ${
+                    issue.severity === 'error' ? 'text-rose-800' : 'text-amber-800'
+                  }`}>
+                    {issue.message}
+                  </div>
+                  {(issue.sampleRowNums?.length || issue.sampleValues?.length) ? (
+                    <div className="text-[11px] text-slate-500 mt-1 space-y-0.5">
+                      {issue.sampleRowNums?.length ? (
+                        <div>Rows: {issue.sampleRowNums.join(', ')}{issue.count > (issue.sampleRowNums.length ?? 0) ? ', …' : ''}</div>
+                      ) : null}
+                      {issue.sampleValues?.length ? (
+                        <div>Values: {issue.sampleValues.map(v => `“${v}”`).join(', ')}</div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+                {issue.autoFixApply && (
+                  <button
+                    type="button"
+                    onClick={issue.autoFixApply}
+                    className="flex-shrink-0 px-2 py-1 text-[11px] font-medium rounded border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                  >
+                    {issue.autoFixLabel ?? 'Auto-fix'}
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {hasAi && (
+        <div className="mt-3">
+          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-violet-800 mb-1.5">
+            <Sparkles className="w-3 h-3" />
+            AI second opinion · {aiIssues.length} finding{aiIssues.length === 1 ? '' : 's'}
+          </div>
+          <div className="space-y-1.5">
+            {aiIssues.map((ai, i) => (
+              <div
+                key={`ai-${i}`}
+                className="rounded-md border border-violet-200 bg-white/80 px-3 py-2 text-xs"
+              >
+                <div className="font-semibold text-violet-900">
+                  Row {ai.rowIndex + 1} · {ai.field}
+                </div>
+                <div className="text-slate-700 mt-0.5">{ai.message}</div>
+                <div className="text-[11px] text-slate-500 mt-1">
+                  Current: <span className="font-mono">“{ai.current || '(blank)'}”</span>
+                  {ai.suggestion ? (
+                    <> · Suggested: <span className="font-mono text-emerald-700">“{ai.suggestion}”</span></>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+

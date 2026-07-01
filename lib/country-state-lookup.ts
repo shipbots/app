@@ -203,6 +203,27 @@ export const COUNTRY_LOOKUP: Record<string, string> = {
  * Returns the matched code or '' if no match (so callers can decide how
  * to handle the gap — usually surface for manual edit in the UI).
  */
+/**
+ * True when the value looks like a country name / code — used by the
+ * CSV Order Formatter's pre-flight check to catch state cells that
+ * accidentally hold the country ("Canada" ending up in the State field
+ * of CA-country rows is a real ShipHero rejection). Uses the same
+ * COUNTRY_LOOKUP as normalizeCountry so anything the country normalizer
+ * would recognize counts as a country here too.
+ */
+export function isCountryValue(value: string): boolean {
+  if (!value) return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  // Two-letter ISO code is always ambiguous ("CA" is Canada but also
+  // California). Don't flag 2-letter values as country-like.
+  if (/^[a-zA-Z]{2,3}$/.test(trimmed)) return false;
+  const key = trimmed.toLowerCase().replace(/\s+/g, ' ').replace(/\./g, '');
+  if (COUNTRY_LOOKUP[key]) return true;
+  const raw = trimmed.toLowerCase();
+  return !!COUNTRY_LOOKUP[raw];
+}
+
 export function normalizeCountry(value: string): string {
   if (!value) return '';
   const trimmed = value.trim();
