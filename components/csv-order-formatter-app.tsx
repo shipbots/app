@@ -660,6 +660,16 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       if (out['Billing State / Province']) {
         out['Billing State / Province'] = applyStateFix(out['Billing State / Province'], out['Billing Country Code']);
       }
+      // Countries that don't use postal codes need a filler because ShipHero
+      // still enforces Zip (Required). UAE (AE): "00000" is the accepted
+      // stand-in when a Dubai (or elsewhere in the emirates) order lands
+      // with a blank Zip.
+      if (out['Country Code (Required)'] === 'AE' && !out['Zip (Required)']) {
+        out['Zip (Required)'] = '00000';
+      }
+      if (out['Billing Country Code'] === 'AE' && !out['Billing Zip']) {
+        out['Billing Zip'] = '00000';
+      }
       if (!quantityCol && !out['Quantity']) out['Quantity'] = (defaultQuantity || '1');
       return out;
     };
