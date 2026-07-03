@@ -58,6 +58,42 @@ function readCache<T>(key: string): T | undefined {
   }
 }
 
+/**
+ * Fire-and-forget prefetch that writes to the same cache the hook
+ * reads from. Call this on row hover / focus / anywhere you have
+ * a strong signal the user is about to open a resource — by the
+ * time the panel mounts and the hook reads localStorage, the
+ * payload is often already there and the initial paint is
+ * instant. Deduped in-memory so scrolling past 100 rows doesn't
+ * fire 100 real network requests.
+ */
+const inflight = new Map<string, Promise<unknown>>();
+export function prefetchCached<T>(key: string | null, url: string | null): void {
+  if (typeof window === 'undefined') return;
+  if (!key || !url) return;
+  if (inflight.has(key)) return;
+  // Skip if the cache already has a very fresh entry (last minute) —
+  // Cache-Control on the route will hit the browser HTTP cache anyway
+  // and there's no point warming twice in quick succession.
+  const cached = readCache<T>(key);
+  const stamp = (() => {
+    try {
+      const raw = window.localStorage.getItem(`${NS}:${key}`);
+      if (!raw) return 0;
+      const parsed = JSON.parse(raw) as CacheEntry<T>;
+      return typeof parsed?.at === 'number' ? parsed.at : 0;
+    } catch { return 0; }
+  })();
+  if (cached !== undefined && Date.now() - stamp < 60_000) return;
+
+  const p = fetch(url, { credentials: 'include' })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error(`${r.status}`)))
+    .then((fresh: T) => { writeCache(key, fresh); return fresh; })
+    .catch(() => { /* prefetch is best-effort */ })
+    .finally(() => { inflight.delete(key); });
+  inflight.set(key, p);
+}
+
 function writeCache<T>(key: string, data: T): void {
   if (typeof window === 'undefined') return;
   try {

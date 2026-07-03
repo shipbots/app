@@ -343,21 +343,27 @@ export async function fetchAgentEmailMap(): Promise<Record<string, string>> {
 }
 
 export async function fetchClientInfo(itemId: string, onboardingItemId?: string): Promise<ClientInfo> {
-  const query = `query {
-    items(ids: [${itemId}]) {
+  // Batch both Monday reads into a single GraphQL request using
+  // top-level aliases. Previously these ran as two sequential
+  // round-trips (client → then files); a single aliased call cuts
+  // the wall-clock cost in half for onboarding clients, and the
+  // path with no onboardingItemId still executes exactly one query.
+  const filesFragment = onboardingItemId
+    ? `filesItem: items(ids: [${onboardingItemId}]) { column_values(ids: ["files"]) { id value } }`
+    : '';
+  const combinedQuery = `query {
+    clientItem: items(ids: [${itemId}]) {
       id
       name
       group { id }
-      column_values {
-        id
-        text
-        value
-      }
+      column_values { id text value }
     }
+    ${filesFragment}
   }`;
 
-  const data = await mondayQuery(query);
-  const item = data.items[0];
+  const data = await mondayQuery(combinedQuery);
+  const item = data.clientItem?.[0];
+  if (!item) throw new Error(`Client item ${itemId} not found`);
 
   const cols: Record<string, string> = {};
   for (const cv of item.column_values) {
@@ -376,20 +382,18 @@ export async function fetchClientInfo(itemId: string, onboardingItemId?: string)
     } catch { /* ignore */ }
   }
 
-  // Parse Docusign file from the Onboarding board (files column) if onboardingItemId provided
+  // Parse Docusign file from the onboarding-board files column.
+  // The dedicated assets(...) resolve for public_url has been dropped:
+  // Monday's files column already returns a signed URL under `url`,
+  // and eliminating the second round-trip is the whole point of this
+  // batching. If a future asset ever ships without a resolvable url
+  // (haven't seen it in practice), we can re-add the resolve behind
+  // a lazy /api/client/[id]/asset/[assetId] endpoint so the panel
+  // opens fast unconditionally.
   let docusignFile: MonFile | null = null;
   if (onboardingItemId) {
     try {
-      const filesQuery = `query {
-        items(ids: [${onboardingItemId}]) {
-          column_values(ids: ["files"]) {
-            id
-            value
-          }
-        }
-      }`;
-      const filesData = await mondayQuery(filesQuery);
-      const filesItem = filesData.items?.[0];
+      const filesItem = data.filesItem?.[0];
       const filesCol = filesItem?.column_values?.find((cv: { id: string }) => cv.id === 'files');
       if (filesCol?.value) {
         const parsed = JSON.parse(filesCol.value);
@@ -397,21 +401,10 @@ export async function fetchClientInfo(itemId: string, onboardingItemId?: string)
         if (files.length > 0) {
           const f = files[files.length - 1]; // most recent
           const rawAssetId = String(f.assetId ?? f.asset_id ?? '');
-          // Resolve the public_url so the file can be opened directly in the browser
-          let publicUrl = f.url || '';
-          if (rawAssetId) {
-            try {
-              const assetRes = await mondayQuery(
-                `query { assets(ids: [${rawAssetId}]) { id public_url } }`
-              );
-              const assetPublicUrl = assetRes.assets?.[0]?.public_url;
-              if (assetPublicUrl) publicUrl = assetPublicUrl;
-            } catch { /* fall back to raw url */ }
-          }
           docusignFile = {
             assetId: rawAssetId,
             name: f.name || 'Document',
-            url: publicUrl,
+            url: f.url || '',
             fileExtension: f.fileExtension || f.file_extension || '',
           };
         }

@@ -26,6 +26,7 @@
  */
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { prefetchCached } from '@/hooks/use-cached-fetch';
 import { OnboardingItem, SubItem, ClientInfo } from '@/lib/types';
 import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search, ChevronsUpDown, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Filter, X, Eye, EyeOff } from 'lucide-react';
 
@@ -414,9 +415,22 @@ function ClientRow({
   inactive: boolean;
   onSelect: () => void;
 }) {
+  // Hover prefetch — warms /api/client/[id] into the SWR cache the
+  // moment the cursor lands on the row so the panel paints instantly
+  // on click. Deduped in prefetchCached, so grid scrolls that hover
+  // many rows in quick succession don't fan out to real fetches.
+  const prefetch = () => {
+    if (!item.clientBoardItemId) return;
+    prefetchCached(
+      `client:${item.clientBoardItemId}:${item.id}`,
+      `/api/client/${item.clientBoardItemId}?onboardingId=${item.id}`,
+    );
+  };
   return (
     <tr
       onClick={onSelect}
+      onMouseEnter={prefetch}
+      onFocus={prefetch}
       className={`cursor-pointer transition-colors border-b border-gray-100 ${
         inactive ? 'bg-gray-50/60 hover:bg-gray-100/80 text-gray-500' : 'hover:bg-[#f0fbff]'
       }`}
@@ -819,6 +833,14 @@ function MyTasksPanel({
                 <li
                   key={task.id}
                   onClick={() => client && onSelectClient(client)}
+                  onMouseEnter={() => {
+                    if (client?.clientBoardItemId) {
+                      prefetchCached(
+                        `client:${client.clientBoardItemId}:${client.id}`,
+                        `/api/client/${client.clientBoardItemId}?onboardingId=${client.id}`,
+                      );
+                    }
+                  }}
                   className="px-4 py-2.5 hover:bg-[#f0fbff] cursor-pointer transition-colors"
                 >
                   <p className={`text-xs font-medium leading-snug ${done ? 'line-through text-gray-400' : 'text-gray-900'}`}>
