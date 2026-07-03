@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useCachedFetch } from '@/hooks/use-cached-fetch';
 import { OnboardingItem, ClientInfo, FirefliesMeeting, GmailThread } from '@/lib/types';
 import { StatusBadge } from './status-badge';
 import { ClientInfoTab } from './client-info-tab';
@@ -673,7 +674,42 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
   }, [stickyHeight]);
 
   const [activeTab, setActiveTab] = useState<Tab>(isCustomerService ? 'info' : 'onboarding');
-  const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null);
+  // Stale-while-revalidate over Monday's slow GraphQL fetch. Cached
+  // payload paints synchronously on mount from localStorage; a fresh
+  // request runs in the background and swaps in when it lands. The
+  // header shows an "updating…" pill while `clientInfoFetching` is
+  // true, so users see the cached view immediately instead of the
+  // 1–3s spinner every open used to cost.
+  const clientCacheKey = item.clientBoardItemId
+    ? `client:${item.clientBoardItemId}:${item.id}`
+    : null;
+  const clientFetchUrl = item.clientBoardItemId
+    ? `/api/client/${item.clientBoardItemId}?onboardingId=${item.id}`
+    : null;
+  const {
+    data: clientInfoData,
+    isFetching: loadingClient,
+    refetch: refetchClientInfo,
+    setData: setClientInfoData,
+  } = useCachedFetch<ClientInfo>(clientCacheKey, clientFetchUrl);
+  const clientInfo: ClientInfo | null = clientInfoData ?? null;
+  // Existing call sites (agent assign, active toggle, docs extract,
+  // rename, etc.) expect a setClientInfo(prev => …) API. Hand them
+  // the hook's setData so the local view updates instantly on save
+  // AND the localStorage cache is kept in sync — next open pulls
+  // the up-to-date payload before the background refetch even runs.
+  const setClientInfo = (
+    updater: ClientInfo | ((prev: ClientInfo | null) => ClientInfo | null),
+  ) => {
+    if (typeof updater === 'function') {
+      setClientInfoData(prev => {
+        const next = (updater as (p: ClientInfo | null) => ClientInfo | null)(prev ?? null);
+        return next ?? undefined;
+      });
+    } else {
+      setClientInfoData(updater);
+    }
+  };
   // Derived from the lazy-loaded client record. Until clientInfo lands we
   // assume the client is active so the toggle defaults to the common case
   // and flips correctly once the real groupId arrives.
@@ -701,7 +737,6 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
   const [pos, setPos] = useState<ShipHeroPO[]>([]);
   const [posError, setPosError] = useState<string | null>(null);
   const [tasks, setTasks] = useState<SubItem[]>([]);
-  const [loadingClient, setLoadingClient] = useState(false);
   const [loadingMeetings, setLoadingMeetings] = useState(false);
   const [loadingEmails, setLoadingEmails] = useState(false);
   const [loadingPos, setLoadingPos] = useState(false);
@@ -719,7 +754,6 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
   useEffect(() => {
     setDisplayName(item.name);
   }, [item.id, item.name]);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
   // Escape key closes the panel
@@ -729,21 +763,17 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  // Fetch client info when panel opens (or when refresh is triggered)
+  // Mirror the server-owned supportAgentEmail into local state so
+  // the AgentAssign child (which optimistically updates agentEmail
+  // on save) stays in sync with the source of truth on each
+  // refetch. Also drops the "refreshing" flag once fresh data
+  // lands after a manual refresh.
   useEffect(() => {
-    if (item.clientBoardItemId) {
-      setLoadingClient(true);
-      fetch(`/api/client/${item.clientBoardItemId}?onboardingId=${item.id}`)
-        .then(r => r.json())
-        .then((data: ClientInfo) => {
-          setClientInfo(data);
-          setAgentEmail(data.supportAgentEmail || '');
-        })
-        .catch(console.error)
-        .finally(() => { setLoadingClient(false); setRefreshing(false); });
+    if (clientInfoData) {
+      setAgentEmail(clientInfoData.supportAgentEmail || '');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.clientBoardItemId, item.id, refreshKey]);
+    if (!loadingClient) setRefreshing(false);
+  }, [clientInfoData, loadingClient]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -753,7 +783,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
     setEmails([]);
     setEmailsError(null);
     setMeetings([]);
-    setRefreshKey(k => k + 1);
+    refetchClientInfo();
   };
 
   // Fetch meetings when tab is selected — wait for clientInfo so legal name + contact name are included
@@ -1046,6 +1076,19 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
     ) : null;
     const headerActionsSlot = (
       <div className="flex items-center gap-1">
+        {/* Honest signal that we're showing cached data while a fresh
+            fetch runs. Only appears when we already have data AND a
+            request is in flight — first-open cold path still uses the
+            spinner in the tab body, not this pill. */}
+        {loadingClient && !!clientInfo && (
+          <span
+            className="mr-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 text-[10px] font-medium text-gray-500"
+            title="Showing cached data — refreshing from Monday…"
+          >
+            <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+            Updating
+          </span>
+        )}
         <button
           onClick={handleRefresh}
           disabled={refreshing || loadingClient}
@@ -1339,6 +1382,15 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
 
             {/* Header actions */}
             <div className="flex items-center gap-1 flex-shrink-0">
+              {loadingClient && !!clientInfo && (
+                <span
+                  className="mr-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 text-[10px] font-medium text-gray-500"
+                  title="Showing cached data — refreshing from Monday…"
+                >
+                  <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                  Updating
+                </span>
+              )}
               <button
                 onClick={handleRefresh}
                 disabled={refreshing || loadingClient}
