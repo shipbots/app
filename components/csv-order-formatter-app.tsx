@@ -53,6 +53,28 @@ const REQUIRED_COLS = [
 // header values without needing a separate parallel state.
 const AUTO_GEN_ORDER_VAL = '__autogen-order-number__';
 
+// Sentinel for optional / commonly-shared fields where the user
+// typically wants to apply one value to every order (e.g. every
+// order uses "UPS Ground") rather than map from a source column.
+// When mappingEdits[col] equals this, an inline text input appears
+// under the picker and its contents override any source column.
+const FIXED_VALUE_VAL = '__fixed-value__';
+
+// ShipHero columns that get the "Set fixed value…" option in their
+// picker. Kept as a Map so the placeholder text is co-located with
+// the eligibility check. Order-insensitive lookup.
+const FIXED_VALUE_FIELDS: Record<string, { placeholder: string }> = {
+  'Shipping Name':      { placeholder: 'e.g. Returns Dept' },
+  'Shipping Carrier':   { placeholder: 'e.g. UPS' },
+  'Shipping Method':    { placeholder: 'e.g. UPS Ground' },
+  'Warehouse':          { placeholder: 'e.g. Main WH' },
+  'Shop Name':          { placeholder: 'e.g. Custom Store' },
+  'Fulfillment Status': { placeholder: 'e.g. pending' },
+  'Packing Note':       { placeholder: 'e.g. Fragile — handle with care' },
+  'Priority':           { placeholder: 'e.g. high' },
+  'Gift Note':          { placeholder: 'e.g. Happy Birthday!' },
+};
+
 // Excel-style column letter for a 0-indexed position: 0→A, 25→Z, 26→AA…
 function columnLetter(i: number): string {
   let n = i;
@@ -355,14 +377,12 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
   // Prefix used when the user picks Auto-generate for the Order Number
   // column. Empty until the user types something.
   const [autoGenPrefix, setAutoGenPrefix] = useState<string>('');
-  // Free-text overrides for the three Shipping fields — most orders
-  // share one carrier / method / return name so mapping from a
-  // source column is overkill. When set, these values override
-  // whatever the picker resolves to and are applied to every
-  // output row. Blank means "use the mapped column (if any)".
-  const [shippingNameFixed, setShippingNameFixed] = useState<string>('');
-  const [shippingCarrierFixed, setShippingCarrierFixed] = useState<string>('');
-  const [shippingMethodFixed, setShippingMethodFixed] = useState<string>('');
+  // Per-column fixed values for the FIXED_VALUE_FIELDS group
+  // (shipping, warehouse, shop name, notes, priority, etc.). Written
+  // to only when the user picks "Set fixed value…" in that column's
+  // picker (mappingEdits[col] === FIXED_VALUE_VAL). Applied to
+  // every output row and overrides any source-column mapping.
+  const [fixedValues, setFixedValues] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
@@ -390,9 +410,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     setColumnExpandMulti(false);
     setDefaultQuantity('1');
     setAutoGenPrefix('');
-    setShippingNameFixed('');
-    setShippingCarrierFixed('');
-    setShippingMethodFixed('');
+    setFixedValues({});
   };
 
   // Step 1: parse the file. Stops at 'header-confirm' so the user can
@@ -649,6 +667,13 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
           out[col] = autoGenOrderNumber(autoGenPrefix, idx, total);
           continue;
         }
+        // User picked "Set fixed value…" for this column — pull the
+        // typed value from the fixedValues map and apply it verbatim
+        // to every output row.
+        if (src === FIXED_VALUE_VAL) {
+          out[col] = (fixedValues[col] ?? '').trim();
+          continue;
+        }
         if (!src || src === AUTO_GEN_ORDER_VAL) { out[col] = ''; continue; }
         const raw = row[src];
         out[col] = raw === undefined || raw === null ? '' : String(raw).trim();
@@ -689,13 +714,6 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       // still enforces Zip (Required). UAE (AE): "00000" is the accepted
       // stand-in when a Dubai (or elsewhere in the emirates) order lands
       // with a blank Zip.
-      // Free-text shipping overrides. When set, the user's fixed
-      // value beats whatever the mapping resolved to for these
-      // columns — same idea as "type once, apply to every order".
-      // Blank overrides fall through to the mapped column.
-      if (shippingNameFixed.trim()) out['Shipping Name'] = shippingNameFixed.trim();
-      if (shippingCarrierFixed.trim()) out['Shipping Carrier'] = shippingCarrierFixed.trim();
-      if (shippingMethodFixed.trim()) out['Shipping Method'] = shippingMethodFixed.trim();
       if (out['Country Code (Required)'] === 'AE' && !out['Zip (Required)']) {
         out['Zip (Required)'] = '00000';
       }
@@ -967,7 +985,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     result, sourceRows, mappingEdits, countryEdits, stateCorrections,
     blankedStateKeys, skuStrategy, productSkuMap, productNameCols, delimiters,
     customDelim, globalProducts, columnExpandMulti, defaultQuantity, autoGenPrefix,
-    shippingNameFixed, shippingCarrierFixed, shippingMethodFixed,
+    fixedValues,
   ]);
 
   // ── AI double-check ─────────────────────────────────────────────────
@@ -1006,7 +1024,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     result, aiRunning, mappingEdits, countryEdits, stateCorrections,
     blankedStateKeys, skuStrategy, productSkuMap, productNameCols, delimiters,
     customDelim, globalProducts, columnExpandMulti, defaultQuantity, autoGenPrefix,
-    shippingNameFixed, shippingCarrierFixed, shippingMethodFixed,
+    fixedValues,
   ]);
 
   // Missing required columns based on current mapping edits. Auto-gen for
@@ -1236,12 +1254,8 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
               setColumnExpandMulti={setColumnExpandMulti}
               defaultQuantity={defaultQuantity}
               setDefaultQuantity={setDefaultQuantity}
-              shippingNameFixed={shippingNameFixed}
-              setShippingNameFixed={setShippingNameFixed}
-              shippingCarrierFixed={shippingCarrierFixed}
-              setShippingCarrierFixed={setShippingCarrierFixed}
-              shippingMethodFixed={shippingMethodFixed}
-              setShippingMethodFixed={setShippingMethodFixed}
+              fixedValues={fixedValues}
+              setFixedValues={setFixedValues}
               projectedOutputRows={projectedOutputRows}
               previewRows={previewRows}
               missingRequired={missingRequired}
@@ -1279,9 +1293,7 @@ function ReviewPanel({
   globalProductsValid, validGlobalProductCount,
   columnExpandMulti, setColumnExpandMulti,
   defaultQuantity, setDefaultQuantity,
-  shippingNameFixed, setShippingNameFixed,
-  shippingCarrierFixed, setShippingCarrierFixed,
-  shippingMethodFixed, setShippingMethodFixed,
+  fixedValues, setFixedValues,
   projectedOutputRows, previewRows,
   missingRequired,
   preflightIssues, aiIssues, aiRunning, aiError, aiLastRunAt, onRunAiDoubleCheck,
@@ -1322,12 +1334,8 @@ function ReviewPanel({
   setColumnExpandMulti: (b: boolean) => void;
   defaultQuantity: string;
   setDefaultQuantity: (s: string) => void;
-  shippingNameFixed: string;
-  setShippingNameFixed: (s: string) => void;
-  shippingCarrierFixed: string;
-  setShippingCarrierFixed: (s: string) => void;
-  shippingMethodFixed: string;
-  setShippingMethodFixed: (s: string) => void;
+  fixedValues: Record<string, string>;
+  setFixedValues: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   projectedOutputRows: number;
   previewRows: Record<string, string>[];
   missingRequired: readonly string[];
@@ -1700,6 +1708,8 @@ function ReviewPanel({
               ? `Defaulting to ${defaultQuantity}`
               : '— Not mapped —';
 
+            const isFixedValueEligible = col in FIXED_VALUE_FIELDS;
+            const showFixedInput = isFixedValueEligible && src === FIXED_VALUE_VAL;
             const extraOptions: PickerExtraOption[] = isOrderRow
               ? [{
                   value: AUTO_GEN_ORDER_VAL,
@@ -1707,7 +1717,14 @@ function ReviewPanel({
                   description: 'Use a prefix and we\'ll number every order sequentially.',
                   icon: <Sparkles className="w-3 h-3" />,
                 }]
-              : [];
+              : isFixedValueEligible
+                ? [{
+                    value: FIXED_VALUE_VAL,
+                    label: 'Set fixed value…',
+                    description: 'Type a value that applies to every order.',
+                    icon: <Hash className="w-3 h-3" />,
+                  }]
+                : [];
 
             return (
               <div key={col} className="grid grid-cols-2 gap-2 items-start text-xs">
@@ -1767,45 +1784,28 @@ function ReviewPanel({
                       </span>
                     </div>
                   )}
-                  {/* Free-text overrides for the three Shipping fields.
-                      Overrides beat the picker when non-empty; blank
-                      falls through to whatever the mapping resolved.
-                      Same "type once, apply to every row" idea as the
-                      quantity default. */}
-                  {(col === 'Shipping Name' || col === 'Shipping Carrier' || col === 'Shipping Method') && (() => {
-                    const val = col === 'Shipping Name'
-                      ? shippingNameFixed
-                      : col === 'Shipping Carrier'
-                        ? shippingCarrierFixed
-                        : shippingMethodFixed;
-                    const setter = col === 'Shipping Name'
-                      ? setShippingNameFixed
-                      : col === 'Shipping Carrier'
-                        ? setShippingCarrierFixed
-                        : setShippingMethodFixed;
-                    const placeholder = col === 'Shipping Name'
-                      ? 'e.g. Returns Dept'
-                      : col === 'Shipping Carrier'
-                        ? 'e.g. UPS'
-                        : 'e.g. UPS Ground';
-                    return (
-                      <div className="border border-[#43c7ff]/30 bg-[#e6f8ff]/30 rounded p-2 flex items-center gap-2">
-                        <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">
-                          Or set to
-                        </span>
-                        <input
-                          type="text"
-                          value={val}
-                          onChange={e => setter(e.target.value)}
-                          placeholder={placeholder}
-                          className="flex-1 min-w-0 px-2 py-0.5 text-xs border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
-                        />
-                        <span className="text-[10px] text-gray-600 whitespace-nowrap">
-                          {val.trim() ? 'for every order' : ''}
-                        </span>
-                      </div>
-                    );
-                  })()}
+                  {/* Fixed-value inline input. Appears only when the user
+                      picked "Set fixed value…" from this column's picker.
+                      Same "type once, apply to every row" pattern as the
+                      auto-gen order-number prefix. */}
+                  {showFixedInput && (
+                    <div className="border border-[#43c7ff]/50 bg-[#e6f8ff]/40 rounded p-2 flex items-center gap-2">
+                      <Hash className="w-3 h-3 text-[#015280] flex-shrink-0" />
+                      <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">
+                        Value
+                      </span>
+                      <input
+                        type="text"
+                        value={fixedValues[col] ?? ''}
+                        onChange={e => setFixedValues(prev => ({ ...prev, [col]: e.target.value }))}
+                        placeholder={FIXED_VALUE_FIELDS[col].placeholder}
+                        className="flex-1 min-w-0 px-2 py-0.5 text-xs border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
+                      />
+                      <span className="text-[10px] text-gray-600 whitespace-nowrap">
+                        {(fixedValues[col] ?? '').trim() ? 'for every order' : ''}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             );
