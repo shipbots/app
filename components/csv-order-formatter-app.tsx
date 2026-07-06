@@ -355,6 +355,14 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
   // Prefix used when the user picks Auto-generate for the Order Number
   // column. Empty until the user types something.
   const [autoGenPrefix, setAutoGenPrefix] = useState<string>('');
+  // Free-text overrides for the three Shipping fields — most orders
+  // share one carrier / method / return name so mapping from a
+  // source column is overkill. When set, these values override
+  // whatever the picker resolves to and are applied to every
+  // output row. Blank means "use the mapped column (if any)".
+  const [shippingNameFixed, setShippingNameFixed] = useState<string>('');
+  const [shippingCarrierFixed, setShippingCarrierFixed] = useState<string>('');
+  const [shippingMethodFixed, setShippingMethodFixed] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
@@ -382,6 +390,9 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     setColumnExpandMulti(false);
     setDefaultQuantity('1');
     setAutoGenPrefix('');
+    setShippingNameFixed('');
+    setShippingCarrierFixed('');
+    setShippingMethodFixed('');
   };
 
   // Step 1: parse the file. Stops at 'header-confirm' so the user can
@@ -592,7 +603,21 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
   // Either way, totalForPadding stays at sourceRows.length so auto-gen
   // order numbers in the preview match what the full download would
   // produce.
-  const generateRows = (sourceSliceLimit?: number): Record<string, string>[] => {
+  // Post-process every generated row to strip leading/trailing
+  // whitespace from the SKU column. ShipHero flat-out rejects "  ABC-123"
+  // and "ABC-123 " even though the SKU itself is valid — very common
+  // user mistake when copy-pasting from spreadsheets. Applied once at
+  // the outer wrapper so every strategy path (column, product-mapping,
+  // global-products, multi-product expansion) benefits automatically.
+  const trimSkuOnRows = (rows: Record<string, string>[]): Record<string, string>[] =>
+    rows.map(r => {
+      const raw = r['Product Sku (Required)'];
+      if (typeof raw !== 'string') return r;
+      const cleaned = raw.trim();
+      return cleaned === raw ? r : { ...r, 'Product Sku (Required)': cleaned };
+    });
+
+  const generateRowsInner = (sourceSliceLimit?: number): Record<string, string>[] => {
     if (!result) return [];
     const orderNumCol = mappingEdits['Order Number (Required)'];
     const isAutoGenOrder = orderNumCol === AUTO_GEN_ORDER_VAL;
@@ -664,6 +689,13 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       // still enforces Zip (Required). UAE (AE): "00000" is the accepted
       // stand-in when a Dubai (or elsewhere in the emirates) order lands
       // with a blank Zip.
+      // Free-text shipping overrides. When set, the user's fixed
+      // value beats whatever the mapping resolved to for these
+      // columns — same idea as "type once, apply to every order".
+      // Blank overrides fall through to the mapped column.
+      if (shippingNameFixed.trim()) out['Shipping Name'] = shippingNameFixed.trim();
+      if (shippingCarrierFixed.trim()) out['Shipping Carrier'] = shippingCarrierFixed.trim();
+      if (shippingMethodFixed.trim()) out['Shipping Method'] = shippingMethodFixed.trim();
       if (out['Country Code (Required)'] === 'AE' && !out['Zip (Required)']) {
         out['Zip (Required)'] = '00000';
       }
@@ -771,6 +803,9 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     });
     return expanded;
   };
+
+  const generateRows = (sourceSliceLimit?: number): Record<string, string>[] =>
+    trimSkuOnRows(generateRowsInner(sourceSliceLimit));
 
   const onDownload = () => {
     if (!result) return;
@@ -932,6 +967,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     result, sourceRows, mappingEdits, countryEdits, stateCorrections,
     blankedStateKeys, skuStrategy, productSkuMap, productNameCols, delimiters,
     customDelim, globalProducts, columnExpandMulti, defaultQuantity, autoGenPrefix,
+    shippingNameFixed, shippingCarrierFixed, shippingMethodFixed,
   ]);
 
   // ── AI double-check ─────────────────────────────────────────────────
@@ -970,6 +1006,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     result, aiRunning, mappingEdits, countryEdits, stateCorrections,
     blankedStateKeys, skuStrategy, productSkuMap, productNameCols, delimiters,
     customDelim, globalProducts, columnExpandMulti, defaultQuantity, autoGenPrefix,
+    shippingNameFixed, shippingCarrierFixed, shippingMethodFixed,
   ]);
 
   // Missing required columns based on current mapping edits. Auto-gen for
@@ -1199,6 +1236,12 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
               setColumnExpandMulti={setColumnExpandMulti}
               defaultQuantity={defaultQuantity}
               setDefaultQuantity={setDefaultQuantity}
+              shippingNameFixed={shippingNameFixed}
+              setShippingNameFixed={setShippingNameFixed}
+              shippingCarrierFixed={shippingCarrierFixed}
+              setShippingCarrierFixed={setShippingCarrierFixed}
+              shippingMethodFixed={shippingMethodFixed}
+              setShippingMethodFixed={setShippingMethodFixed}
               projectedOutputRows={projectedOutputRows}
               previewRows={previewRows}
               missingRequired={missingRequired}
@@ -1236,6 +1279,9 @@ function ReviewPanel({
   globalProductsValid, validGlobalProductCount,
   columnExpandMulti, setColumnExpandMulti,
   defaultQuantity, setDefaultQuantity,
+  shippingNameFixed, setShippingNameFixed,
+  shippingCarrierFixed, setShippingCarrierFixed,
+  shippingMethodFixed, setShippingMethodFixed,
   projectedOutputRows, previewRows,
   missingRequired,
   preflightIssues, aiIssues, aiRunning, aiError, aiLastRunAt, onRunAiDoubleCheck,
@@ -1276,6 +1322,12 @@ function ReviewPanel({
   setColumnExpandMulti: (b: boolean) => void;
   defaultQuantity: string;
   setDefaultQuantity: (s: string) => void;
+  shippingNameFixed: string;
+  setShippingNameFixed: (s: string) => void;
+  shippingCarrierFixed: string;
+  setShippingCarrierFixed: (s: string) => void;
+  shippingMethodFixed: string;
+  setShippingMethodFixed: (s: string) => void;
   projectedOutputRows: number;
   previewRows: Record<string, string>[];
   missingRequired: readonly string[];
@@ -1715,6 +1767,45 @@ function ReviewPanel({
                       </span>
                     </div>
                   )}
+                  {/* Free-text overrides for the three Shipping fields.
+                      Overrides beat the picker when non-empty; blank
+                      falls through to whatever the mapping resolved.
+                      Same "type once, apply to every row" idea as the
+                      quantity default. */}
+                  {(col === 'Shipping Name' || col === 'Shipping Carrier' || col === 'Shipping Method') && (() => {
+                    const val = col === 'Shipping Name'
+                      ? shippingNameFixed
+                      : col === 'Shipping Carrier'
+                        ? shippingCarrierFixed
+                        : shippingMethodFixed;
+                    const setter = col === 'Shipping Name'
+                      ? setShippingNameFixed
+                      : col === 'Shipping Carrier'
+                        ? setShippingCarrierFixed
+                        : setShippingMethodFixed;
+                    const placeholder = col === 'Shipping Name'
+                      ? 'e.g. Returns Dept'
+                      : col === 'Shipping Carrier'
+                        ? 'e.g. UPS'
+                        : 'e.g. UPS Ground';
+                    return (
+                      <div className="border border-[#43c7ff]/30 bg-[#e6f8ff]/30 rounded p-2 flex items-center gap-2">
+                        <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">
+                          Or set to
+                        </span>
+                        <input
+                          type="text"
+                          value={val}
+                          onChange={e => setter(e.target.value)}
+                          placeholder={placeholder}
+                          className="flex-1 min-w-0 px-2 py-0.5 text-xs border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
+                        />
+                        <span className="text-[10px] text-gray-600 whitespace-nowrap">
+                          {val.trim() ? 'for every order' : ''}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             );
