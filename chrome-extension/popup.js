@@ -728,6 +728,14 @@ async function showClientDetail(clientStub) {
   // actual width via the body class; Chrome respects the change live.
   document.body.classList.add('detail-open');
 
+  // The user reached here by clicking a search result, which now sits inside
+  // the just-hidden search view. Its focus falls back to <body>, and macOS
+  // Chrome paints a native focus ring around the WHOLE popup when <body> is
+  // focused — a ring CSS `outline:none` can't suppress. Park focus on the
+  // (outline-suppressed, tabindex="-1") detail section so it stays on a real,
+  // visible element and no whole-popup ring is drawn.
+  detailView.focus({ preventScroll: true });
+
   // Header placeholders fill from search-index right away so the user sees
   // something while the full fetch runs.
   document.getElementById('detail-name').textContent = clientStub.name || '(unnamed)';
