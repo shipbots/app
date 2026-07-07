@@ -21,7 +21,7 @@ import dynamic from 'next/dynamic';
 import { useSession } from 'next-auth/react';
 import {
   FileSpreadsheet, Sparkles, Loader2, Sheet, Warehouse,
-  LifeBuoy, BookOpen, GripVertical, Camera,
+  LifeBuoy, BookOpen, GripVertical, Camera, Truck,
 } from 'lucide-react';
 
 // Lazy-load the CSV formatter so the xlsx (~500KB) bundle only ships when
@@ -128,6 +128,15 @@ const APPS: AppDef[] = [
     bg: 'from-amber-400 to-orange-600',
     iconBg: '#ea580c',
     icon: Camera,
+    comingSoon: true,
+  },
+  {
+    id: 'bol-uploader',
+    label: 'BOL Uploader',
+    description: 'Upload a Bill of Lading and have it read and filed to the client’s record automatically. (In development.)',
+    bg: 'from-sky-400 to-blue-700',
+    iconBg: '#1d4ed8',
+    icon: Truck,
     comingSoon: true,
   },
 ];

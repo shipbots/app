@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useSession } from 'next-auth/react';
 import {
   FileText, Link2, Plus, Trash2, ExternalLink, Loader2,
   Upload, X, FileSpreadsheet, Presentation, HardDrive, File, Pencil, Check,
@@ -753,6 +754,11 @@ export function DocumentsTab({
   clientInfo,
   onDocusignExtracted,
 }: DocumentsTabProps) {
+  const { data: session } = useSession();
+  // DocuSign is restricted to a specific group (see lib/docusign-access.ts).
+  // Everyone else gets the rest of the Documents tab without the DocuSign
+  // upload/extract section.
+  const canDocusign = Boolean(session?.user?.canDocusign);
   const [docs, setDocs]   = useState<ClientDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode]   = useState<'link' | 'upload' | null>(null);
@@ -781,16 +787,20 @@ export function DocumentsTab({
   return (
     <div className="p-4 overflow-y-auto max-h-[calc(100vh-200px)] space-y-5">
 
-      {/* ── DocuSign pinned section ── */}
-      <DocuSignSection
-        docusignFile={docusignFile}
-        clientBoardItemId={clientBoardItemId}
-        onboardingItemId={onboardingItemId}
-        clientInfo={clientInfo}
-        onExtracted={onDocusignExtracted}
-      />
+      {/* ── DocuSign pinned section — restricted to the DocuSign group ── */}
+      {canDocusign && (
+        <>
+          <DocuSignSection
+            docusignFile={docusignFile}
+            clientBoardItemId={clientBoardItemId}
+            onboardingItemId={onboardingItemId}
+            clientInfo={clientInfo}
+            onExtracted={onDocusignExtracted}
+          />
 
-      <div className="border-t border-gray-100" />
+          <div className="border-t border-gray-100" />
+        </>
+      )}
 
       {/* ── Add buttons (hidden when a form is open) ── */}
       {!mode && (

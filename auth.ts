@@ -1,6 +1,7 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
 import { isAdminEmail } from '@/lib/admins';
+import { canUseDocusign } from '@/lib/docusign-access';
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -45,14 +46,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     // Re-computed on token refresh (next sign-in or session refresh).
     jwt({ token }) {
       token.isAdmin = isAdminEmail(token.email as string | undefined);
+      token.canDocusign = canUseDocusign(token.email as string | undefined);
       return token;
     },
 
-    // Surface email + isAdmin on the session so the UI and route guards can
-    // branch on them.
+    // Surface email + isAdmin + canDocusign on the session so the UI and route
+    // guards can branch on them.
     session({ session, token }) {
       if (token?.email) session.user.email = token.email as string;
       session.user.isAdmin = Boolean(token?.isAdmin);
+      session.user.canDocusign = Boolean(token?.canDocusign);
       return session;
     },
   },

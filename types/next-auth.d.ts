@@ -14,6 +14,8 @@ declare module 'next-auth' {
       email?: string | null;
       image?: string | null;
       isAdmin: boolean;
+      /** Whether this user may see/use the DocuSign section (Documents tab). */
+      canDocusign: boolean;
     };
   }
 }
@@ -21,5 +23,6 @@ declare module 'next-auth' {
 declare module 'next-auth/jwt' {
   interface JWT {
     isAdmin?: boolean;
+    canDocusign?: boolean;
   }
 }

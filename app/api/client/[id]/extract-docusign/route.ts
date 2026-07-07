@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/auth';
+import { canUseDocusign } from '@/lib/docusign-access';
 
 const MONDAY_API_URL = 'https://api.monday.com/v2';
 
@@ -19,6 +21,13 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   await params; // id is not used here but required by route signature
+
+  // DocuSign is restricted to a specific group — enforce it server-side, not
+  // just by hiding the UI (see lib/docusign-access.ts).
+  const session = await auth();
+  if (!canUseDocusign(session?.user?.email)) {
+    return NextResponse.json({ error: 'Not authorized for DocuSign' }, { status: 403 });
+  }
 
   const mondayApiKey = process.env.MONDAY_API_KEY;
   if (!mondayApiKey) {
