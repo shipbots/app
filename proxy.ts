@@ -22,6 +22,11 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
+  // Privacy policy is public — Chrome Web Store reviewers need to view
+  // it without logging in, and the URL is linked from the extension's
+  // store listing where anonymous visitors also land.
+  if (pathname === '/privacy') return NextResponse.next();
+
   if (!isAuthenticated) {
     // API routes: return 401 JSON (client-side fetch can handle this)
     if (pathname.startsWith('/api/')) {
