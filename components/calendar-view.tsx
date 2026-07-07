@@ -1,8 +1,13 @@
 'use client';
 
-import { useState, useMemo, useRef, useCallback } from 'react';
+import { useState, useMemo, useRef, useCallback, createContext, useContext } from 'react';
 import { OnboardingItem, CalendarEvent } from '@/lib/types';
 import { ClientCard } from './client-card';
+
+// True when onboarding progress (% + checklist bar) should be hidden on the
+// event cards — i.e. in the Customer Service surface. Read by CalendarEventCard
+// so we don't have to thread the flag through WeekView / MonthView.
+const HideCardProgressContext = createContext(false);
 import { ChevronLeft, ChevronRight, Phone, Package } from 'lucide-react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -71,6 +76,7 @@ function CalendarEventCard({ event, agentEmail, onSelect, onDragStart, onDragEnd
   onDragStart?: (event: CalendarEvent) => void;
   onDragEnd?: () => void;
 }) {
+  const hideProgress = useContext(HideCardProgressContext);
   const draggable = event.type === 'delivery' && Boolean(event.item.clientBoardItemId);
   return (
     <div
@@ -86,7 +92,7 @@ function CalendarEventCard({ event, agentEmail, onSelect, onDragStart, onDragEnd
       onDragEnd={() => onDragEnd?.()}
     >
       <EventBadge event={event} />
-      <ClientCard item={event.item} agentEmail={agentEmail} onClick={onSelect} />
+      <ClientCard item={event.item} agentEmail={agentEmail} onClick={onSelect} hideProgress={hideProgress} />
     </div>
   );
 }
@@ -284,6 +290,9 @@ interface CalendarViewProps {
    *  PipelineBoard merges this into itemOverrides so the kanban /
    *  calendar / side panel all reflect the new date. */
   onItemUpdate?: (itemId: string, patch: Partial<OnboardingItem>) => void;
+  /** Which surface the calendar is mounted in. In 'customer-service' the event
+   *  cards hide onboarding progress (% + checklist bar). Defaults to onboarding. */
+  appMode?: 'onboarding' | 'customer-service';
 }
 
 type DraggedEvent = { item: OnboardingItem; originalDate: string };
@@ -295,7 +304,7 @@ function isoFromDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate }: CalendarViewProps) {
+export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate, appMode = 'onboarding' }: CalendarViewProps) {
   const [calMode, setCalMode] = useState<'month' | 'week'>('month');
   const [currentDate, setCurrentDate] = useState<Date>(() => {
     const d = new Date();
@@ -439,6 +448,7 @@ export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate 
   const deliveryCount = events.filter(e => e.type === 'delivery').length;
 
   return (
+    <HideCardProgressContext.Provider value={appMode === 'customer-service'}>
     <div className="flex-1 flex flex-col overflow-hidden bg-gray-50">
 
       {/* ── Sub-header ── */}
@@ -532,5 +542,6 @@ export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate 
         />
       )}
     </div>
+    </HideCardProgressContext.Provider>
   );
 }

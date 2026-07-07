@@ -8,6 +8,9 @@ interface ClientCardProps {
   item: OnboardingItem;
   agentEmail: string | null;
   onClick: () => void;
+  /** Hide the onboarding progress % and checklist bar. Used in the Customer
+   *  Service surface, where onboarding progress isn't relevant. */
+  hideProgress?: boolean;
 }
 
 const AGENT_PALETTE = [
@@ -38,7 +41,7 @@ function isFutureDateTime(date: string | null, time: string | null): boolean {
   return dayEnd.getTime() > now;
 }
 
-export function ClientCard({ item, agentEmail, onClick }: ClientCardProps) {
+export function ClientCard({ item, agentEmail, onClick, hideProgress = false }: ClientCardProps) {
   const daysSinceUpdate = Math.floor(
     (Date.now() - new Date(item.updatedAt).getTime()) / (1000 * 60 * 60 * 24)
   );
@@ -99,14 +102,16 @@ export function ClientCard({ item, agentEmail, onClick }: ClientCardProps) {
               <UserX className="w-3 h-3 text-gray-400" />
             </span>
           )}
-          {/* Progress */}
-          <span className="text-xs font-bold rounded-full w-8 h-8 flex items-center justify-center" style={{ background: 'var(--brand-cyan)', color: 'var(--brand-navy)' }}>
-            {item.progress}%
-          </span>
+          {/* Progress — onboarding-only; hidden in Customer Service */}
+          {!hideProgress && (
+            <span className="text-xs font-bold rounded-full w-8 h-8 flex items-center justify-center" style={{ background: 'var(--brand-cyan)', color: 'var(--brand-navy)' }}>
+              {item.progress}%
+            </span>
+          )}
         </div>
       </div>
 
-      <ChecklistBar steps={item.checklist} compact />
+      {!hideProgress && <ChecklistBar steps={item.checklist} compact />}
 
       <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
         <div className="flex items-center gap-1">
