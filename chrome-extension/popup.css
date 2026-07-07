@@ -30,6 +30,24 @@ body {
   background: #f9fafb;
   color: #111827;
   transition: width .15s ease-out;
+  /* This is a read-only reference panel, so a stray click / drag used to
+     drag-select the whole popup and paint it with the browser's light-blue
+     text-selection highlight. Turn selection off on the chrome, then re-enable
+     it below only on the actual values worth copying (emails, addresses,
+     portal logins, notes). */
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* Copyable content — keep the browser's normal text selection here. */
+.detail-name,
+.detail-meta,
+.detail-section-body dd,
+.detail-contact-name,
+.detail-contact-line,
+.detail-notes-list,
+.note-card {
+  -webkit-user-select: text;
+  user-select: text;
 }
 /* When a client opens, the popup widens so the sticky-notes column has
    room next to the detail sections. */
