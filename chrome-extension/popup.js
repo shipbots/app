@@ -9,6 +9,10 @@
 
 const DEFAULT_BASE_URL = 'https://app-snowy-eight-64.vercel.app';
 
+// The client currently shown in the detail view. Set in showClientDetail;
+// used by the sticky-note composer so it knows which client to post to.
+let activeClientId = null;
+
 function getBaseUrl() {
   return new Promise(resolve => {
     chrome.storage.local.get(['baseUrl'], result => {
@@ -628,6 +632,31 @@ async function fetchClientStickyNotes(id) {
   });
 }
 
+// Append one sticky note for this client. The dashboard stamps the author
+// from the signed-in session and generates the id/date server-side, so we
+// only send the text (+ optional color).
+async function addStickyNote(id, text, color) {
+  const base = await getBaseUrl();
+  const res = await fetch(`${base}/api/client/${encodeURIComponent(id)}/sticky-notes`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ text, color: color || 'yellow' }),
+  });
+  if (res.status === 401) {
+    const err = new Error('Not signed in');
+    err.code = 'unauthorized';
+    throw err;
+  }
+  if (res.status === 503) {
+    const err = new Error('Setup required');
+    err.code = 'unconfigured';
+    throw err;
+  }
+  if (!res.ok) throw new Error(`add failed (${res.status})`);
+  return res.json();
+}
+
 function noteShortDate(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -746,7 +775,14 @@ async function showClientDetail(clientStub) {
   statusEl.classList.remove('error');
   statusEl.textContent = 'Loading client info…';
 
-  openBtn.onclick = () => openPath(`/customer-service?clientId=${encodeURIComponent(clientStub.id)}`);
+  // expanded=1 tells the dashboard to open this client in its full expanded
+  // view (all sections + sticky notes), not the narrow side panel.
+  openBtn.onclick = () => openPath(`/customer-service?clientId=${encodeURIComponent(clientStub.id)}&expanded=1`);
+
+  // Remember which client the sticky-note composer should post to, and make
+  // sure it starts closed for each newly opened client.
+  activeClientId = clientStub.id;
+  resetNoteComposer();
 
   // Kick off sticky notes in parallel with the full client info fetch so
   // the right column populates as soon as Monday returns the column.
@@ -767,10 +803,21 @@ async function showClientDetail(clientStub) {
 }
 
 function backToSearch() {
+  activeClientId = null;
+  resetNoteComposer();
   document.getElementById('client-detail').hidden = true;
   document.getElementById('search-view').hidden = false;
   document.body.classList.remove('detail-open');
   document.getElementById('search-input').focus();
+}
+
+// Hide + clear the sticky-note composer. Safe to call before the elements
+// are wired (guards against missing nodes).
+function resetNoteComposer() {
+  const composer = document.getElementById('detail-notes-composer');
+  const input = document.getElementById('detail-notes-input');
+  if (composer) composer.hidden = true;
+  if (input) input.value = '';
 }
 
 // Mini Apps registry — kept in sync with components/mini-apps-view.tsx.
@@ -891,6 +938,57 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Detail view: Back button returns to search ────────────────────────
   document.getElementById('detail-back').addEventListener('click', backToSearch);
+
+  // ── Sticky-note composer: add a note without leaving the popup ─────────
+  const notesAddBtn  = document.getElementById('detail-notes-add');
+  const notesComposer = document.getElementById('detail-notes-composer');
+  const notesInput   = document.getElementById('detail-notes-input');
+  const notesCancel  = document.getElementById('detail-notes-cancel');
+  const notesSave    = document.getElementById('detail-notes-save');
+
+  notesAddBtn.addEventListener('click', () => {
+    if (notesComposer.hidden) {
+      notesComposer.hidden = false;
+      notesInput.focus();
+    } else {
+      resetNoteComposer();
+    }
+  });
+  notesCancel.addEventListener('click', resetNoteComposer);
+
+  async function submitNote() {
+    const text = notesInput.value.trim();
+    if (!text || !activeClientId) return;
+    const clientId = activeClientId;
+    notesSave.disabled = true;
+    const prevLabel = notesSave.textContent;
+    notesSave.textContent = 'Adding…';
+    try {
+      await addStickyNote(clientId, text);
+      resetNoteComposer();
+      // Only refresh if we're still on the same client the user posted to.
+      if (activeClientId === clientId) await loadStickyNotesPane(clientId);
+    } catch (err) {
+      showStickyNotesStatus(
+        err.code === 'unauthorized' ? 'Sign in to the dashboard first'
+        : err.code === 'unconfigured' ? 'Setup required'
+        : 'Failed to add note',
+        true,
+      );
+    } finally {
+      notesSave.disabled = false;
+      notesSave.textContent = prevLabel;
+    }
+  }
+
+  notesSave.addEventListener('click', submitNote);
+  // Cmd/Ctrl+Enter submits from the textarea.
+  notesInput.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      void submitNote();
+    }
+  });
 
   // ── Quick-launch buttons
   document.getElementById('open-calendar').addEventListener('click', () => openPath('/customer-service?view=calendar'));

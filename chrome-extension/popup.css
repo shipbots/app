@@ -385,12 +385,75 @@ body.detail-open {
   text-transform: uppercase;
   color: #015280;
 }
+.detail-notes-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .detail-notes-status {
   font-size: 10px;
   color: #9ca3af;
   font-style: italic;
 }
 .detail-notes-status.error { color: #b91c1c; font-style: normal; }
+.detail-notes-add {
+  border: 1px solid #43c7ff;
+  background: #f0fbff;
+  color: #015280;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s;
+}
+.detail-notes-add:hover { background: #e0f6ff; }
+.detail-notes-composer {
+  flex-shrink: 0;
+  padding: 8px;
+  border-bottom: 1px solid #eee;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.detail-notes-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 52px;
+  font-family: inherit;
+  font-size: 12px;
+  color: #111827;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px;
+}
+.detail-notes-input:focus {
+  outline: none;
+  border-color: #43c7ff;
+  box-shadow: 0 0 0 2px rgba(67,199,255,.25);
+}
+.detail-notes-composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.detail-notes-cancel,
+.detail-notes-save {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid #e5e7eb;
+}
+.detail-notes-cancel { background: #fff; color: #6b7280; }
+.detail-notes-cancel:hover { background: #f9fafb; }
+.detail-notes-save { background: #015280; border-color: #015280; color: #fff; }
+.detail-notes-save:hover { background: #013d60; }
+.detail-notes-save:disabled { opacity: .6; cursor: default; }
 .detail-notes-list {
   flex: 1;
   overflow-y: auto;

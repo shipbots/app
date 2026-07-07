@@ -61,10 +61,17 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
   // mount so re-renders don't fight the user's later navigation.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const targetId = new URLSearchParams(window.location.search).get('clientId');
+    const sp = new URLSearchParams(window.location.search);
+    const targetId = sp.get('clientId');
     if (!targetId) return;
     const match = items.find(i => i.id === targetId || i.clientBoardItemId === targetId);
-    if (match) setSelectedItem(match);
+    if (match) {
+      setSelectedItem(match);
+      // The Chrome extension's "Edit ↗" link deep-links with &expanded=1 so
+      // the client opens in the full expanded view (all sections + sticky
+      // notes) rather than the narrow side panel.
+      if (sp.get('expanded') === '1') setDetailFullscreen(true);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [allTasks, setAllTasks] = useState<SubItem[]>([]);

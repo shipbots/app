@@ -34,7 +34,17 @@
       <aside class="detail-notes" aria-label="Client sticky notes">
         <div class="detail-notes-header">
           <span class="detail-notes-title">Sticky Notes</span>
-          <span id="detail-notes-status" class="detail-notes-status"></span>
+          <div class="detail-notes-header-right">
+            <span id="detail-notes-status" class="detail-notes-status"></span>
+            <button id="detail-notes-add" class="detail-notes-add" type="button" title="Add a sticky note">+ Add</button>
+          </div>
+        </div>
+        <div id="detail-notes-composer" class="detail-notes-composer" hidden>
+          <textarea id="detail-notes-input" class="detail-notes-input" rows="3" placeholder="Write a note for the team…"></textarea>
+          <div class="detail-notes-composer-actions">
+            <button id="detail-notes-cancel" class="detail-notes-cancel" type="button">Cancel</button>
+            <button id="detail-notes-save" class="detail-notes-save" type="button">Add note</button>
+          </div>
         </div>
         <div id="detail-notes-list" class="detail-notes-list"></div>
       </aside>
