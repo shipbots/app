@@ -737,19 +737,125 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
     }, 400);
     return () => { cancelled = true; window.clearTimeout(id); };
   }, [primaryEmail]);
-  const [meetings, setMeetings] = useState<FirefliesMeeting[]>([]);
-  const [emails, setEmails] = useState<GmailThread[]>([]);
-  const [emailsError, setEmailsError] = useState<string | null>(null);
-  const [pos, setPos] = useState<ShipHeroPO[]>([]);
-  const [posError, setPosError] = useState<string | null>(null);
-  const [tasks, setTasks] = useState<SubItem[]>([]);
-  const [loadingMeetings, setLoadingMeetings] = useState(false);
-  const [loadingEmails, setLoadingEmails] = useState(false);
-  const [loadingPos, setLoadingPos] = useState(false);
-  const [loadingTasks, setLoadingTasks] = useState(false);
-  const [tasksFetched, setTasksFetched] = useState(false);
-  const [emailsFetched, setEmailsFetched] = useState(false);
-  const [meetingsFetched, setMeetingsFetched] = useState(false);
+  // ── Tab data: meetings / emails / ShipHero POs / tasks ────────────────────
+  // These used to be bespoke fetch+useState blocks that showed a spinner on
+  // every open and reset whenever the user switched clients (the panel is
+  // keyed on item id, so it remounts). They now ride the same
+  // stale-while-revalidate cache as clientInfo: the last-known payload paints
+  // instantly from localStorage and a background refresh swaps in fresh data.
+  //
+  // Fetches stay lazy — a tab's data is only requested once that tab has been
+  // opened — so we don't hammer Fireflies / Gmail / ShipHero on every client
+  // open. But once a client's tab has been cached, revisiting it is instant.
+  // The `*Requested` latches flip true on first visit and reset on remount
+  // (i.e. per client), which is exactly the behavior we want.
+  const [meetingsRequested, setMeetingsRequested] = useState(false);
+  const [emailsRequested, setEmailsRequested]     = useState(false);
+  const [posRequested, setPosRequested]           = useState(false);
+  const [tasksRequested, setTasksRequested]       = useState(false);
+  useEffect(() => {
+    if (activeTab === 'meetings')      setMeetingsRequested(true);
+    else if (activeTab === 'emails')   setEmailsRequested(true);
+    else if (activeTab === 'pos')      setPosRequested(true);
+    else if (activeTab === 'tasks')    setTasksRequested(true);
+  }, [activeTab]);
+
+  // clientInfo carries the legal name / contact names / contact emails /
+  // ShipHero name that the meetings, emails and POs lookups need. Wait until
+  // it's available (usually instant from cache) before firing those — but if
+  // there's no linked client record to wait for, proceed with just the name.
+  const clientInfoReady = clientInfo !== null || clientCacheKey === null;
+
+  // Meetings — matched by client name plus legal / contact name when known.
+  const meetingsUrl = meetingsRequested && clientInfoReady
+    ? (() => {
+        const params = new URLSearchParams({ client: item.name });
+        if (clientInfo?.legalEntity) params.append('legalName',   clientInfo.legalEntity);
+        if (clientInfo?.contactName) params.append('contactName', clientInfo.contactName);
+        return `/api/meetings?${params.toString()}`;
+      })()
+    : null;
+  const {
+    data: meetingsData,
+    isFetching: meetingsFetching,
+    refetch: refetchMeetings,
+  } = useCachedFetch<FirefliesMeeting[]>(
+    meetingsRequested ? `meetings:${item.id}` : null,
+    meetingsUrl,
+  );
+  const meetings = meetingsData ?? [];
+  const loadingMeetings = meetingsData === undefined && meetingsFetching;
+
+  // Emails — searched by client name and all known contact emails.
+  const emailsUrl = emailsRequested && clientInfoReady
+    ? (() => {
+        const allEmails = [
+          clientInfo?.contactEmail,
+          clientInfo?.contact2Email,
+          clientInfo?.contact3Email,
+        ].filter(Boolean) as string[];
+        const emailParams = allEmails.map(e => `&email=${encodeURIComponent(e)}`).join('');
+        return `/api/emails?client=${encodeURIComponent(item.name)}${emailParams}`;
+      })()
+    : null;
+  const {
+    data: emailsData,
+    isFetching: emailsFetching,
+    error: emailsFetchError,
+    refetch: refetchEmails,
+  } = useCachedFetch<GmailThread[]>(
+    emailsRequested ? `emails:${item.id}` : null,
+    emailsUrl,
+  );
+  const emails = emailsData ?? [];
+  const loadingEmails = emailsData === undefined && emailsFetching;
+  // Preserve the route's specific error code (e.g. 'gmail_reauth_required')
+  // so EmailsTab can render its reconnect CTA. Only surface it once we have
+  // no cached emails to show, so a transient background-refresh blip doesn't
+  // hide good cached data.
+  const emailsError =
+    emailsData === undefined && emailsFetchError ? emailsFetchError.message : null;
+
+  // ShipHero POs — matched by ShipHero name from the client record.
+  const posUrl = posRequested && clientInfoReady
+    ? `/api/shiphero-pos?client=${encodeURIComponent(item.name)}&shipHeroName=${encodeURIComponent(clientInfo?.shipHeroName || '')}`
+    : null;
+  const {
+    data: posData,
+    isFetching: posFetching,
+    error: posFetchError,
+    refetch: refetchPos,
+  } = useCachedFetch<ShipHeroPO[]>(
+    posRequested ? `pos:${item.id}` : null,
+    posUrl,
+  );
+  const pos = posData ?? [];
+  const loadingPos = posData === undefined && posFetching;
+  const posError = posData === undefined && posFetchError ? posFetchError.message : null;
+
+  // Tasks (Monday subitems) — no clientInfo dependency.
+  const {
+    data: tasksData,
+    isFetching: tasksFetching,
+    refetch: refetchTasks,
+    setData: setTasksData,
+  } = useCachedFetch<SubItem[]>(
+    tasksRequested ? `tasks:${item.id}` : null,
+    tasksRequested ? `/api/subitems/${item.id}` : null,
+  );
+  const tasks = tasksData ?? [];
+  const loadingTasks = tasksData === undefined && tasksFetching;
+  // Optimistic local mutation of the tasks list that also writes through to
+  // the cache, so the Tasks tab reflects created / updated tasks immediately.
+  const mutateTasks = (fn: (prev: SubItem[]) => SubItem[]) =>
+    setTasksData(prev => fn(prev ?? []));
+  // Called from the Meetings tab after it creates tasks from action items —
+  // make sure the Tasks tab is live and refreshed so the new tasks show up.
+  const onTasksCreatedFromMeeting = (newTasks: SubItem[]) => {
+    setTasksRequested(true);
+    mutateTasks(prev => [...newTasks, ...prev]);
+    refetchTasks();
+  };
   // Fullscreen is controlled by the parent when provided (so it survives the
   // per-client remount); otherwise fall back to local state.
   const [fullscreenLocal, setFullscreenLocal] = useState(false);
@@ -791,89 +897,19 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
 
   const handleRefresh = () => {
     setRefreshing(true);
-    setTasksFetched(false);
-    setEmailsFetched(false);
-    setMeetingsFetched(false);
-    setEmails([]);
-    setEmailsError(null);
-    setMeetings([]);
+    // Force a background round-trip on everything currently in view. Each
+    // refetch is a no-op for tabs that haven't been requested yet (their
+    // hook has no URL), so this only re-hits what the user is actually
+    // looking at. Fresh data swaps in over the cached view when it lands.
     refetchClientInfo();
+    refetchMeetings();
+    refetchEmails();
+    refetchPos();
+    refetchTasks();
   };
 
-  // Fetch meetings when tab is selected — wait for clientInfo so legal name + contact name are included
-  useEffect(() => {
-    if (activeTab !== 'meetings' || meetingsFetched || loadingClient) return;
-
-    setLoadingMeetings(true);
-    const params = new URLSearchParams({ client: item.name });
-    if (clientInfo?.legalEntity)  params.append('legalName',   clientInfo.legalEntity);
-    if (clientInfo?.contactName)  params.append('contactName', clientInfo.contactName);
-    fetch(`/api/meetings?${params.toString()}`)
-      .then(r => r.json())
-      .then(data => setMeetings(Array.isArray(data) ? data : []))
-      .catch(console.error)
-      .finally(() => { setLoadingMeetings(false); setMeetingsFetched(true); });
-  }, [activeTab, meetingsFetched, loadingClient, item.name, clientInfo?.legalEntity, clientInfo?.contactName]);
-
-  // Fetch emails when tab is selected — wait for clientInfo so all 3 contact emails are included
-  useEffect(() => {
-    if (activeTab !== 'emails' || emailsFetched || loadingClient) return;
-
-    setLoadingEmails(true);
-    const allEmails = [
-      clientInfo?.contactEmail,
-      clientInfo?.contact2Email,
-      clientInfo?.contact3Email,
-    ].filter(Boolean) as string[];
-    const emailParams = allEmails.map(e => `&email=${encodeURIComponent(e)}`).join('');
-    fetch(`/api/emails?client=${encodeURIComponent(item.name)}${emailParams}`)
-      .then(async r => {
-        const data = await r.json();
-        if (!r.ok && data?.error) {
-          setEmailsError(data.error);
-          setEmails([]);
-        } else {
-          setEmails(Array.isArray(data) ? data : []);
-          setEmailsError(null);
-        }
-      })
-      .catch(console.error)
-      .finally(() => { setLoadingEmails(false); setEmailsFetched(true); });
-  }, [activeTab, emailsFetched, loadingClient, item.name, clientInfo?.contactEmail, clientInfo?.contact2Email, clientInfo?.contact3Email]);
-
-  // Fetch ShipHero POs when tab is selected
-  useEffect(() => {
-    if (activeTab === 'pos' && pos.length === 0 && !posError) {
-      setLoadingPos(true);
-      setPosError(null);
-      const shipHeroName = clientInfo?.shipHeroName || '';
-      fetch(
-        `/api/shiphero-pos?client=${encodeURIComponent(item.name)}&shipHeroName=${encodeURIComponent(shipHeroName)}`
-      )
-        .then(r => r.json())
-        .then(data => {
-          if (data.error) { setPosError(data.error); }
-          else { setPos(Array.isArray(data) ? data : []); }
-        })
-        .catch(e => setPosError(e.message))
-        .finally(() => setLoadingPos(false));
-    }
-  }, [activeTab, item.name, clientInfo?.shipHeroName, pos.length, posError]);
-
-  // Fetch tasks when tab is selected
-  useEffect(() => {
-    if (activeTab === 'tasks' && !tasksFetched) {
-      setLoadingTasks(true);
-      fetch(`/api/subitems/${item.id}`)
-        .then(r => r.json())
-        .then((data: SubItem[]) => setTasks(Array.isArray(data) ? data : []))
-        .catch(console.error)
-        .finally(() => { setLoadingTasks(false); setTasksFetched(true); });
-    }
-  }, [activeTab, item.id, tasksFetched]);
-
   // Incomplete task count: use loaded tasks once fetched, otherwise fall back to board-level count
-  const incompleteTaskCount = tasksFetched
+  const incompleteTaskCount = tasksData !== undefined
     ? tasks.filter(t => {
         const s = t.status.toLowerCase();
         return !s.includes('done') && !s.includes('complete') && !s.includes('finished');
@@ -1002,10 +1038,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
           loading={loadingMeetings}
           items={items}
           clientItemId={item.id}
-          onTasksCreated={newTasks => {
-            setTasks(prev => [...newTasks, ...prev]);
-            setTasksFetched(false);
-          }}
+          onTasksCreated={onTasksCreatedFromMeeting}
         />
       )}
       {activeTab === 'emails' && (
@@ -1025,8 +1058,8 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
           loading={loadingTasks}
           items={items}
           clientItemId={item.id}
-          onTaskCreated={task => setTasks(prev => [task, ...prev])}
-          onTaskUpdated={updated => setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))}
+          onTaskCreated={task => mutateTasks(prev => [task, ...prev])}
+          onTaskUpdated={updated => mutateTasks(prev => prev.map(t => t.id === updated.id ? updated : t))}
         />
       )}
       {activeTab === 'docs' && (
@@ -1520,11 +1553,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
               loading={loadingMeetings}
               items={items}
               clientItemId={item.id}
-              onTasksCreated={newTasks => {
-                setTasks(prev => [...newTasks, ...prev]);
-                // Ensure tasks tab is fetchable on next visit
-                setTasksFetched(false);
-              }}
+              onTasksCreated={onTasksCreatedFromMeeting}
             />
           )}
           {activeTab === 'emails' && (
@@ -1544,8 +1573,8 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
               loading={loadingTasks}
               items={items}
               clientItemId={item.id}
-              onTaskCreated={task => setTasks(prev => [task, ...prev])}
-              onTaskUpdated={updated => setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))}
+              onTaskCreated={task => mutateTasks(prev => [task, ...prev])}
+              onTaskUpdated={updated => mutateTasks(prev => prev.map(t => t.id === updated.id ? updated : t))}
             />
           )}
           {activeTab === 'docs' && (

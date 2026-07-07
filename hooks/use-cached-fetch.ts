@@ -160,8 +160,19 @@ export function useCachedFetch<T>(
 
     fetch(url, { ...(initRef.current ?? {}), signal: controller.signal })
       .then(async r => {
-        if (!r.ok) throw new Error(`${r.status}`);
-        return (await r.json()) as T;
+        // Parse the body even on failure so a route's `{ error: '…' }`
+        // message survives as the thrown Error's message. Consumers like
+        // the emails tab switch on it (e.g. 'gmail_reauth_required') to
+        // show a specific recovery UI instead of a generic failure.
+        const body = await r.json().catch(() => undefined);
+        if (!r.ok) {
+          const msg =
+            body && typeof body === 'object' && 'error' in body
+              ? String((body as { error: unknown }).error)
+              : `${r.status}`;
+          throw new Error(msg);
+        }
+        return body as T;
       })
       .then(fresh => {
         if (cancelled) return;
