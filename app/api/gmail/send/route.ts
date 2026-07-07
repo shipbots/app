@@ -33,7 +33,16 @@ async function getAccessToken(): Promise<string> {
 
   const data = await res.json();
   if (!res.ok || !data.access_token) {
-    throw new Error(`Token refresh failed: ${JSON.stringify(data)}`);
+    // A revoked or expired refresh token comes back from Google's token
+    // endpoint as a 4xx (e.g. 400 { error: 'invalid_grant' }). Treat that as
+    // the same "not connected" condition as missing credentials so the caller
+    // routes the user to the reconnect flow ("Connect Gmail") instead of a
+    // dead-end 500 that surfaces as a mysterious "Failed". A 5xx / network
+    // error is transient, so keep it a generic error worth retrying.
+    if (res.status === 400 || res.status === 401) {
+      throw Object.assign(new Error('gmail_not_connected'), { code: 'gmail_not_connected' });
+    }
+    throw new Error(`Token refresh failed (${res.status}): ${JSON.stringify(data)}`);
   }
   return data.access_token as string;
 }

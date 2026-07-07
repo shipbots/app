@@ -58,9 +58,13 @@ export async function GET(req: NextRequest) {
       <head><title>Gmail Connected ✅</title></head>
       <body style="font-family:sans-serif;padding:2rem;max-width:640px;margin:0 auto">
         <h2 style="color:#16a34a">✅ Gmail connected successfully!</h2>
-        <p>Add the following line to your <strong>.env.local</strong> file, then restart the dev server:</p>
+        <p>Set this as <strong>GMAIL_REFRESH_TOKEN</strong>:</p>
         <pre style="background:#f3f4f6;padding:1rem;border-radius:8px;word-break:break-all;white-space:pre-wrap">GMAIL_REFRESH_TOKEN=${refreshToken}</pre>
-        <p style="color:#6b7280;font-size:0.875rem">Keep this token secret — it grants permanent Gmail send access until revoked.</p>
+        <ul style="color:#374151;font-size:0.9rem;line-height:1.6">
+          <li><strong>Local:</strong> paste into <code>.env.local</code>, then restart the dev server.</li>
+          <li><strong>Production:</strong> update <code>GMAIL_REFRESH_TOKEN</code> in the Vercel project's Environment Variables, then redeploy for it to take effect.</li>
+        </ul>
+        <p style="color:#6b7280;font-size:0.875rem">Keep this token secret — it grants Gmail send access until revoked.</p>
         <p><a href="/" style="color:#2563eb">← Back to Dashboard</a></p>
       </body>
     </html>`,
