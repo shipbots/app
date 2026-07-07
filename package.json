@@ -11,6 +11,7 @@
     "start": "next start",
     "lint": "eslint",
     "zip:extension": "rm -f public/chrome-extension.zip && cd chrome-extension && zip -qr ../public/chrome-extension.zip . -x '*.DS_Store' && cd ..",
+    "pack:store": "bash scripts/pack-store.sh",
     "prebuild": "npm run zip:extension",
     "predev": "npm run zip:extension"
   },
