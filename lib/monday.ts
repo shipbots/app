@@ -674,12 +674,22 @@ export async function fetchClientColumn(itemId: string, columnId: string): Promi
 // storage column without making the admin click around in Monday's UI.
 // Returns the new column's id.
 export async function createClientsLongTextColumn(title: string): Promise<string> {
+  return createClientsColumn(title, 'long_text');
+}
+
+// ─── Create an arbitrary column on the Clients board ───────────────────────
+// Generalizes createClientsLongTextColumn so bootstrap endpoints can create
+// long_text (JSON storage) and file columns without duplicating the mutation.
+export async function createClientsColumn(
+  title: string,
+  columnType: 'long_text' | 'file' | 'text' | 'date',
+): Promise<string> {
   const escaped = title.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   const query = `mutation {
     create_column(
       board_id: ${CLIENTS_BOARD_ID},
       title: "${escaped}",
-      column_type: long_text
+      column_type: ${columnType}
     ) {
       id
     }

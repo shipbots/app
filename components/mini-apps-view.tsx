@@ -40,6 +40,19 @@ const CsvOrderFormatterApp = dynamic(
   },
 );
 
+const BolUploaderApp = dynamic(
+  () => import('./bol-uploader-app').then(m => m.BolUploaderApp),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-full flex items-center justify-center text-gray-500">
+        <Loader2 className="w-5 h-5 animate-spin mr-2" />
+        <span className="text-sm">Loading app…</span>
+      </div>
+    ),
+  },
+);
+
 interface AppDef {
   id: string;
   label: string;
@@ -133,11 +146,11 @@ const APPS: AppDef[] = [
   {
     id: 'bol-uploader',
     label: 'BOL Uploader',
-    description: 'Upload a Bill of Lading and have it read and filed to the client’s record automatically. (In development.)',
+    description: 'Upload or photograph a Bill of Lading — Claude reads it (pallet count, date, details), you confirm the client, and it files to the client’s BOLs tab.',
     bg: 'from-sky-400 to-blue-700',
     iconBg: '#1d4ed8',
     icon: Truck,
-    comingSoon: true,
+    Component: BolUploaderApp,
   },
 ];
 

@@ -13,13 +13,15 @@ import { EmailsTab } from './emails-tab';
 import { ShipHeroPOsTab } from './shiphero-pos-tab';
 import { TasksTab } from './tasks-tab';
 import { DocumentsTab } from './documents-tab';
+import { BolsTab } from './bols-tab';
 import { ShipHeroPO } from '@/app/api/shiphero-pos/route';
 import { SubItem } from '@/lib/types';
+import type { BolRecord } from '@/lib/bol';
 import { PIPELINE_STAGES, INACTIVE_STATUSES, CLIENT_GROUP_EXITED } from '@/lib/constants';
 import {
   X, FileText, ClipboardList, Video, Mail, ExternalLink,
   Maximize2, Minimize2, UserPlus, ChevronDown, MailWarning, Phone, Package, CheckSquare, RefreshCw, FolderOpen,
-  Search, ChevronRight, Loader2, BarChart3,
+  Search, ChevronRight, Loader2, BarChart3, Truck,
 } from 'lucide-react';
 
 // ─── Agent badge helpers ─────────────────────────────────────────────────────
@@ -594,11 +596,11 @@ interface ClientDetailPanelProps {
   onFullscreenChange?: (fullscreen: boolean) => void;
 }
 
-type Tab = 'info' | 'onboarding' | 'meetings' | 'emails' | 'pos' | 'tasks' | 'docs';
+type Tab = 'info' | 'onboarding' | 'meetings' | 'emails' | 'pos' | 'tasks' | 'docs' | 'bols';
 
 // Tabs visible in the Customer Service surface — the focus is reference
-// material (client info + docs), task work, and shared calendar context.
-const CUSTOMER_SERVICE_TABS: ReadonlyArray<Tab> = ['info', 'tasks', 'docs'];
+// material (client info + docs + BOLs), task work, and shared calendar context.
+const CUSTOMER_SERVICE_TABS: ReadonlyArray<Tab> = ['info', 'tasks', 'docs', 'bols'];
 
 // ── Persisted layout sizes for the CS expanded view ──────────────────────
 // Keyed in localStorage so the rep's chosen split sticks across sessions /
@@ -753,11 +755,13 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
   const [emailsRequested, setEmailsRequested]     = useState(false);
   const [posRequested, setPosRequested]           = useState(false);
   const [tasksRequested, setTasksRequested]       = useState(false);
+  const [bolsRequested, setBolsRequested]         = useState(false);
   useEffect(() => {
     if (activeTab === 'meetings')      setMeetingsRequested(true);
     else if (activeTab === 'emails')   setEmailsRequested(true);
     else if (activeTab === 'pos')      setPosRequested(true);
     else if (activeTab === 'tasks')    setTasksRequested(true);
+    else if (activeTab === 'bols')     setBolsRequested(true);
   }, [activeTab]);
 
   // clientInfo carries the legal name / contact names / contact emails /
@@ -856,6 +860,24 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
     mutateTasks(prev => [...newTasks, ...prev]);
     refetchTasks();
   };
+
+  // BOLs (Bill of Lading records) — keyed on the Clients-board item, since
+  // that's where the records + document images live.
+  const bolsUrl = bolsRequested && item.clientBoardItemId
+    ? `/api/client/${item.clientBoardItemId}/bols`
+    : null;
+  const {
+    data: bolsData,
+    isFetching: bolsFetching,
+    error: bolsFetchError,
+  } = useCachedFetch<{ bols: BolRecord[] }>(
+    bolsRequested && item.clientBoardItemId ? `bols:${item.clientBoardItemId}` : null,
+    bolsUrl,
+  );
+  const bols = bolsData?.bols ?? [];
+  const loadingBols = bolsData === undefined && bolsFetching;
+  const bolsError = bolsData === undefined && bolsFetchError ? bolsFetchError.message : null;
+
   // Fullscreen is controlled by the parent when provided (so it survives the
   // per-client remount); otherwise fall back to local state.
   const [fullscreenLocal, setFullscreenLocal] = useState(false);
@@ -929,10 +951,11 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
       badge: incompleteTaskCount > 0 ? incompleteTaskCount : undefined,
     },
     { id: 'docs', label: 'Docs', icon: <FolderOpen className="w-4 h-4" /> },
+    { id: 'bols', label: 'BOLs', icon: <Truck className="w-4 h-4" /> },
   ];
 
-  // Customer Service surface only shows Client Info, Tasks, and Docs — keep
-  // the onboarding-specific tabs hidden so CS reps don't see / edit them.
+  // Customer Service surface only shows Client Info, Tasks, Docs, and BOLs —
+  // keep the onboarding-specific tabs hidden so CS reps don't see / edit them.
   const tabs = isCustomerService
     ? allTabs.filter(t => CUSTOMER_SERVICE_TABS.includes(t.id))
     : allTabs;
@@ -1073,6 +1096,9 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
             if (clientInfo) setClientInfo(prev => prev ? { ...prev, ...updates } : prev);
           }}
         />
+      )}
+      {activeTab === 'bols' && (
+        <BolsTab bols={bols} loading={loadingBols} error={bolsError} />
       )}
     </>
   );
@@ -1588,6 +1614,9 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
                 if (clientInfo) setClientInfo(prev => prev ? { ...prev, ...updates } : prev);
               }}
             />
+          )}
+          {activeTab === 'bols' && (
+            <BolsTab bols={bols} loading={loadingBols} error={bolsError} />
           )}
         </div>
     </div>
