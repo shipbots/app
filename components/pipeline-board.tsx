@@ -35,6 +35,10 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
   const isCustomerService = appMode === 'customer-service';
   const { data: session } = useSession();
   const [selectedItem, setSelectedItem] = useState<OnboardingItem | null>(null);
+  // Owned here (not inside ClientDetailPanel) so the expanded/fullscreen view
+  // survives the per-client remount — switching clients keeps the user
+  // expanded. Reset when the panel closes so a fresh open starts collapsed.
+  const [detailFullscreen, setDetailFullscreen] = useState(false);
   // Lets the Chrome extension deep-link directly into a view via ?view=tasks.
   // Only honored on first mount; subsequent toggle clicks set state normally.
   const initialView = (() => {
@@ -536,7 +540,9 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
           items={effectiveItems}
           appMode={appMode}
           initialAgentEmail={selectedItem.clientBoardItemId ? (agentEmailMap[selectedItem.clientBoardItemId] ?? '') : ''}
-          onClose={() => setSelectedItem(null)}
+          onClose={() => { setSelectedItem(null); setDetailFullscreen(false); }}
+          fullscreen={detailFullscreen}
+          onFullscreenChange={setDetailFullscreen}
           onAgentAssigned={(clientBoardItemId, email) =>
             setAgentEmailMap(prev => ({ ...prev, [clientBoardItemId]: email }))
           }

@@ -586,6 +586,12 @@ interface ClientDetailPanelProps {
   /** Called after the Active/Inactive toggle saves so the parent can update
    *  its filtered lists without a full server round-trip. */
   onClientActiveChanged?: (clientBoardItemId: string, active: boolean) => void;
+  /** Fullscreen (expanded) state — owned by the parent so it survives the
+   *  per-client remount (PipelineBoard keys this panel on the item id). That
+   *  keeps the user in the expanded view when they switch clients from the
+   *  in-panel client switcher, in both Onboarding and Customer Service. */
+  fullscreen?: boolean;
+  onFullscreenChange?: (fullscreen: boolean) => void;
 }
 
 type Tab = 'info' | 'onboarding' | 'meetings' | 'emails' | 'pos' | 'tasks' | 'docs';
@@ -617,7 +623,7 @@ function readPersistedNumber(key: string, fallback: number): number {
   }
 }
 
-export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onItemUpdate, onNavigate, appMode = 'onboarding', onClientActiveChanged }: ClientDetailPanelProps) {
+export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onItemUpdate, onNavigate, appMode = 'onboarding', onClientActiveChanged, fullscreen: fullscreenProp, onFullscreenChange }: ClientDetailPanelProps) {
   const isCustomerService = appMode === 'customer-service';
   // CS expanded view layout sizes — drag the handles to resize, prefs
   // persist in localStorage so they stick across sessions.
@@ -744,7 +750,15 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
   const [tasksFetched, setTasksFetched] = useState(false);
   const [emailsFetched, setEmailsFetched] = useState(false);
   const [meetingsFetched, setMeetingsFetched] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
+  // Fullscreen is controlled by the parent when provided (so it survives the
+  // per-client remount); otherwise fall back to local state.
+  const [fullscreenLocal, setFullscreenLocal] = useState(false);
+  const fullscreen = fullscreenProp ?? fullscreenLocal;
+  const setFullscreen = (next: boolean | ((f: boolean) => boolean)) => {
+    const value = typeof next === 'function' ? next(fullscreen) : next;
+    if (onFullscreenChange) onFullscreenChange(value);
+    else setFullscreenLocal(value);
+  };
   const [agentEmail, setAgentEmail] = useState(initialAgentEmail || item.supportAgentEmail || '');
   const [currentStatus, setCurrentStatus] = useState(item.status);
   // Local display name — updated immediately when the user renames the client
