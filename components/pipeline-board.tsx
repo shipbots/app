@@ -377,10 +377,12 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50" />
                 <input
                   type="text"
-                  placeholder="Search clients..."
+                  placeholder={isCustomerService
+                    ? 'Search name, email, phone, contact, store…'
+                    : 'Search clients...'}
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  className="pl-9 pr-4 py-2 rounded-lg text-sm text-white placeholder-white/50 focus:outline-none focus:ring-2 w-64"
+                  className="pl-9 pr-4 py-2 rounded-lg text-sm text-white placeholder-white/50 focus:outline-none focus:ring-2 w-72"
                   style={{
                     background: 'rgba(255,255,255,0.12)',
                     border: '1px solid rgba(255,255,255,0.25)',
@@ -407,7 +409,11 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
           </div>
         </header>
 
-        {/* ── Browse-by-Client view (Customer Service surface) ── */}
+        {/* ── Browse-by-Client view (Customer Service surface) ──
+            Search moves up to the CS header so it's a single top-right
+            input; `searchQuery`/`setSearchQuery` are the same state that
+            filters the Onboarding kanban, but in CS mode the kanban isn't
+            rendered so this input purely drives ClientsView. */}
         {viewMode === 'clients' && (
           <ClientsView
             items={effectiveItems}
@@ -418,6 +424,8 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
             currentUserEmail={session?.user?.email ?? null}
             currentUserName={session?.user?.name ?? null}
             clientGroupOverrides={clientGroupOverrides}
+            externalQuery={isCustomerService ? searchQuery : undefined}
+            onExternalQueryChange={isCustomerService ? setSearchQuery : undefined}
           />
         )}
 

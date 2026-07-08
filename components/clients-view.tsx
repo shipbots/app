@@ -86,6 +86,12 @@ interface ClientsViewProps {
    *  toggle. Layered on top of the search index so reps see their toggle
    *  reflected without waiting for a Monday refetch. */
   clientGroupOverrides?: Record<string, string>;
+  /** Controlled search input. When both are provided, the "Browse by
+   *  Client" strip's own search field is hidden and this query is used
+   *  instead — lets the CS header host the search in the top-right corner
+   *  as a single canonical input, no duplication. */
+  externalQuery?: string;
+  onExternalQueryChange?: (q: string) => void;
 }
 
 // "Exited" group id — duplicated from lib/constants since this is a client
@@ -877,8 +883,17 @@ export function ClientsView({
   currentUserEmail,
   currentUserName,
   clientGroupOverrides = {},
+  externalQuery,
+  onExternalQueryChange,
 }: ClientsViewProps) {
-  const [query, setQuery] = useState('');
+  // When the CS header hosts the search, the view treats `externalQuery`
+  // as the source of truth and the local input goes away entirely. This
+  // keeps a single controlled source so typing in the header updates the
+  // list without any sync effect.
+  const isControlled = externalQuery !== undefined && onExternalQueryChange !== undefined;
+  const [localQuery, setLocalQuery] = useState('');
+  const query = isControlled ? (externalQuery ?? '') : localQuery;
+  const setQuery = isControlled ? (onExternalQueryChange ?? (() => {})) : setLocalQuery;
   const [showInactive, setShowInactive] = useState(false);
   const me = (currentUserEmail ?? '').toLowerCase();
 
@@ -1034,37 +1049,61 @@ export function ClientsView({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-gray-50 p-4 gap-3">
-      {/* Sub-header: search + view inactive toggle */}
+      {/* Sub-header: search + view inactive toggle.
+          When the search is hosted in the CS header (controlled mode), the
+          "Browse by Client" title and the local search input both go away
+          — the surrounding row shrinks to just the inactive toggle plus
+          the index-status hint. Otherwise (fallback / other surfaces) the
+          local search input still renders. */}
       <div className="flex items-center gap-3 flex-shrink-0">
-        <div className="flex items-center gap-2 text-sm text-gray-700">
-          <Users className="w-4 h-4 text-[#015280]" />
-          <span className="font-semibold">Browse by Client</span>
-        </div>
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search name, email, phone, any contact, store, ShipHero, legal name…"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#43c7ff] bg-white"
-          />
-          {indexStatus !== 'ready' && (
-            <p className="absolute top-full mt-1 text-[10px] text-gray-400 flex items-center gap-1">
-              {indexStatus === 'loading' && (
-                <>
-                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                  Loading search index — only client name searchable until ready
-                </>
-              )}
-              {indexStatus === 'error' && (
-                <span className="text-red-500">
-                  Search index unavailable — falling back to client name only
-                </span>
-              )}
-            </p>
-          )}
-        </div>
+        {!isControlled && (
+          <div className="flex items-center gap-2 text-sm text-gray-700">
+            <Users className="w-4 h-4 text-[#015280]" />
+            <span className="font-semibold">Browse by Client</span>
+          </div>
+        )}
+        {!isControlled && (
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search name, email, phone, any contact, store, ShipHero, legal name…"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#43c7ff] bg-white"
+            />
+            {indexStatus !== 'ready' && (
+              <p className="absolute top-full mt-1 text-[10px] text-gray-400 flex items-center gap-1">
+                {indexStatus === 'loading' && (
+                  <>
+                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    Loading search index — only client name searchable until ready
+                  </>
+                )}
+                {indexStatus === 'error' && (
+                  <span className="text-red-500">
+                    Search index unavailable — falling back to client name only
+                  </span>
+                )}
+              </p>
+            )}
+          </div>
+        )}
+        {isControlled && indexStatus !== 'ready' && (
+          <p className="text-[11px] text-gray-400 flex items-center gap-1">
+            {indexStatus === 'loading' && (
+              <>
+                <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                Loading search index — only client name searchable until ready
+              </>
+            )}
+            {indexStatus === 'error' && (
+              <span className="text-red-500">
+                Search index unavailable — falling back to client name only
+              </span>
+            )}
+          </p>
+        )}
 
         {/* View inactive clients — toggle button. Off by default; turning it
             on brings inactive (Exited group) clients back into both tables. */}
