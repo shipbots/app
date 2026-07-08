@@ -21,7 +21,7 @@ import dynamic from 'next/dynamic';
 import { useSession } from 'next-auth/react';
 import {
   FileSpreadsheet, Sparkles, Loader2, Sheet, Warehouse,
-  LifeBuoy, BookOpen, GripVertical, Camera, Truck,
+  LifeBuoy, BookOpen, GripVertical, Camera, Truck, Undo2,
 } from 'lucide-react';
 
 // Lazy-load the CSV formatter so the xlsx (~500KB) bundle only ships when
@@ -133,6 +133,15 @@ const APPS: AppDef[] = [
     iconBg: '#5b21b6',
     icon: BookOpen,
     externalUrl: 'https://helpportal.shipbots.com',
+  },
+  {
+    id: 'returns-dashboard',
+    label: 'Returns Dashboard',
+    description: 'Opens the ShipBots Returns Dashboard (Google Apps Script) in a new tab.',
+    bg: 'from-rose-400 to-rose-700',
+    iconBg: '#be123c',
+    icon: Undo2,
+    externalUrl: 'https://script.google.com/a/macros/shipbots.com/s/AKfycbyqXjipgq_siGVjEkFUnE0q1qcTyuAGO8jf77B1vZhx0CK9xG2e3qLnG6BbRp6SYPKS/exec',
   },
   {
     id: 'photo-to-po',

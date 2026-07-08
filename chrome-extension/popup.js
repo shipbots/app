@@ -1130,6 +1130,7 @@ const MINI_APPS = {
   'sh-portal':          { external: 'https://www.shipbots.com/portal' },
   'help-shiphero':      { external: 'https://help.shipbots.com' },
   'help-portal':        { external: 'https://helpportal.shipbots.com' },
+  'returns-dashboard':  { external: 'https://script.google.com/a/macros/shipbots.com/s/AKfycbyqXjipgq_siGVjEkFUnE0q1qcTyuAGO8jf77B1vZhx0CK9xG2e3qLnG6BbRp6SYPKS/exec' },
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
