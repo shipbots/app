@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, createContext, useContext } from 'react';
 import { ClientInfo, MonFile } from '@/lib/types';
 import {
   Mail, Phone, MapPin, ExternalLink, Check, Pencil,
@@ -9,6 +9,46 @@ import {
   ArrowUpDown,
 } from 'lucide-react';
 import { ClientStickyNotesSummary } from './client-sticky-notes-summary';
+
+// ─── Customer Service "clean view" mode ──────────────────────────────────────
+// In the Customer Service surface the client record is a reference view: only
+// fields that have a value are shown, and each Section has an Edit button that
+// flips just that section into the full editable layout (all fields, including
+// empty ones). Onboarding is unaffected — csMode stays false there, so every
+// field renders exactly as before.
+//
+// csMode is provided once at the ClientInfoTab root; each Section owns its own
+// `editing` flag and provides it via SectionEditContext. Field components read
+// both: csMode && !editing → hide when empty / render clean read-only.
+const CsModeContext = createContext(false);
+const SectionEditContext = createContext(false);
+function useFieldMode() {
+  return { csMode: useContext(CsModeContext), editing: useContext(SectionEditContext) };
+}
+
+// Clean read-only row used by every field in CS view mode. Renders nothing for
+// empty values; renders HTML values (rich-text columns) the same way EditField
+// does in its filled state.
+function ReadRow({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
+  if (!value) return null;
+  const isHtml = /<[a-z][\s\S]*>/i.test(value);
+  return (
+    <div className="flex items-start gap-2 px-1 py-1.5">
+      {icon && <span className="text-gray-400 mt-0.5 flex-shrink-0">{icon}</span>}
+      <div className="min-w-0">
+        <p className="text-[11px] leading-none mb-0.5 text-gray-400">{label}</p>
+        {isHtml ? (
+          <div
+            className="text-sm text-gray-900 [&_ul]:list-disc [&_ul]:ml-4 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:ml-4 [&_ol]:my-1 [&_li]:mb-0.5 [&_strong]:font-semibold [&_p]:mb-1"
+            dangerouslySetInnerHTML={{ __html: value }}
+          />
+        ) : (
+          <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">{value}</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 interface ClientInfoTabProps {
   client: ClientInfo;
@@ -40,6 +80,10 @@ interface ClientInfoTabProps {
    *  on the Clients board) saves — drives the calendar "Expected Delivery"
    *  event in real time. */
   onEstimatedDeliveryDateSaved?: (newValue: string) => void;
+  /** Customer Service "clean view": each section shows only completed fields,
+   *  with a per-section Edit button that reveals all fields for editing.
+   *  Off (default) in Onboarding, which keeps the always-editable layout. */
+  customerService?: boolean;
 }
 
 // ─── Copyable + Editable field (for portal login credentials) ────────────────
@@ -109,6 +153,43 @@ function CopyableEditField({
   };
 
   const displayValue = secret && !revealed ? '••••••••••' : value;
+
+  const { csMode, editing: sectionEditing } = useFieldMode();
+  // CS view mode: hide empties, show a clean read row that keeps copy + reveal
+  // (portal credentials are the main thing reps copy).
+  if (csMode && !sectionEditing) {
+    if (!value) return null;
+    return (
+      <div className="group flex items-center gap-2 px-1 py-1.5">
+        {icon && <span className="text-gray-400 flex-shrink-0">{icon}</span>}
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] text-gray-400 leading-none mb-0.5">{label}</p>
+          <p className="text-sm text-gray-900 font-mono break-all">{displayValue}</p>
+        </div>
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+          {flash === 'copied' && <span className="text-[10px] text-[#015280] font-medium">Copied!</span>}
+          {secret && (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); setRevealed(r => !r); }}
+              className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors"
+              title={revealed ? 'Hide' : 'Reveal'}
+            >
+              <span className="text-[10px] font-medium">{revealed ? 'Hide' : 'Show'}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-[#43c7ff] transition-colors"
+            title="Copy to clipboard"
+          >
+            <Copy className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (editing) {
     return (
@@ -195,20 +276,52 @@ function Section({
   children: React.ReactNode;
   defaultOpen?: boolean;
 }) {
+  const csMode = useContext(CsModeContext);
   const [open, setOpen] = useState(defaultOpen);
+  // Per-section edit toggle (Customer Service only). When off, fields render
+  // clean read-only and empties are hidden; when on, every field shows and is
+  // editable. Opening edit mode also expands the section.
+  const [editing, setEditing] = useState(false);
   const hasContent = !!children;
+
+  const toggleEdit = () => {
+    setEditing(v => {
+      const next = !v;
+      if (next) setOpen(true);
+      return next;
+    });
+  };
+
   return (
     <div className="border border-gray-100 rounded-lg overflow-hidden mb-3">
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
-      >
-        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">{title}</span>
-        {open ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-      </button>
+      <div className="w-full flex items-center gap-2 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors">
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          className="flex-1 flex items-center justify-between gap-2 text-left min-w-0"
+        >
+          <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider truncate">{title}</span>
+          {open ? <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />}
+        </button>
+        {csMode && (
+          <button
+            type="button"
+            onClick={toggleEdit}
+            className={`flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md border transition-colors flex-shrink-0 ${
+              editing
+                ? 'border-[#015280] bg-[#015280] text-white hover:bg-[#013d60]'
+                : 'border-gray-200 text-[#015280] hover:bg-[#e6f8ff] hover:border-[#43c7ff]'
+            }`}
+            title={editing ? 'Finish editing this section' : 'Edit this section'}
+          >
+            {editing ? <><Check className="w-3 h-3" /> Done</> : <><Pencil className="w-3 h-3" /> Edit</>}
+          </button>
+        )}
+      </div>
       {open && hasContent && (
-        <div className="px-3 py-2 space-y-0.5">{children}</div>
+        <div className="px-3 py-2 space-y-0.5">
+          <SectionEditContext.Provider value={editing}>{children}</SectionEditContext.Provider>
+        </div>
       )}
     </div>
   );
@@ -301,6 +414,12 @@ function SelectField({
 
   // Only show amber highlight when the field is empty
   const isHighlighted = !!(highlight && !value);
+
+  const { csMode, editing } = useFieldMode();
+  if (csMode && !editing) {
+    if (!value) return null;
+    return <ReadRow label={label} value={value} icon={icon} />;
+  }
 
   // Compact dropdown (always used — just changes how the empty vs filled state looks)
   return (
@@ -420,6 +539,12 @@ function DateField({
 
   // Only highlight when empty
   const isHighlighted = !!(highlight && !value);
+
+  const { csMode, editing } = useFieldMode();
+  if (csMode && !editing) {
+    if (!value) return null;
+    return <ReadRow label={label} value={value} icon={icon} />;
+  }
 
   if (!expanded) {
     return (
@@ -548,6 +673,13 @@ function EditField({
 
   // Only show amber highlight when the field is empty
   const isHighlighted = !!(highlight && !value);
+
+  const { csMode, editing: sectionEditing } = useFieldMode();
+  // CS view mode: hide empty fields, show filled ones as a clean read row.
+  if (csMode && !sectionEditing && !editing) {
+    if (!value) return null;
+    return <ReadRow label={label} value={value} icon={icon} />;
+  }
 
   if (editing) {
     const baseClass = 'w-full text-sm border border-[#43c7ff] rounded px-2 py-1 mt-0.5 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] bg-white';
@@ -923,6 +1055,25 @@ function ContactBlock({
   const isEmpty = !name && !email && !phone;
   const [open, setOpen] = useState(!isEmpty);
 
+  const { csMode, editing } = useFieldMode();
+  // CS view mode: hide contacts with no info; show the rest as clean read
+  // rows (the inner fields self-render read-only via context). Drop the
+  // collapsible / Make-Primary / hub-add chrome — those are edit affordances.
+  if (csMode && !editing) {
+    if (isEmpty) return null;
+    return (
+      <div>
+        <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide pt-1 pb-0.5">{label}</p>
+        <div className="space-y-0.5">
+          <EditField label="Name"  value={name}  columnId={nameCol}  clientId={clientId} copyable />
+          <EditField label="Email" value={email} columnId={emailCol} clientId={clientId} icon={<Mail className="w-3.5 h-3.5" />} copyable />
+          <EditField label="Phone" value={phone} columnId={phoneCol} clientId={clientId} icon={<Phone className="w-3.5 h-3.5" />} copyable />
+          {shipHeroCol && <EditField label="ShipHero Access?" value={shipHeroAccess} columnId={shipHeroCol} clientId={clientId} />}
+        </div>
+      </div>
+    );
+  }
+
   if (collapsible && isEmpty) {
     return (
       <div>
@@ -1043,6 +1194,29 @@ function FileField({
     }
   }, [columnId, clientId, onUploaded]);
 
+  const { csMode, editing } = useFieldMode();
+  if (csMode && !editing) {
+    if (!file) return null;
+    return (
+      <div className="flex items-start gap-2 px-1 py-1.5">
+        <FileText className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] text-gray-400 leading-none mb-1">{label}</p>
+          <a
+            href={`/api/assets/${file.assetId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={file.name}
+            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border border-[#43c7ff]/40 bg-[#e6f8ff] text-[#015280] hover:bg-[#d0f2ff] hover:border-[#43c7ff] transition-colors"
+          >
+            <FileText className="w-4 h-4 flex-shrink-0" />
+            <span className="text-xs font-medium max-w-[140px] truncate">{file.name}</span>
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-start gap-2 px-1 py-1.5">
       <FileText className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
@@ -1082,7 +1256,7 @@ function FileField({
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
-export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, hideHeader = false, hideContactInfo = false, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange, onDeliveredDateSaved, onEstimatedDeliveryDateSaved }: ClientInfoTabProps) {
+export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, hideHeader = false, hideContactInfo = false, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange, onDeliveredDateSaved, onEstimatedDeliveryDateSaved, customerService = false }: ClientInfoTabProps) {
   // The "two-column-per-section" layout is the standard fullscreen treatment
   // when the panel is the only thing on screen. The CS expanded view sets
   // forceSingleColumn so the right half of the screen can host its own
@@ -1307,6 +1481,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
   }, [id, localClient.docusignFile]);
 
   return (
+    <CsModeContext.Provider value={customerService}>
     <div className="p-4 overflow-y-auto h-full">
 
       {/* Compact sticky-notes preview at the top of Client Info, for
@@ -1626,5 +1801,6 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
       </div>
 
     </div>
+    </CsModeContext.Provider>
   );
 }

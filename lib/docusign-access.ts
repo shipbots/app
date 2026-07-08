@@ -15,6 +15,7 @@
  */
 
 const DEFAULT_DOCUSIGN_USERS = [
+  'andres@shipbots.com',
   'angelo@shipbots.com',
   'payam@shipbots.com',
   'danielle@shipbots.com',
