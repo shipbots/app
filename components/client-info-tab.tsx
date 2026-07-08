@@ -326,8 +326,15 @@ function CopyableEditField({
 
   const { csMode, editing: sectionEditing } = useFieldMode();
   // CS view mode: hide empties, show a clean read row that keeps copy + reveal
-  // (portal credentials are the main thing reps copy).
-  if (csMode && !sectionEditing) {
+  // (portal credentials are the main thing reps copy). The `!editing` gate
+  // is load-bearing: without it, the first keystroke in an "+ Add" flow
+  // pushes `value` from '' to 'a', re-runs this branch with a truthy
+  // value, and returns the read-display div — unmounting the <input>,
+  // which blurs, which fires save() with a single-character value. The
+  // user sees only the first letter save. Skipping this whole block while
+  // editing lets the `if (editing)` block below stay mounted for the
+  // whole typing session.
+  if (csMode && !sectionEditing && !editing) {
     if (!value) {
       // csAddable=true → render a compact "+ Add" affordance so reps can
       // enter Portal credentials inline without flipping the whole
@@ -335,23 +342,20 @@ function CopyableEditField({
       // local editing state; the block below (`if (editing)`) then
       // renders the text input.
       if (!csAddable) return null;
-      if (!editing) {
-        return (
-          <button
-            type="button"
-            onClick={() => { setEditing(true); setTimeout(() => inputRef.current?.focus(), 30); }}
-            className="group flex items-center gap-2 px-1 py-1.5 w-full text-left hover:bg-gray-50 rounded-md"
-          >
-            {icon && <span className="text-gray-300 flex-shrink-0">{icon}</span>}
-            <div className="flex-1 min-w-0">
-              <p className="text-[11px] text-gray-400 leading-none mb-0.5">{label}</p>
-              <p className="text-[13px] italic text-gray-400 group-hover:text-[#015280]">+ Add</p>
-            </div>
-          </button>
-        );
-      }
-      // fall through — editing block below renders the input
-    } else {
+      return (
+        <button
+          type="button"
+          onClick={() => { setEditing(true); setTimeout(() => inputRef.current?.focus(), 30); }}
+          className="group flex items-center gap-2 px-1 py-1.5 w-full text-left hover:bg-gray-50 rounded-md"
+        >
+          {icon && <span className="text-gray-300 flex-shrink-0">{icon}</span>}
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] text-gray-400 leading-none mb-0.5">{label}</p>
+            <p className="text-[13px] italic text-gray-400 group-hover:text-[#015280]">+ Add</p>
+          </div>
+        </button>
+      );
+    }
     return (
       <div className="group flex items-center gap-2 px-1 py-1.5">
         {icon && <span className="text-gray-400 flex-shrink-0">{icon}</span>}
@@ -386,7 +390,6 @@ function CopyableEditField({
         </div>
       </div>
     );
-    }
   }
 
   if (editing) {
