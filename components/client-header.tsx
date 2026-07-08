@@ -674,7 +674,14 @@ function ContactCard({
               Add name, email &amp; phone
             </button>
           ) : (
-            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+            // 3fr / 2fr split: emails outgrow phone numbers most of the
+            // time, so give the email column the extra room and slide
+            // the phone right. Both cells still truncate with a title
+            // tooltip when the value is longer than the column allows.
+            <div
+              className="mt-2 grid gap-x-3 gap-y-1"
+              style={{ gridTemplateColumns: 'minmax(0,3fr) minmax(0,2fr)' }}
+            >
               <InlineField
                 icon={<Mail className="w-3 h-3" />}
                 value={data.email}

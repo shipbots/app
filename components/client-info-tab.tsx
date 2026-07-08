@@ -326,7 +326,11 @@ function CopyableEditField({
         {icon && <span className="text-gray-400 flex-shrink-0">{icon}</span>}
         <div className="flex-1 min-w-0">
           <p className="text-[11px] text-gray-400 leading-none mb-0.5">{label}</p>
-          <p className="text-sm text-gray-900 font-mono break-all">{displayValue}</p>
+          {/* Proportional font (was font-mono) + truncate so long values
+              like "support+arcanium@shipbots.com" fit on one line
+              instead of breaking mid-word. Hovering shows the full value
+              via title. */}
+          <p className="text-[13px] text-gray-900 truncate" title={displayValue}>{displayValue}</p>
         </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
           {flash === 'copied' && <span className="text-[10px] text-[#015280] font-medium">Copied!</span>}
@@ -369,7 +373,7 @@ function CopyableEditField({
               if (e.key === 'Enter') save();
               if (e.key === 'Escape') { setValue(savedValue); setEditing(false); }
             }}
-            className="w-full text-sm border border-[#43c7ff] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] bg-white font-mono"
+            className="w-full text-[13px] border border-[#43c7ff] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] bg-white"
           />
         </div>
       </div>
@@ -381,7 +385,10 @@ function CopyableEditField({
       {icon && <span className="text-gray-400 flex-shrink-0">{icon}</span>}
       <div className="flex-1 min-w-0">
         <p className="text-[11px] text-gray-400 leading-none mb-0.5">{label}</p>
-        <p className={`text-sm text-gray-900 font-mono ${!value ? 'text-gray-300 italic' : ''}`}>
+        <p
+          className={`text-[13px] truncate ${!value ? 'text-gray-300 italic' : 'text-gray-900'}`}
+          title={value ? displayValue : undefined}
+        >
           {value ? displayValue : 'Not set'}
         </p>
       </div>
@@ -2010,7 +2017,13 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
             Open
           </a>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-3">
+        {/* 3fr / 2fr split: emails are typically 2× the length of
+            passwords, so give the login column the extra room. Both
+            still truncate at very long values (tooltip shows full). */}
+        <div
+          className="grid gap-x-3"
+          style={{ gridTemplateColumns: 'minmax(0,3fr) minmax(0,2fr)' }}
+        >
           <CopyableEditField
             label="Login Email / Username"
             value={localClient.portalLogin}
