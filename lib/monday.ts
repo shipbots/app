@@ -600,7 +600,7 @@ async function getColumnTypeMap(boardId: string): Promise<Record<string, MondayC
 function formatColumnValue(
   type: MondayColumnType,
   value: string
-): string | { label: string } | { labels: string[] } | { date: string } | { text: string } {
+): string | { label: string } | { labels: string[] } | { date: string } | { text: string } | { url: string; text: string } {
   switch (type) {
     case 'status':
     case 'color': // legacy alias for status
@@ -611,6 +611,31 @@ function formatColumnValue(
       return value ? { date: value } : '';
     case 'long_text':
       return { text: value ?? '' };
+    case 'link': {
+      // Monday link columns require { url, text }. Callers can pass either
+      // a plain URL (we'll reuse it as the display text) OR a
+      // pipe-separated "url|text" pair OR a JSON blob { url, text }.
+      // Empty value clears the field.
+      const raw = (value ?? '').trim();
+      if (!raw) return { url: '', text: '' };
+      if (raw.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(raw);
+          const url = typeof parsed.url === 'string' ? parsed.url : '';
+          const text = typeof parsed.text === 'string' && parsed.text ? parsed.text : url;
+          return { url, text };
+        } catch {
+          // fall through to pipe-parse
+        }
+      }
+      const pipe = raw.indexOf('|');
+      if (pipe > 0) {
+        const url = raw.slice(0, pipe).trim();
+        const text = raw.slice(pipe + 1).trim() || url;
+        return { url, text };
+      }
+      return { url: raw, text: raw };
+    }
     case 'text':
     default:
       return value ?? '';

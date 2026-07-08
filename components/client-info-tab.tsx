@@ -814,6 +814,141 @@ function DateField({
   );
 }
 
+// ─── Link field (Monday `link` column type) ─────────────────────────────────
+// Renders as an external-link row when a URL is on file, or a "+ Add link"
+// affordance when empty. Edit mode is a URL input; the display label
+// defaults to the URL host (mirrors Monday's default when text is blank).
+// Save PATCHes the column with `{"url":"…","text":"…"}` — lib/monday.ts's
+// formatColumnValue handles the link-type serialization end-to-end.
+function LinkField({
+  label,
+  value,
+  columnId,
+  clientId,
+  icon,
+  onSaved,
+}: {
+  label: string;
+  value: { url: string; text: string } | null;
+  columnId: string;
+  clientId: string;
+  icon?: React.ReactNode;
+  onSaved?: (next: { url: string; text: string } | null) => void;
+}) {
+  const [saved, setSaved] = useState<{ url: string; text: string } | null>(value);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value?.url ?? '');
+  const [saving, setSaving] = useState(false);
+  const [flash, setFlash] = useState<'saved' | 'error' | null>(null);
+
+  useEffect(() => { setSaved(value); setDraft(value?.url ?? ''); }, [value]);
+
+  const save = useCallback(async () => {
+    const url = draft.trim();
+    if ((saved?.url ?? '') === url) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      // Send the raw URL; the backend's formatColumnValue turns it into
+      // {url, text} for Monday. Empty string clears the field.
+      const res = await fetch(`/api/client/${clientId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ columnId, value: url }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        console.error(`[LinkField] save failed: ${columnId} status=${res.status}`, body);
+        throw new Error(`${res.status}`);
+      }
+      const next = url ? { url, text: url } : null;
+      setSaved(next);
+      onSaved?.(next);
+      setFlash('saved');
+      setTimeout(() => setEditing(false), 400);
+    } catch (err) {
+      console.error(`[LinkField] save error: ${columnId}`, err);
+      setFlash('error');
+    } finally {
+      setSaving(false);
+      setTimeout(() => setFlash(null), 2500);
+    }
+  }, [draft, saved, columnId, clientId, onSaved]);
+
+  const { csMode, editing: sectionEditing } = useFieldMode();
+  // CS read view: hide empty links entirely (consistent with EditField).
+  if (csMode && !sectionEditing && !editing && !saved?.url) return null;
+
+  if (editing) {
+    return (
+      <div className="flex items-start gap-2 px-1 py-1.5">
+        {icon && <span className="text-gray-400 mt-0.5 flex-shrink-0">{icon}</span>}
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] text-gray-400 leading-none mb-0.5">{label}</p>
+          <input
+            type="url"
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onBlur={save}
+            autoFocus
+            placeholder="https://…"
+            className="w-full text-sm border border-[#43c7ff] rounded px-2 py-1 mt-0.5 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] bg-white"
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); save(); }
+              if (e.key === 'Escape') { e.preventDefault(); setDraft(saved?.url ?? ''); setEditing(false); }
+            }}
+          />
+        </div>
+        {saving && <div className="w-3.5 h-3.5 rounded-full border-2 border-[#43c7ff] border-t-transparent animate-spin flex-shrink-0 mt-1" />}
+      </div>
+    );
+  }
+
+  if (!saved?.url) {
+    return (
+      <button
+        type="button"
+        onClick={() => { setDraft(''); setEditing(true); }}
+        className="w-full flex items-center gap-2 px-1 py-1.5 hover:bg-[#e6f8ff] rounded group text-left"
+      >
+        {icon && <span className="text-gray-300 flex-shrink-0">{icon}</span>}
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] text-gray-400 leading-none mb-0.5">{label}</p>
+          <span className="text-sm text-gray-400 italic group-hover:text-[#015280]">+ Add link</span>
+        </div>
+        {flash === 'error' && <span className="text-xs text-red-500 flex-shrink-0">!</span>}
+      </button>
+    );
+  }
+
+  return (
+    <div className="group flex items-start gap-2 px-1 py-1.5">
+      {icon && <span className="text-gray-400 mt-0.5 flex-shrink-0">{icon}</span>}
+      <div className="flex-1 min-w-0">
+        <p className="text-[11px] text-gray-400 leading-none mb-0.5">{label}</p>
+        <a
+          href={saved.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm text-[#015280] hover:underline truncate block"
+          title={saved.url}
+        >
+          {saved.text || saved.url}
+        </a>
+      </div>
+      <button
+        type="button"
+        onClick={() => { setDraft(saved.url); setEditing(true); }}
+        title="Edit link"
+        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-gray-100 transition-opacity flex-shrink-0"
+      >
+        <Pencil className="w-3.5 h-3.5 text-gray-400" />
+      </button>
+      {flash === 'saved' && <Check className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />}
+      {flash === 'error' && <span className="text-xs text-red-500 flex-shrink-0">!</span>}
+    </div>
+  );
+}
+
 // ─── Editable field ─────────────────────────────────────────────────────────
 function EditField({
   label,
@@ -1776,18 +1911,14 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
             <ReadField label="⏱️ Time as Client (Days)" value={localClient.timeAsClientDays} />
             <EditField label="🌟 Interest in Additional Services" value={localClient.interestInAdditionalServices} columnId="text_mkw2y8q9" clientId={id} />
             <SelectField label="🏢 Umbrella Company" value={localClient.umbrellaCompany} columnId="dropdown_mkyk2va7" clientId={id} options={colOptions['dropdown_mkyk2va7'] ?? []} valueType="dropdown" />
-            {localClient.pricingProposal && (
-              <div className="flex items-start gap-2 px-1 py-1.5">
-                <ExternalLink className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-[11px] text-gray-400 leading-none mb-0.5">🔗 Pricing Proposal</p>
-                  <a href={localClient.pricingProposal.url} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-sm text-[#015280] hover:underline">
-                    {localClient.pricingProposal.text}
-                  </a>
-                </div>
-              </div>
-            )}
+            <LinkField
+              label="🔗 Pricing Proposal"
+              value={localClient.pricingProposal}
+              columnId="link_mktqh0sq"
+              clientId={id}
+              icon={<ExternalLink className="w-3.5 h-3.5" />}
+              onSaved={next => setLocalClient(prev => ({ ...prev, pricingProposal: next }))}
+            />
           </div>
 
           {/* ── Secondary column (fullscreen: right column; non-fullscreen: below) ── */}
