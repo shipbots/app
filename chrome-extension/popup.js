@@ -369,6 +369,166 @@ const DETAIL_SECTIONS = [
   },
 ];
 
+// Which ClientInfo keys the popup can PATCH directly. Value is the Monday
+// column id and whether the field is multi-line (renders as textarea).
+// Dropdown / color / date columns are intentionally omitted — they need a
+// select/date UI that's out of scope for this pass; the dashboard's own
+// panel still owns those. When the user asks for them here, add rows plus
+// the corresponding editor.
+const EDITABLE_KEYS = {
+  // General
+  legalEntity:          { columnId: 'text_mktp4fvk' },
+  ein:                  { columnId: 'text_mkxxfg1b' },
+  quickbooksName:       { columnId: 'text_mkx5b9b4' },
+  shipHeroId:           { columnId: 'text_mktmf2yw' },
+  shipHeroName:         { columnId: 'text_mkw9n26z' },
+  productDescription:   { columnId: 'long_text_mktqtxm', multiline: true },
+  businessHQ:           { columnId: 'text_mktx63am' },
+  manufacturingLocation:{ columnId: 'text_mktxyg5p' },
+  invoicingEmail:       { columnId: 'text_mktqjmmm' },
+  interestInAdditionalServices: { columnId: 'text_mkw2y8q9', multiline: true },
+  pickAndPack:          { columnId: 'text_mm1zw2vf' },
+  // Billing
+  billingStreet1: { columnId: 'text_mkx5vzht' },
+  billingStreet2: { columnId: 'text_mkx5f9p9' },
+  billingCity:    { columnId: 'text_mkx5z70k' },
+  billingState:   { columnId: 'text_mkx5er1a' },
+  billingZip:     { columnId: 'text_mkx5tjd7' },
+  billingCountry: { columnId: 'text_mkx5kyv4' },
+  // Receiving
+  initialInventoryMethod:       { columnId: 'text_mktrm9jx' },
+  initialInventoryQty:          { columnId: 'text_mktravgn' },
+  initialInventoryStoringNeeds: { columnId: 'text_mkw2z2tp' },
+  notesOnInitialInventory:      { columnId: 'long_text_mktqapsv', multiline: true },
+  notesForReceiving:            { columnId: 'long_text_mkxecta8', multiline: true },
+  // Packing & Shipping
+  ecommercePlatforms:           { columnId: 'long_text_mktra0sm', multiline: true },
+  skuCount:                     { columnId: 'text_mktqrstq' },
+  orderInsertDetails:           { columnId: 'text_mktpj2v0', multiline: true },
+  kitsOrBundles:                { columnId: 'text_mktp2938' },
+  additionalInsuranceSignature: { columnId: 'text_mktrs0xa' },
+  wholesaleDetails:             { columnId: 'text_mkw5t2ey', multiline: true },
+  outboundLTL:                  { columnId: 'text_mkw5bdr2' },
+  estimatedStorage:             { columnId: 'text_mkw4czc2' },
+  shippingVolume:               { columnId: 'text_mktqa6sm' },
+  additionalNotes:              { columnId: 'long_text_mktran3x', multiline: true },
+  additionalShippingNotes:      { columnId: 'long_text_mkwy13zg', multiline: true },
+  notesForPacking:              { columnId: 'long_text_mkxfv1hr', multiline: true },
+  // Returns
+  notesForReturns: { columnId: 'long_text_mkxeajq4', multiline: true },
+  // Portal / Support
+  portalLogin:    { columnId: 'text_mktxxfch' },
+  portalPassword: { columnId: 'text_mm28cz4g' },
+  portalEmail:    { columnId: 'text_mkwgke3w' },
+};
+
+async function patchClientField(clientId, columnId, value) {
+  const base = await getBaseUrl();
+  const res = await fetch(`${base}/api/client/${encodeURIComponent(clientId)}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ columnId, value }),
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+}
+
+// Attach click-to-edit behavior to a rendered `dd` element. Swaps the
+// value node with an input (or textarea for multiline) on click, saves
+// on blur/Enter (Cmd+Enter for textareas), Escape cancels. Small status
+// pip shows saving / saved / error.
+function attachInlineEdit(dd, client, field, spec) {
+  dd.classList.add('editable');
+  dd.setAttribute('title', 'Click to edit');
+  dd.addEventListener('click', e => {
+    if (dd.classList.contains('is-editing')) return;
+    // Ignore clicks on the anchor inside the dd — let those open normally
+    // (mailto:/tel:/URL). Users still edit via a small pencil that we
+    // insert after the anchor.
+    if (e.target.closest('a') && !e.target.dataset.editTrigger) return;
+    startEdit();
+  });
+  // For fields whose display is an anchor (email/phone/url), add a small
+  // pencil affordance next to it that triggers edit mode without swallowing
+  // the anchor's link behavior.
+  const anchor = dd.querySelector('a');
+  if (anchor) {
+    const pencil = document.createElement('button');
+    pencil.type = 'button';
+    pencil.className = 'edit-trigger';
+    pencil.dataset.editTrigger = '1';
+    pencil.title = 'Edit';
+    pencil.textContent = '✎';
+    pencil.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      startEdit();
+    });
+    dd.appendChild(pencil);
+  }
+
+  function startEdit() {
+    const original = String(client[field.key] ?? '');
+    dd.classList.add('is-editing');
+    const prevHTML = dd.innerHTML;
+    dd.innerHTML = '';
+    const input = document.createElement(spec.multiline ? 'textarea' : 'input');
+    input.className = 'edit-input';
+    if (!spec.multiline) input.type = field.type === 'email' ? 'email' : field.type === 'phone' ? 'tel' : 'text';
+    input.value = original;
+    dd.appendChild(input);
+    setTimeout(() => { input.focus(); input.select?.(); }, 0);
+
+    let done = false;
+    const finish = async commit => {
+      if (done) return;
+      done = true;
+      const next = input.value.trim();
+      if (!commit || next === original.trim()) {
+        dd.innerHTML = prevHTML;
+        dd.classList.remove('is-editing');
+        return;
+      }
+      dd.innerHTML = '';
+      const pip = document.createElement('span');
+      pip.className = 'edit-status saving';
+      pip.textContent = 'Saving…';
+      dd.appendChild(pip);
+      try {
+        await patchClientField(client.id, spec.columnId, next);
+        client[field.key] = next;
+        dd.innerHTML = '';
+        dd.appendChild(renderField(client, field));
+        // Re-attach edit behavior so the field stays editable.
+        attachInlineEdit(dd, client, field, spec);
+        const okPip = document.createElement('span');
+        okPip.className = 'edit-status ok';
+        okPip.textContent = ' ✓';
+        dd.appendChild(okPip);
+        setTimeout(() => okPip.remove(), 1200);
+      } catch (err) {
+        console.error('[inline-edit] save failed', err);
+        dd.innerHTML = prevHTML;
+        dd.classList.remove('is-editing');
+        const errPip = document.createElement('span');
+        errPip.className = 'edit-status err';
+        errPip.textContent = ' Save failed';
+        dd.appendChild(errPip);
+        setTimeout(() => errPip.remove(), 2000);
+        attachInlineEdit(dd, client, field, spec);
+      }
+      dd.classList.remove('is-editing');
+    };
+
+    input.addEventListener('blur', () => finish(true));
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+      else if (e.key === 'Enter' && !spec.multiline) { e.preventDefault(); finish(true); }
+      else if (e.key === 'Enter' && spec.multiline && (e.metaKey || e.ctrlKey)) { e.preventDefault(); finish(true); }
+    });
+  }
+}
+
 function fieldHasValue(client, field) {
   const v = client[field.key];
   if (field.type === 'link') return !!(v && v.url);
@@ -440,11 +600,24 @@ function buildSection(section, client) {
   } else {
     let any = false;
     for (const field of section.fields) {
-      if (!fieldHasValue(client, field)) continue;
+      const hasValue = fieldHasValue(client, field);
+      const spec = EDITABLE_KEYS[field.key];
+      // Skip empty fields UNLESS they're editable — for editable fields we
+      // still render a placeholder "+ Add" so the user can enter data
+      // directly from the popup without opening the dashboard.
+      if (!hasValue && !spec) continue;
       const dt = document.createElement('dt');
       dt.textContent = field.label;
       const dd = document.createElement('dd');
-      dd.appendChild(renderField(client, field));
+      if (hasValue) {
+        dd.appendChild(renderField(client, field));
+      } else {
+        const add = document.createElement('span');
+        add.className = 'edit-empty';
+        add.textContent = '+ Add';
+        dd.appendChild(add);
+      }
+      if (spec) attachInlineEdit(dd, client, field, spec);
       body.appendChild(dt);
       body.appendChild(dd);
       any = true;

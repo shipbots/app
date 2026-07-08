@@ -646,6 +646,68 @@ body.detail-open {
 }
 .detail-section-body dd a:hover { text-decoration: underline; }
 
+/* Inline-edit affordances for editable fields inside DETAIL_SECTIONS. */
+.detail-section-body dd.editable {
+  cursor: text;
+  border-radius: 4px;
+  padding: 1px 3px;
+  margin: -1px -3px;
+  transition: background-color .12s;
+}
+.detail-section-body dd.editable:hover { background: #f9fafb; }
+.detail-section-body dd.editable:hover .edit-trigger { opacity: 1; }
+.detail-section-body dd .edit-trigger {
+  opacity: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #6b7280;
+  font-size: 11px;
+  padding: 0 2px;
+  margin-left: 4px;
+  transition: opacity .12s, color .12s;
+}
+.detail-section-body dd .edit-trigger:hover { color: #015280; }
+.detail-section-body dd.is-editing {
+  background: #fff;
+  padding: 2px 4px;
+  margin: -2px -4px;
+}
+.detail-section-body dd .edit-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 12px;
+  color: #111827;
+  border: 1px solid #43c7ff;
+  border-radius: 4px;
+  padding: 3px 5px;
+  box-sizing: border-box;
+  background: #fff;
+}
+.detail-section-body dd textarea.edit-input {
+  min-height: 48px;
+  resize: vertical;
+  line-height: 1.4;
+}
+.detail-section-body dd .edit-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(67,199,255,.25);
+}
+.detail-section-body dd .edit-empty {
+  color: #9ca3af;
+  font-style: italic;
+  cursor: pointer;
+}
+.detail-section-body dd.editable:hover .edit-empty { color: #015280; }
+.detail-section-body dd .edit-status {
+  font-size: 10px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+.detail-section-body dd .edit-status.saving { color: #6b7280; font-style: italic; font-weight: 500; }
+.detail-section-body dd .edit-status.ok  { color: #059669; }
+.detail-section-body dd .edit-status.err { color: #b91c1c; }
+
 /* Compact contact card inside the Contacts section */
 .detail-contact {
   grid-column: 1 / -1;
