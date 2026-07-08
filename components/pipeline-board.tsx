@@ -175,25 +175,32 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     return [...localItems.filter(i => !serverIds.has(i.id)), ...items];
   }, [items, localItems]);
 
-  const filteredItems = useMemo(() => {
-    if (!searchQuery) return allItems;
-    const q = searchQuery.toLowerCase();
-    return allItems.filter(
-      item => item.name.toLowerCase().includes(q) || item.onboarder?.toLowerCase().includes(q)
-    );
-  }, [allItems, searchQuery]);
-
-  // Apply optimistic overrides (status changes + arbitrary field edits)
-  const effectiveItems = useMemo(() =>
-    filteredItems.map(item => {
+  // Optimistic overrides layered onto the full unfiltered list. Split
+  // out from effectiveItems so the detail panel (which needs to hop
+  // between neighbors regardless of the header search) can receive the
+  // whole set without the search filter applied.
+  const overriddenAllItems = useMemo(() =>
+    allItems.map(item => {
       const fieldPatch = itemOverrides[item.id];
       const merged = fieldPatch ? { ...item, ...fieldPatch } : item;
       return statusOverrides[item.id]
         ? { ...merged, status: statusOverrides[item.id] }
         : merged;
     }),
-    [filteredItems, statusOverrides, itemOverrides]
+    [allItems, statusOverrides, itemOverrides]
   );
+
+  // Search filter — drives the kanban board, calendar, tasks list, and
+  // (in CS mode) ClientsView. The detail panel intentionally reads the
+  // UN-filtered list so its ClientNavigator can find any client even
+  // when the header search has narrowed the surrounding view.
+  const effectiveItems = useMemo(() => {
+    if (!searchQuery) return overriddenAllItems;
+    const q = searchQuery.toLowerCase();
+    return overriddenAllItems.filter(
+      item => item.name.toLowerCase().includes(q) || item.onboarder?.toLowerCase().includes(q)
+    );
+  }, [overriddenAllItems, searchQuery]);
 
   const groupedItems = useMemo(() => {
     const groups: Record<string, OnboardingItem[]> = {};
@@ -553,7 +560,11 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
         <ClientDetailPanel
           key={selectedItem.id}
           item={selectedItem}
-          items={effectiveItems}
+          // Detail panel gets the UN-filtered list on purpose — the
+          // header search shouldn't gate the ClientNavigator's neighbor
+          // list when the rep opens a client and then wants to hop to
+          // another one whose name doesn't match the current filter.
+          items={overriddenAllItems}
           appMode={appMode}
           initialAgentEmail={selectedItem.clientBoardItemId ? (agentEmailMap[selectedItem.clientBoardItemId] ?? '') : ''}
           onClose={() => { setSelectedItem(null); setDetailFullscreen(false); }}
