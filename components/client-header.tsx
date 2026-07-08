@@ -795,8 +795,12 @@ export function ClientHeader({
 
   const toggleCollapsed = () => setCollapsed(c => !c);
 
+  // NOTE: keep this header a solid, non-blurred background. A backdrop-filter
+  // (or transform/opacity) here creates a new stacking context that traps the
+  // header's dropdowns — client search, status, warehouse, agent — beneath the
+  // tab/body content that paints after it, so they'd overlap instead of layer.
   return (
-    <header className="flex-shrink-0 bg-white/80 backdrop-blur-xl border-b border-gray-100 px-4 py-2.5 relative">
+    <header className="flex-shrink-0 bg-white border-b border-gray-100 px-4 py-2.5 relative">
       {/* Row 1: name + Active · chips · platform · warehouse · actions */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
