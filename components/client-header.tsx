@@ -25,7 +25,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ClientInfo } from '@/lib/types';
 import {
   ChevronDown, ChevronUp,
-  Mail, Phone, MapPin, Copy, Check, User,
+  Mail, Phone, Copy, Check, User,
   Warehouse, Pencil, Loader2, ShieldCheck,
   RefreshCw, Minimize2, X,
 } from 'lucide-react';
@@ -617,7 +617,11 @@ function ContactCard({
       <div className="flex items-start gap-3">
         <ContactAvatar slot={slot} name={data.name} isPrimary={isPrimary} empty={empty} />
         <div className="flex-1 min-w-0">
-          {/* Name row + top-right action / status */}
+          {/* Name row + top-right action / status.
+              Primary card: Primary + optional Hub user badges live in the
+              top-right corner (parallel to the "Make primary" action on
+              secondary cards) so the header stays scannable — you glance
+              at the corner to see role, not below the name. */}
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
               <InlineField
@@ -628,24 +632,20 @@ function ContactCard({
                 placeholder={namePlaceholder}
                 onSaved={patch(nameKey)}
               />
-              {/* Badge row — Primary + Hub user for the primary card, empty
-                  for secondary/empty. Sits directly under the name so it
-                  reads as identity metadata, not a floating chip. */}
-              {isPrimary && (
-                <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                  <span className="text-[10px] font-semibold bg-[#EAF3FA] text-[#0071BC] px-1.5 py-0.5 rounded-full inline-flex items-center whitespace-nowrap">
-                    Primary
-                  </span>
-                  {hubUser && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-[#E7F8ED] text-[#1E7A3E] rounded-full px-1.5 py-0.5 whitespace-nowrap">
-                      <ShieldCheck className="w-2.5 h-2.5" />
-                      Hub user
-                    </span>
-                  )}
-                </div>
-              )}
             </div>
-            {!isPrimary && (
+            {isPrimary ? (
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <span className="text-[10px] font-semibold bg-[#EAF3FA] text-[#0071BC] px-1.5 py-0.5 rounded-full inline-flex items-center whitespace-nowrap">
+                  Primary
+                </span>
+                {hubUser && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-[#E7F8ED] text-[#1E7A3E] rounded-full px-1.5 py-0.5 whitespace-nowrap">
+                    <ShieldCheck className="w-2.5 h-2.5" />
+                    Hub user
+                  </span>
+                )}
+              </div>
+            ) : (
               <button
                 type="button"
                 onClick={() => onMakePrimary(slot as 2 | 3)}
@@ -659,9 +659,11 @@ function ContactCard({
             )}
           </div>
 
-          {/* Contact detail rows — one icon-prefixed line per field.
-              Empty cards collapse to a single call-to-action so the layout
-              doesn't feel like a fill-in-the-blank form. */}
+          {/* Email + phone sit side-by-side to save vertical space
+              (empty state still collapses to a single CTA). Location was
+              removed on purpose: Monday still stores it but reps don't
+              want it in the card. If a future need comes back, add it as
+              a separate row below this grid. */}
           {empty ? (
             <button
               type="button"
@@ -672,7 +674,7 @@ function ContactCard({
               Add name, email &amp; phone
             </button>
           ) : (
-            <div className="mt-2 space-y-1">
+            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
               <InlineField
                 icon={<Mail className="w-3 h-3" />}
                 value={data.email}
@@ -693,16 +695,6 @@ function ContactCard({
                 hrefBuilder={v => `tel:${v.replace(/[^\d+]/g, '')}`}
                 onSaved={patch(phoneKey)}
               />
-              {isPrimary && (
-                <InlineField
-                  icon={<MapPin className="w-3 h-3" />}
-                  value={data.location ?? ''}
-                  columnId="text_mktx8q74"
-                  clientId={clientId}
-                  placeholder="Add location"
-                  onSaved={patch('contactLocation')}
-                />
-              )}
             </div>
           )}
         </div>
