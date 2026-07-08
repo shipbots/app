@@ -256,6 +256,7 @@ function CopyableEditField({
   clientId,
   icon,
   secret = false,
+  csAddable = false,
 }: {
   label: string;
   value: string;
@@ -264,6 +265,13 @@ function CopyableEditField({
   icon?: React.ReactNode;
   /** If true, show value masked by default with reveal toggle */
   secret?: boolean;
+  /**
+   * If true, in CS view mode an empty value renders a "+ Add" button
+   * that flips the field into inline-edit mode instead of hiding the
+   * row. Used for the Portal Login credentials so reps can enter
+   * them even when the section isn't in section-edit mode.
+   */
+  csAddable?: boolean;
 }) {
   const [value, setValue] = useState(initialValue);
   const [savedValue, setSavedValue] = useState(initialValue);
@@ -320,7 +328,30 @@ function CopyableEditField({
   // CS view mode: hide empties, show a clean read row that keeps copy + reveal
   // (portal credentials are the main thing reps copy).
   if (csMode && !sectionEditing) {
-    if (!value) return null;
+    if (!value) {
+      // csAddable=true → render a compact "+ Add" affordance so reps can
+      // enter Portal credentials inline without flipping the whole
+      // section into edit mode. Clicking flips this ONE field into its
+      // local editing state; the block below (`if (editing)`) then
+      // renders the text input.
+      if (!csAddable) return null;
+      if (!editing) {
+        return (
+          <button
+            type="button"
+            onClick={() => { setEditing(true); setTimeout(() => inputRef.current?.focus(), 30); }}
+            className="group flex items-center gap-2 px-1 py-1.5 w-full text-left hover:bg-gray-50 rounded-md"
+          >
+            {icon && <span className="text-gray-300 flex-shrink-0">{icon}</span>}
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] text-gray-400 leading-none mb-0.5">{label}</p>
+              <p className="text-[13px] italic text-gray-400 group-hover:text-[#015280]">+ Add</p>
+            </div>
+          </button>
+        );
+      }
+      // fall through — editing block below renders the input
+    } else {
     return (
       <div className="group flex items-center gap-2 px-1 py-1.5">
         {icon && <span className="text-gray-400 flex-shrink-0">{icon}</span>}
@@ -355,6 +386,7 @@ function CopyableEditField({
         </div>
       </div>
     );
+    }
   }
 
   if (editing) {
@@ -1994,7 +2026,11 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
           with a soft border, a compact title row with an icon anchor, and
           the two credentials side-by-side. The old design was a large
           two-tone cyan block with an ALL-CAPS shouty banner; this reads
-          as one row of the info panel instead of a floating badge. */}
+          as one row of the info panel instead of a floating badge.
+          When there's no data yet, each credential field renders a
+          "+ Add" affordance (csAddable) instead of collapsing to null.
+          If the AppDot/Portal picker also doesn't include Portal, we
+          surface a small enrollment note so the rep knows why. */}
       <section className="rounded-2xl bg-white border border-gray-200/70 shadow-[0_1px_2px_rgba(20,24,40,.04),0_6px_16px_rgba(20,24,40,.04)] p-3 mb-3">
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -2017,6 +2053,17 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
             Open
           </a>
         </div>
+        {/* If no credentials are on file AND the AppDot/Portal picker
+            doesn't include "Portal", the client hasn't been enrolled
+            in the client portal. Surface that instead of silently
+            showing empty +Add fields so reps aren't left wondering. */}
+        {(!localClient.portalLogin && !localClient.portalPassword
+          && !(localClient.portalDropdown ?? '').toLowerCase().split(',').map(s => s.trim()).includes('portal')
+        ) && (
+          <div className="mb-2 rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-[12px] text-amber-900">
+            Client is currently not enrolled in the client portal.
+          </div>
+        )}
         {/* 3fr / 2fr split: emails are typically 2× the length of
             passwords, so give the login column the extra room. Both
             still truncate at very long values (tooltip shows full). */}
@@ -2030,6 +2077,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
             columnId="text_mktxxfch"
             clientId={id}
             icon={<Mail className="w-3.5 h-3.5" />}
+            csAddable
           />
           {/* Password is intentionally NOT `secret` — reps read it out to
               customers over calls and don't want the extra reveal click. */}
@@ -2039,6 +2087,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
             columnId="text_mm28cz4g"
             clientId={id}
             icon={<KeyRound className="w-3.5 h-3.5" />}
+            csAddable
           />
         </div>
       </section>
