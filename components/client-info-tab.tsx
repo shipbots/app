@@ -637,6 +637,24 @@ function SelectField({
   );
 }
 
+// Format a Monday YYYY-MM-DD date string for the CS read view. Uses a
+// long weekday+month format ("Thursday, September 14, 2026") so reps
+// can see what day of the week a delivery lands on at a glance. We
+// parse the components manually instead of `new Date(iso)` because
+// the latter treats bare YYYY-MM-DD as UTC midnight and can render
+// off-by-one in negative-offset timezones (Pacific → shows yesterday).
+function formatLongDate(iso: string): string {
+  if (!iso) return '';
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return iso;
+  const [, y, mo, d] = m;
+  const dt = new Date(Number(y), Number(mo) - 1, Number(d));
+  if (Number.isNaN(dt.getTime())) return iso;
+  return dt.toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+  });
+}
+
 // ─── Date field (native calendar picker) ─────────────────────────────────────
 function DateField({
   label,
@@ -707,7 +725,7 @@ function DateField({
   const { csMode, editing } = useFieldMode();
   if (csMode && !editing) {
     if (!value) return null;
-    return <ReadRow label={label} value={value} icon={icon} />;
+    return <ReadRow label={label} value={formatLongDate(value)} icon={icon} />;
   }
 
   if (!expanded) {
@@ -1793,7 +1811,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
 
             {/* Date DocuSign Signed — visible to everyone */}
             <DateField
-              label="📅 Date DocuSign Signed"
+              label="Date DocuSign Signed"
               value={localClient.dateDocusignSigned}
               columnId="date_mkw2fhte"
               clientId={id}
@@ -1889,7 +1907,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
       {/* ── Receiving ── */}
       <Section title="Receiving">
         <DateField
-          label="📅 Initial Inventory Est. Delivery Date"
+          label="Initial Inventory Est. Delivery Date"
           value={localClient.initialInventoryDate}
           columnId="date_mktrzhyk"
           clientId={id}
