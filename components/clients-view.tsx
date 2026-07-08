@@ -1217,17 +1217,6 @@ export function ClientsView({
         </button>
       </div>
 
-      {/* Bulk action bar — appears whenever bulk edit is on, with a live
-          count of selected clients + the Actions dropdown. Every action
-          gates its own modal so nothing runs by accident. */}
-      {bulkMode && (
-        <BulkActionBar
-          selectedCount={selectedIds.size}
-          onAction={setBulkAction}
-          onCancel={exitBulkMode}
-          running={bulkRunning}
-        />
-      )}
       {/* Two-column layout: stacked client tables on the left, tasks on the right */}
       <div className="flex-1 flex gap-3 min-h-0">
         <div className="flex-1 flex flex-col gap-3 min-w-0">
@@ -1247,6 +1236,18 @@ export function ClientsView({
             sort={mySort}
             onSortChange={setMySort}
           />
+          {/* Bulk action bar sits directly above the All Clients table,
+              which is where the checkbox column lives. Puts the count
+              and Actions dropdown adjacent to the row selection UI so
+              reps aren't hunting for it above My Clients. */}
+          {bulkMode && (
+            <BulkActionBar
+              selectedCount={selectedIds.size}
+              onAction={setBulkAction}
+              onCancel={exitBulkMode}
+              running={bulkRunning}
+            />
+          )}
           <ClientTable
             title="All Clients"
             subtitle="Every client — for browsing and covering for other reps"
