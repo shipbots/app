@@ -581,24 +581,149 @@ function renderClientDetail(client) {
     }
   }
   // Agent pill — always present so the rep can tell at a glance who owns
-  // the client. Falls back to a muted "No agent assigned" chip so the
-  // absence is visible, not silent.
+  // the client, and clickable so the rep can reassign without opening the
+  // dashboard. The pill hosts an anchored popover with the list of agent
+  // options fetched from /api/client/agents; clicking a row PATCHes the
+  // Clients-board dropdown and updates the pill in place.
   const agentEmail = (client.supportAgentEmail || '').trim();
-  const agentPill = document.createElement('span');
+  const agentPill = document.createElement('button');
+  agentPill.type = 'button';
   if (agentEmail) {
-    agentPill.className = 'detail-pill agent';
-    agentPill.textContent = `Agent: ${agentEmail}`;
-    agentPill.title = `Support agent: ${agentEmail}`;
+    agentPill.className = 'detail-pill agent detail-pill-clickable';
+    agentPill.textContent = `Agent: ${agentEmail} ▾`;
+    agentPill.title = `Support agent: ${agentEmail} — click to reassign`;
   } else {
-    agentPill.className = 'detail-pill agent-none';
-    agentPill.textContent = 'No agent assigned';
+    agentPill.className = 'detail-pill agent-none detail-pill-clickable';
+    agentPill.textContent = 'No agent assigned ▾';
+    agentPill.title = 'Click to assign a support agent';
   }
+  agentPill.addEventListener('click', e => {
+    e.stopPropagation();
+    openAgentMenu(agentPill, client);
+  });
   pills.appendChild(agentPill);
   if (pills.childElementCount > 0) sectionsEl.appendChild(pills);
 
   for (const section of DETAIL_SECTIONS) {
     sectionsEl.appendChild(buildSection(section, client));
   }
+}
+
+// ── Agent-reassign popover ────────────────────────────────────────────
+// Fetches the same agent list the dashboard uses. Cached per popup
+// session so re-opening the menu doesn't refetch. Missing "Unassign"
+// row is intentional — matches how the dashboard's AgentAssignButton
+// exposes only positive assignments; if reps ask for unassign later,
+// wire it here + a PATCH with an empty value.
+let agentListCache = null;
+async function fetchAgentList() {
+  if (agentListCache) return agentListCache;
+  const base = await getBaseUrl();
+  const res = await fetch(`${base}/api/client/agents`, { credentials: 'include' });
+  if (!res.ok) throw new Error(`agents ${res.status}`);
+  const data = await res.json();
+  agentListCache = Array.isArray(data) ? data : (Array.isArray(data?.agents) ? data.agents : []);
+  return agentListCache;
+}
+
+async function assignAgent(clientId, email) {
+  const base = await getBaseUrl();
+  const res = await fetch(`${base}/api/client/${encodeURIComponent(clientId)}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ columnId: 'dropdown_mkxx7xv', value: email, valueType: 'dropdown' }),
+  });
+  if (!res.ok) throw new Error(`assign ${res.status}`);
+}
+
+function closeAgentMenu() {
+  const existing = document.getElementById('detail-agent-menu');
+  if (existing) existing.remove();
+}
+
+function openAgentMenu(anchor, client) {
+  closeAgentMenu();
+
+  const menu = document.createElement('div');
+  menu.id = 'detail-agent-menu';
+  menu.className = 'detail-agent-menu';
+
+  const loading = document.createElement('div');
+  loading.className = 'detail-agent-menu-loading';
+  loading.textContent = 'Loading agents…';
+  menu.appendChild(loading);
+
+  // Position below the anchor pill. Anchor lives in .detail-pills which
+  // sits inside the scrollable sections column; we position relative to
+  // the viewport so scrolling doesn't drag the menu off-screen.
+  const rect = anchor.getBoundingClientRect();
+  menu.style.top  = `${rect.bottom + 4}px`;
+  menu.style.left = `${rect.left}px`;
+  document.body.appendChild(menu);
+
+  // Outside click / Escape closes the menu.
+  const onOutside = e => {
+    if (!menu.contains(e.target) && e.target !== anchor) closeAgentMenu();
+  };
+  const onKey = e => { if (e.key === 'Escape') closeAgentMenu(); };
+  setTimeout(() => document.addEventListener('mousedown', onOutside), 0);
+  document.addEventListener('keydown', onKey);
+  const cleanup = new MutationObserver(() => {
+    if (!document.body.contains(menu)) {
+      document.removeEventListener('mousedown', onOutside);
+      document.removeEventListener('keydown', onKey);
+      cleanup.disconnect();
+    }
+  });
+  cleanup.observe(document.body, { childList: true });
+
+  fetchAgentList()
+    .then(agents => {
+      loading.remove();
+      if (!agents.length) {
+        const empty = document.createElement('div');
+        empty.className = 'detail-agent-menu-empty';
+        empty.textContent = 'No agents available';
+        menu.appendChild(empty);
+        return;
+      }
+      const currentEmail = (client.supportAgentEmail || '').trim().toLowerCase();
+      for (const email of agents) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'detail-agent-menu-item';
+        if (email.toLowerCase() === currentEmail) row.classList.add('is-current');
+        row.textContent = email;
+        row.addEventListener('click', async () => {
+          if (!activeClientId) return closeAgentMenu();
+          row.disabled = true;
+          row.textContent = `${email} — saving…`;
+          try {
+            await assignAgent(activeClientId, email);
+            client.supportAgentEmail = email;
+            // Re-render the pills row so the pill reflects the new value.
+            const btn = document.querySelector('.detail-pills .agent, .detail-pills .agent-none');
+            if (btn) {
+              btn.classList.remove('agent-none');
+              btn.classList.add('agent');
+              btn.textContent = `Agent: ${email} ▾`;
+              btn.title = `Support agent: ${email} — click to reassign`;
+            }
+            closeAgentMenu();
+          } catch (err) {
+            console.error('[agent-menu] assign failed', err);
+            row.textContent = `${email} — failed`;
+            row.disabled = false;
+          }
+        });
+        menu.appendChild(row);
+      }
+    })
+    .catch(err => {
+      console.error('[agent-menu] fetch failed', err);
+      loading.textContent = err.message?.includes('401') ? 'Sign in first' : 'Failed to load agents';
+    });
 }
 
 // Sticky notes for the active client. Same shape as the dashboard's

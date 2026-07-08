@@ -419,6 +419,11 @@ body.detail-open {
   flex-direction: column;
   gap: 6px;
 }
+/* Explicit override so hidden=true actually hides the composer.
+   Without this the specific `display: flex` above beats the browser's
+   default [hidden] { display: none }, so the composer was showing
+   even though its `hidden` attribute was set. */
+.detail-notes-composer[hidden] { display: none; }
 .detail-notes-input {
   width: 100%;
   resize: vertical;
@@ -520,6 +525,53 @@ body.detail-open {
 .detail-pill.warehouse { background: #ecfdf5; color: #047857; border-color: #6ee7b7; }
 .detail-pill.agent { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
 .detail-pill.agent-none { background: #f3f4f6; color: #6b7280; border-color: #e5e7eb; font-style: italic; }
+.detail-pill-clickable {
+  cursor: pointer;
+  font-family: inherit;
+  transition: filter .12s;
+}
+.detail-pill-clickable:hover { filter: brightness(.95); }
+.detail-pill-clickable:focus { outline: 2px solid #43c7ff; outline-offset: 1px; }
+/* Anchored popover for reassigning the support agent from the popup. */
+.detail-agent-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 200px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(20, 24, 40, .16);
+  padding: 4px;
+}
+.detail-agent-menu-loading,
+.detail-agent-menu-empty {
+  padding: 8px 10px;
+  font-size: 11px;
+  color: #6b7280;
+  font-style: italic;
+}
+.detail-agent-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
+  color: #111827;
+  cursor: pointer;
+}
+.detail-agent-menu-item:hover { background: #f3f4f6; }
+.detail-agent-menu-item.is-current {
+  background: #eaf3fa;
+  color: #015280;
+  font-weight: 600;
+}
+.detail-agent-menu-item:disabled { opacity: .6; cursor: default; }
 
 /* Collapsible section */
 .detail-section {
