@@ -28,7 +28,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { prefetchCached } from '@/hooks/use-cached-fetch';
 import { OnboardingItem, SubItem, ClientInfo } from '@/lib/types';
-import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search, ChevronsUpDown, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Filter, X, Eye, EyeOff } from 'lucide-react';
+import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search, ChevronsUpDown, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Filter, X, Eye, EyeOff, ListChecks, Warehouse, UserCog, ArrowUpDown } from 'lucide-react';
 
 // ── Sort config used by both client tables ──────────────────────────────────
 type SortColumn = 'client' | 'manager' | 'contact' | 'portal' | 'warehouse';
@@ -410,6 +410,9 @@ function ClientRow({
   warehouse,
   inactive,
   onSelect,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
 }: {
   item: OnboardingItem;
   agentEmail: string;
@@ -420,6 +423,11 @@ function ClientRow({
   /** True when the client is in the "Exited" group on the Clients board. */
   inactive: boolean;
   onSelect: () => void;
+  selectable?: boolean;
+  selected?: boolean;
+  /** Undefined when the row has no clientBoardItemId — the checkbox is
+   *  rendered disabled with a title tooltip explaining why. */
+  onToggleSelect?: () => void;
 }) {
   // Hover prefetch — warms /api/client/[id] into the SWR cache the
   // moment the cursor lands on the row so the panel paints instantly
@@ -434,13 +442,31 @@ function ClientRow({
   };
   return (
     <tr
-      onClick={onSelect}
+      onClick={selectable ? onToggleSelect : onSelect}
       onMouseEnter={prefetch}
       onFocus={prefetch}
       className={`cursor-pointer transition-colors border-b border-gray-100 ${
-        inactive ? 'bg-gray-50/60 hover:bg-gray-100/80 text-gray-500' : 'hover:bg-[#f0fbff]'
+        selected
+          ? 'bg-[#e6f8ff]/60 hover:bg-[#e6f8ff]'
+          : inactive
+            ? 'bg-gray-50/60 hover:bg-gray-100/80 text-gray-500'
+            : 'hover:bg-[#f0fbff]'
       }`}
     >
+      {selectable && (
+        <td className="pl-4 pr-1 py-2.5 w-8">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            onClick={e => e.stopPropagation()}
+            disabled={!onToggleSelect}
+            className="w-3.5 h-3.5 rounded border-gray-300 text-[#015280] focus:ring-[#43c7ff] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            title={onToggleSelect ? undefined : 'This client has no Clients-board record — bulk actions do not apply.'}
+            aria-label={`Select ${item.name}`}
+          />
+        </td>
+      )}
       <td className="px-4 py-2.5">
         <div className="flex items-center gap-2 min-w-0">
           <span className={`font-medium text-sm truncate ${inactive ? 'text-gray-500' : 'text-gray-900'}`}>{item.name}</span>
@@ -663,6 +689,10 @@ function ClientTable({
   sort,
   onSortChange,
   headerExtra,
+  selectable = false,
+  selectedIds,
+  onToggleSelect,
+  onSelectAll,
 }: {
   title: string;
   subtitle?: string;
@@ -680,6 +710,16 @@ function ClientTable({
   /** Optional extra controls rendered next to the count (e.g. Account
    *  Manager filter on the All Clients table). */
   headerExtra?: React.ReactNode;
+  /** Bulk-edit mode — renders a leading checkbox column, a "select all
+   *  visible" checkbox in the header, and swallows row clicks so a click
+   *  inside the checkbox area doesn't also open the detail panel. */
+  selectable?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  /** Called with the list of visible clientBoardItemIds that have a
+   *  Clients-board record; the callback flips them ALL on or ALL off
+   *  depending on the current select-all state. */
+  onSelectAll?: (visibleIds: string[], turnOn: boolean) => void;
 }) {
   const isInactive = (clientBoardItemId: string | null): boolean => {
     if (!clientBoardItemId) return false;
@@ -735,6 +775,24 @@ function ClientTable({
           <table className="w-full text-left">
             <thead className="sticky top-0 bg-white border-b border-gray-200 z-10">
               <tr>
+                {selectable && (
+                  <th className="pl-4 pr-1 py-2 w-8">
+                    {(() => {
+                      const visibleIds = sorted.map(it => it.clientBoardItemId).filter((x): x is string => !!x);
+                      const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds?.has(id));
+                      return (
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          onChange={e => onSelectAll?.(visibleIds, e.currentTarget.checked)}
+                          onClick={e => e.stopPropagation()}
+                          className="w-3.5 h-3.5 rounded border-gray-300 text-[#015280] focus:ring-[#43c7ff] cursor-pointer"
+                          aria-label="Select all visible clients"
+                        />
+                      );
+                    })()}
+                  </th>
+                )}
                 <SortHeader label="Client" column="client" sort={sort} onChange={onSortChange} />
                 <SortHeader label="AppDot / Portal" column="portal" sort={sort} onChange={onSortChange} />
                 <SortHeader label="Warehouse" column="warehouse" sort={sort} onChange={onSortChange} />
@@ -752,6 +810,11 @@ function ClientTable({
                   warehouse={warehouseFor(item.clientBoardItemId)}
                   inactive={isInactive(item.clientBoardItemId)}
                   onSelect={() => onSelectItem(item)}
+                  selectable={selectable}
+                  selected={item.clientBoardItemId ? selectedIds?.has(item.clientBoardItemId) ?? false : false}
+                  onToggleSelect={item.clientBoardItemId
+                    ? () => onToggleSelect?.(item.clientBoardItemId as string)
+                    : undefined}
                 />
               ))}
             </tbody>
@@ -895,6 +958,33 @@ export function ClientsView({
   const query = isControlled ? (externalQuery ?? '') : localQuery;
   const setQuery = isControlled ? (onExternalQueryChange ?? (() => {})) : setLocalQuery;
   const [showInactive, setShowInactive] = useState(false);
+  // Bulk-edit mode. When true the All Clients table exposes a leading
+  // checkbox column and a bulk action bar. Selection is by
+  // clientBoardItemId — items without a linked Clients-board record
+  // (extension-only clients) can't be selected because none of the
+  // Monday-side mutations apply. Toggling off clears the selection so
+  // hidden checkboxes don't stay logically checked.
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkAction, setBulkAction] = useState<null | 'deactivate' | 'agent' | 'portal' | 'warehouse'>(null);
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const [bulkError, setBulkError] = useState<string>('');
+  const [bulkDoneCount, setBulkDoneCount] = useState(0);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+  const exitBulkMode = useCallback(() => {
+    setBulkMode(false);
+    setSelectedIds(new Set());
+    setBulkAction(null);
+    setBulkError('');
+    setBulkDoneCount(0);
+  }, []);
   const me = (currentUserEmail ?? '').toLowerCase();
 
   // Lazily fetch the cross-field search index (legal name, store name,
@@ -1127,6 +1217,17 @@ export function ClientsView({
         </button>
       </div>
 
+      {/* Bulk action bar — appears whenever bulk edit is on, with a live
+          count of selected clients + the Actions dropdown. Every action
+          gates its own modal so nothing runs by accident. */}
+      {bulkMode && (
+        <BulkActionBar
+          selectedCount={selectedIds.size}
+          onAction={setBulkAction}
+          onCancel={exitBulkMode}
+          running={bulkRunning}
+        />
+      )}
       {/* Two-column layout: stacked client tables on the left, tasks on the right */}
       <div className="flex-1 flex gap-3 min-h-0">
         <div className="flex-1 flex flex-col gap-3 min-w-0">
@@ -1157,6 +1258,20 @@ export function ClientsView({
             onSelectItem={onSelectItem}
             sort={allSort}
             onSortChange={setAllSort}
+            selectable={bulkMode}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelected}
+            onSelectAll={(visibleIds, turnOn) => {
+              setSelectedIds(prev => {
+                const next = new Set(prev);
+                if (turnOn) {
+                  for (const id of visibleIds) next.add(id);
+                } else {
+                  for (const id of visibleIds) next.delete(id);
+                }
+                return next;
+              });
+            }}
             headerExtra={
               <div className="flex items-center gap-2">
                 {selectedManagers.size > 0 && (
@@ -1175,6 +1290,21 @@ export function ClientsView({
                   selected={selectedManagers}
                   onChange={setSelectedManagers}
                 />
+                {/* Bulk edit trigger — flipping it on reveals a checkbox
+                    column and the bulk action bar. Cancel exits and
+                    clears the selection. */}
+                <button
+                  type="button"
+                  onClick={() => bulkMode ? exitBulkMode() : setBulkMode(true)}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-colors ${
+                    bulkMode
+                      ? 'border-[#015280] bg-[#015280] text-white hover:bg-[#013d60]'
+                      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <ListChecks className="w-3.5 h-3.5" />
+                  {bulkMode ? 'Cancel bulk edit' : 'Bulk edit'}
+                </button>
               </div>
             }
           />
@@ -1187,6 +1317,355 @@ export function ClientsView({
           items={items}
           onSelectClient={onSelectItem}
         />
+      </div>
+      {bulkAction && (
+        <BulkActionModal
+          action={bulkAction}
+          selectedIds={Array.from(selectedIds)}
+          selectedNames={items
+            .filter(i => i.clientBoardItemId && selectedIds.has(i.clientBoardItemId))
+            .map(i => i.name)}
+          running={bulkRunning}
+          error={bulkError}
+          doneCount={bulkDoneCount}
+          onCancel={() => { setBulkAction(null); setBulkError(''); setBulkDoneCount(0); }}
+          onRun={async (payload) => {
+            setBulkRunning(true);
+            setBulkError('');
+            setBulkDoneCount(0);
+            const ids = Array.from(selectedIds);
+            let done = 0;
+            try {
+              await Promise.all(ids.map(async id => {
+                await runBulkPatch(id, payload);
+                done++;
+                setBulkDoneCount(done);
+              }));
+              setBulkAction(null);
+              setSelectedIds(new Set());
+              setBulkMode(false);
+              setRefreshTick(t => t + 1);
+            } catch (err) {
+              console.error('[bulk-edit] partial failure', err);
+              setBulkError(err instanceof Error ? err.message : 'Bulk action failed for one or more clients');
+            } finally {
+              setBulkRunning(false);
+            }
+          }}
+        />
+      )}
+      {/* refreshTick is included to placate exhaustive-deps linter and to
+          drive a re-render after a successful bulk action. */}
+      <span className="hidden" data-refresh={refreshTick} />
+    </div>
+  );
+}
+
+// ── Bulk-edit helpers ─────────────────────────────────────────────────────
+// Fan out one PATCH per selected client. Deactivate uses the set-active
+// endpoint; agent / portal / warehouse route through the standard
+// /api/client/[id] PATCH with the correct column id + dropdown valueType.
+type BulkPayload =
+  | { kind: 'deactivate' }
+  | { kind: 'agent'; email: string }
+  | { kind: 'portal'; value: string }
+  | { kind: 'warehouse'; value: string };
+async function runBulkPatch(clientId: string, payload: BulkPayload): Promise<void> {
+  if (payload.kind === 'deactivate') {
+    const res = await fetch(`/api/client/${encodeURIComponent(clientId)}/set-active`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active: false }),
+    });
+    if (!res.ok) throw new Error(`deactivate ${clientId} failed (${res.status})`);
+    return;
+  }
+  const columnId =
+    payload.kind === 'agent'    ? 'dropdown_mkxx7xv' :
+    payload.kind === 'portal'   ? 'dropdown_mktrbeyg' :
+    /* warehouse */               'dropdown_mktxaege';
+  const value = payload.kind === 'agent' ? payload.email : payload.value;
+  const res = await fetch(`/api/client/${encodeURIComponent(clientId)}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ columnId, value, valueType: 'dropdown' }),
+  });
+  if (!res.ok) throw new Error(`patch ${clientId} failed (${res.status})`);
+}
+
+function BulkActionBar({
+  selectedCount, onAction, onCancel, running,
+}: {
+  selectedCount: number;
+  onAction: (a: 'deactivate' | 'agent' | 'portal' | 'warehouse') => void;
+  onCancel: () => void;
+  running: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+  return (
+    <div className="flex items-center justify-between gap-3 flex-shrink-0 bg-[#015280] text-white rounded-lg px-3 py-2 shadow-sm">
+      <div className="flex items-center gap-2 text-xs font-semibold">
+        <ListChecks className="w-4 h-4" />
+        {selectedCount} client{selectedCount === 1 ? '' : 's'} selected
+      </div>
+      <div className="flex items-center gap-2">
+        <div ref={menuRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setOpen(o => !o)}
+            disabled={selectedCount === 0 || running}
+            className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold bg-white text-[#015280] hover:bg-[#e6f8ff] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Actions
+            <ChevronDown className="w-3 h-3" />
+          </button>
+          {open && (
+            <div className="absolute right-0 top-full mt-1 min-w-[200px] bg-white border border-gray-200 rounded-lg shadow-lg z-40 py-1 text-gray-800">
+              <BulkMenuItem icon={<UserCog className="w-3.5 h-3.5" />} label="Assign account manager" onClick={() => { setOpen(false); onAction('agent'); }} />
+              <BulkMenuItem icon={<ArrowUpDown className="w-3.5 h-3.5" />} label="Change AppDot / Portal" onClick={() => { setOpen(false); onAction('portal'); }} />
+              <BulkMenuItem icon={<Warehouse className="w-3.5 h-3.5" />} label="Change warehouse" onClick={() => { setOpen(false); onAction('warehouse'); }} />
+              <div className="my-1 border-t border-gray-100" />
+              <BulkMenuItem icon={<X className="w-3.5 h-3.5 text-red-500" />} label="Deactivate clients" onClick={() => { setOpen(false); onAction('deactivate'); }} danger />
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={running}
+          className="text-xs text-white/80 hover:text-white px-2 py-1 rounded-md hover:bg-white/10"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BulkMenuItem({
+  icon, label, onClick, danger,
+}: { icon: React.ReactNode; label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full text-left flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 ${
+        danger ? 'text-red-600 hover:bg-red-50' : ''
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+// Full-screen modal that hosts each bulk action's editor. Uses the shared
+// backdrop pattern the rest of the app uses (see ConfirmDialog in
+// client-header.tsx). One component here to keep the four flows visually
+// consistent — same header, footer, and progress footer.
+function BulkActionModal({
+  action, selectedIds, selectedNames, running, error, doneCount, onCancel, onRun,
+}: {
+  action: 'deactivate' | 'agent' | 'portal' | 'warehouse';
+  selectedIds: string[];
+  selectedNames: string[];
+  running: boolean;
+  error: string;
+  doneCount: number;
+  onCancel: () => void;
+  onRun: (payload: BulkPayload) => void;
+}) {
+  const [agentEmail, setAgentEmail] = useState('');
+  const [agentOptions, setAgentOptions] = useState<string[]>([]);
+  const [portalTokens, setPortalTokens] = useState<Set<'AppDot' | 'Portal'>>(new Set());
+  const [warehouseOptions, setWarehouseOptions] = useState<string[]>([]);
+  const [warehousePicks, setWarehousePicks] = useState<Set<string>>(new Set());
+
+  // Load option lists as soon as the modal opens.
+  useEffect(() => {
+    if (action === 'agent') {
+      fetch('/api/client/agents', { credentials: 'include' })
+        .then(r => r.ok ? r.json() : [])
+        .then((data: unknown) => {
+          const arr = Array.isArray(data)
+            ? data
+            : Array.isArray((data as { agents?: string[] })?.agents)
+              ? (data as { agents: string[] }).agents
+              : [];
+          setAgentOptions(arr.filter((x): x is string => typeof x === 'string'));
+        })
+        .catch(() => setAgentOptions([]));
+    }
+    if (action === 'warehouse') {
+      fetch('/api/client/column-options')
+        .then(r => r.ok ? r.json() : {})
+        .then((data: Record<string, string[]>) => setWarehouseOptions(data['dropdown_mktxaege'] ?? []))
+        .catch(() => setWarehouseOptions([]));
+    }
+  }, [action]);
+
+  const titleMap = {
+    deactivate: 'Deactivate clients',
+    agent:      'Assign account manager',
+    portal:     'Change AppDot / Portal',
+    warehouse:  'Change warehouse',
+  };
+
+  const togglePortal = (token: 'AppDot' | 'Portal') => {
+    setPortalTokens(prev => {
+      const next = new Set(prev);
+      if (next.has(token)) next.delete(token); else next.add(token);
+      return next;
+    });
+  };
+  const toggleWarehouse = (opt: string) => {
+    setWarehousePicks(prev => {
+      const next = new Set(prev);
+      if (next.has(opt)) next.delete(opt); else next.add(opt);
+      return next;
+    });
+  };
+
+  const canRun =
+    action === 'deactivate' ? true :
+    action === 'agent'      ? !!agentEmail :
+    action === 'portal'     ? true :
+    /* warehouse */           warehousePicks.size > 0;
+
+  const submit = () => {
+    if (action === 'deactivate') onRun({ kind: 'deactivate' });
+    else if (action === 'agent') onRun({ kind: 'agent', email: agentEmail });
+    else if (action === 'portal') onRun({ kind: 'portal', value: Array.from(portalTokens).join(', ') });
+    else onRun({ kind: 'warehouse', value: Array.from(warehousePicks).join(', ') });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onMouseDown={e => { if (e.target === e.currentTarget && !running) onCancel(); }}
+    >
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-5 max-h-[80vh] flex flex-col">
+        <h3 className="text-base font-semibold text-gray-900 mb-1">{titleMap[action]}</h3>
+        <p className="text-xs text-gray-500 mb-4">
+          {selectedIds.length} client{selectedIds.length === 1 ? '' : 's'} —{' '}
+          <span className="text-gray-700" title={selectedNames.join(', ')}>
+            {selectedNames.slice(0, 3).join(', ')}
+            {selectedNames.length > 3 ? `, and ${selectedNames.length - 3} more` : ''}
+          </span>
+        </p>
+
+        <div className="flex-1 overflow-y-auto min-h-0 mb-4">
+          {action === 'deactivate' && (
+            <p className="text-sm text-gray-700">
+              This will move every selected client into the <strong>Exited</strong> group on Monday. They&apos;ll disappear from the main views unless <em>View inactive clients</em> is turned on. You can always reactivate individually from a client&apos;s detail panel.
+            </p>
+          )}
+          {action === 'agent' && (
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-gray-700">New account manager</label>
+              {agentOptions.length === 0 ? (
+                <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Loading agents…
+                </div>
+              ) : (
+                <select
+                  value={agentEmail}
+                  onChange={e => setAgentEmail(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
+                >
+                  <option value="">Choose an agent…</option>
+                  {agentOptions.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+          {action === 'portal' && (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-600">Set the AppDot / Portal value for every selected client. Un-checking both clears the field.</p>
+              {(['AppDot', 'Portal'] as const).map(tok => (
+                <label key={tok} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={portalTokens.has(tok)}
+                    onChange={() => togglePortal(tok)}
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-[#015280] focus:ring-[#43c7ff]"
+                  />
+                  {tok}
+                </label>
+              ))}
+            </div>
+          )}
+          {action === 'warehouse' && (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-600">Pick one or more warehouses. The value replaces whatever&apos;s currently on file.</p>
+              {warehouseOptions.length === 0 ? (
+                <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Loading warehouses…
+                </div>
+              ) : (
+                warehouseOptions.map(opt => (
+                  <label key={opt} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={warehousePicks.has(opt)}
+                      onChange={() => toggleWarehouse(opt)}
+                      className="w-3.5 h-3.5 rounded border-gray-300 text-[#015280] focus:ring-[#43c7ff]"
+                    />
+                    {opt}
+                  </label>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        {running && (
+          <div className="mb-3 text-[11px] text-gray-500 flex items-center gap-1.5">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Applying to client {doneCount + 1} of {selectedIds.length}…
+          </div>
+        )}
+        {error && (
+          <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[11px] text-rose-800">
+            {error}
+          </div>
+        )}
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={running}
+            className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={running || !canRun}
+            className={`px-3 py-1.5 text-sm font-medium text-white rounded inline-flex items-center gap-1.5 disabled:opacity-60 ${
+              action === 'deactivate' ? 'bg-red-600 hover:bg-red-700' : 'bg-[#015280] hover:bg-[#01416a]'
+            }`}
+          >
+            {running && <Loader2 className="w-3 h-3 animate-spin" />}
+            {action === 'deactivate' ? 'Deactivate all' : 'Apply to selected'}
+          </button>
+        </div>
       </div>
     </div>
   );
