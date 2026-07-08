@@ -26,7 +26,7 @@ import { ClientInfo } from '@/lib/types';
 import {
   ChevronDown, ChevronUp,
   Mail, Phone, MapPin, Copy, Check, User,
-  Box, Warehouse, Pencil, Loader2, ShieldCheck,
+  Warehouse, Pencil, Loader2, ShieldCheck,
   RefreshCw, Minimize2, X,
 } from 'lucide-react';
 
@@ -40,6 +40,15 @@ function loadCollapsed(): boolean {
 function saveCollapsed(c: boolean) {
   if (typeof window === 'undefined') return;
   try { window.localStorage.setItem(LS_COLLAPSED, c ? '1' : '0'); } catch { /* ignore */ }
+}
+
+// Two-char initials from a full name. Falls back to first two letters of a
+// single-word string. Used by ContactCard's avatar circle.
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 // Match the Portal-dropdown text (e.g. "AppDot, Portal") against the label
@@ -104,8 +113,12 @@ export function ConfirmDialog({
 }
 
 // ── Inline editable text field with optional copy-on-hover ─────────────────
+// `size='title'` renders the value as a card-title (semibold, base weight, no
+// gray icon-slot styling) — used at the top of ContactCard for the contact
+// name. Default `size='row'` keeps the compact icon+value layout used by
+// email/phone/location lines.
 function InlineField({
-  value, icon, columnId, clientId, placeholder, copyable, hrefBuilder, onSaved,
+  value, icon, columnId, clientId, placeholder, copyable, hrefBuilder, onSaved, size = 'row',
 }: {
   value: string;
   icon?: React.ReactNode;
@@ -115,7 +128,18 @@ function InlineField({
   copyable?: boolean;
   hrefBuilder?: (v: string) => string;
   onSaved?: (newValue: string) => void;
+  size?: 'row' | 'title';
 }) {
+  const isTitle = size === 'title';
+  const displayCls = isTitle
+    ? 'text-sm font-semibold text-gray-900 truncate flex-1 min-w-0'
+    : 'text-xs text-gray-700 truncate flex-1 min-w-0';
+  const placeholderCls = isTitle
+    ? 'text-sm text-gray-400 italic hover:text-[#015280] flex-1 min-w-0 text-left'
+    : 'text-xs text-gray-400 italic hover:text-[#015280] flex-1 min-w-0 text-left';
+  const inputCls = isTitle
+    ? 'flex-1 min-w-0 text-sm font-semibold text-gray-900 border border-[#43c7ff] rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] bg-white'
+    : 'flex-1 min-w-0 text-xs border border-[#43c7ff] rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] bg-white';
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const [saving, setSaving] = useState(false);
@@ -168,7 +192,7 @@ function InlineField({
             if (e.key === 'Escape') { setDraft(value); setEditing(false); }
           }}
           placeholder={placeholder}
-          className="flex-1 min-w-0 text-xs border border-[#43c7ff] rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] bg-white"
+          className={inputCls}
         />
       </div>
     );
@@ -182,19 +206,19 @@ function InlineField({
           <a
             href={hrefBuilder(value)}
             onClick={e => e.stopPropagation()}
-            className="text-xs text-gray-700 truncate hover:text-[#015280] hover:underline flex-1 min-w-0"
+            className={`${displayCls} hover:text-[#015280] hover:underline`}
             title={value}
           >
             {value}
           </a>
         ) : (
-          <span className="text-xs text-gray-700 truncate flex-1 min-w-0" title={value}>{value}</span>
+          <span className={displayCls} title={value}>{value}</span>
         )
       ) : (
         <button
           type="button"
           onClick={startEdit}
-          className="text-xs text-gray-400 italic hover:text-[#015280] flex-1 min-w-0 text-left"
+          className={placeholderCls}
         >
           {placeholder}
         </button>
@@ -286,15 +310,12 @@ function PlatformPills({ value, clientId, onSaved }: {
 
   return (
     <>
-      <div className="flex items-center gap-2 bg-gray-50/80 border border-gray-200/70 rounded-xl px-2.5 py-1.5">
-        <Box className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-        <div className="flex flex-col gap-0.5 min-w-0">
-          <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider leading-none">Platform</p>
-          <div className="flex items-center gap-1">
-            {pill('AppDot', appDotOn, () => requestToggle('AppDot'))}
-            {pill('Portal', portalOn, () => requestToggle('Portal'))}
-          </div>
-        </div>
+      {/* Segmented Platform pill — no "PLATFORM" caps label above (matches
+          the mockup). The active token gets the light-blue fill; the other
+          reads as an outline slot. Keeps the same tap-target + confirm flow. */}
+      <div className="flex items-center bg-gray-50/80 border border-gray-200/70 rounded-full p-0.5">
+        {pill('AppDot', appDotOn, () => requestToggle('AppDot'))}
+        {pill('Portal', portalOn, () => requestToggle('Portal'))}
       </div>
       {pending && (
         <ConfirmDialog
@@ -426,8 +447,8 @@ function WarehousePill({ value, options, clientId, onSaved }: {
         >
           <Warehouse className="w-3.5 h-3.5 text-[#0071BC] flex-shrink-0" />
           <div className="flex flex-col gap-0.5 min-w-0 text-left">
-            <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider leading-none">
-              Warehouse{currentList.length > 1 ? 's' : ''}
+            <p className="text-[9px] font-bold text-gray-400 uppercase tracking-[.08em] leading-none">
+              WAREHOUSE{currentList.length > 1 ? 'S' : ''}
             </p>
             <p className="text-xs font-semibold text-gray-900 truncate">{displayLabel}</p>
           </div>
@@ -524,6 +545,35 @@ const CONTACT_COLUMNS: Record<ContactSlot, { name: string; email: string; phone:
   3: { name: 'text_mktr4v7q', email: 'text_mktrt74r', phone: 'text_mktrw0tb' },
 };
 
+// Circular initials badge that anchors each contact card. Primary gets a
+// blue→violet gradient so it reads as the anchor identity of the client;
+// secondaries get a neutral slate; empty slots fall back to the slot number
+// so the card still communicates "this is contact 2 / 3" before anything
+// has been filled in.
+function ContactAvatar({
+  slot, name, isPrimary, empty,
+}: {
+  slot: ContactSlot;
+  name: string;
+  isPrimary: boolean;
+  empty: boolean;
+}) {
+  const glyph = empty ? String(slot) : (initials(name) || String(slot));
+  const bg = empty
+    ? 'bg-gray-100 text-gray-400'
+    : isPrimary
+      ? 'text-white bg-gradient-to-br from-[#4A6CF7] to-[#8B5CF6]'
+      : 'text-gray-500 bg-gray-100';
+  return (
+    <div
+      className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-[13px] font-semibold tracking-tight ${bg}`}
+      aria-hidden
+    >
+      {glyph}
+    </div>
+  );
+}
+
 function ContactCard({
   slot, client, clientId, hubUser, onClientChanged, onMakePrimary, promoting,
 }: {
@@ -552,83 +602,108 @@ function ContactCard({
   const emailKey: keyof ClientInfo = slot === 1 ? 'contactEmail' : slot === 2 ? 'contact2Email' : 'contact3Email';
   const phoneKey: keyof ClientInfo = slot === 1 ? 'contactPhone' : slot === 2 ? 'contact2Phone' : 'contact3Phone';
 
+  const namePlaceholder = empty
+    ? (slot === 1 ? 'Add primary contact' : slot === 2 ? 'Add a second contact' : 'Add a third contact')
+    : 'No name on file';
+
   return (
-    <section className={`flex flex-col rounded-2xl p-2.5 bg-white ${
+    <section className={`rounded-2xl p-3 bg-white transition-shadow ${
       isPrimary
         ? 'shadow-[0_0_0_1.5px_#0071BC,0_6px_16px_rgba(20,24,40,.06)]'
         : empty
           ? 'border border-dashed border-gray-200'
           : 'border border-gray-200/70 shadow-[0_1px_2px_rgba(20,24,40,.04),0_6px_16px_rgba(20,24,40,.04)]'
     }`}>
-      <div className="flex items-center justify-between mb-1.5 gap-2">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-[.06em] whitespace-nowrap">Contact {slot}</p>
-          {isPrimary && hubUser && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-[#E7F8ED] text-[#1E7A3E] rounded-full px-2 py-0.5 whitespace-nowrap">
-              <ShieldCheck className="w-2.5 h-2.5" />
-              Hub user
-            </span>
-          )}
-        </div>
-        {isPrimary ? (
-          <span className="text-[10px] font-semibold bg-[#EAF3FA] text-[#0071BC] px-2 py-0.5 rounded-full inline-flex items-center gap-0.5 flex-shrink-0">
-            Primary
-          </span>
-        ) : (
-          <button
-            type="button"
-            onClick={() => onMakePrimary(slot as 2 | 3)}
-            disabled={empty || promoting !== null}
-            className="text-[11px] font-semibold text-[#0071BC] hover:bg-[#EAF3FA] px-2 py-0.5 rounded-full disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed inline-flex items-center gap-1 flex-shrink-0"
-            title={empty ? 'Add contact info first' : 'Swap with the current primary contact'}
-          >
-            {promoting === slot ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <ChevronUp className="w-2.5 h-2.5" />}
-            Make primary
-          </button>
-        )}
-      </div>
+      <div className="flex items-start gap-3">
+        <ContactAvatar slot={slot} name={data.name} isPrimary={isPrimary} empty={empty} />
+        <div className="flex-1 min-w-0">
+          {/* Name row + top-right action / status */}
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <InlineField
+                size="title"
+                value={data.name}
+                columnId={cols.name}
+                clientId={clientId}
+                placeholder={namePlaceholder}
+                onSaved={patch(nameKey)}
+              />
+              {/* Badge row — Primary + Hub user for the primary card, empty
+                  for secondary/empty. Sits directly under the name so it
+                  reads as identity metadata, not a floating chip. */}
+              {isPrimary && (
+                <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                  <span className="text-[10px] font-semibold bg-[#EAF3FA] text-[#0071BC] px-1.5 py-0.5 rounded-full inline-flex items-center whitespace-nowrap">
+                    Primary
+                  </span>
+                  {hubUser && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-[#E7F8ED] text-[#1E7A3E] rounded-full px-1.5 py-0.5 whitespace-nowrap">
+                      <ShieldCheck className="w-2.5 h-2.5" />
+                      Hub user
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            {!isPrimary && (
+              <button
+                type="button"
+                onClick={() => onMakePrimary(slot as 2 | 3)}
+                disabled={empty || promoting !== null}
+                className="text-[11px] font-semibold text-[#0071BC] hover:bg-[#EAF3FA] px-1.5 py-0.5 rounded-md disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed inline-flex items-center gap-1 flex-shrink-0 whitespace-nowrap"
+                title={empty ? 'Add contact info first' : 'Swap with the current primary contact'}
+              >
+                {promoting === slot ? <Loader2 className="w-3 h-3 animate-spin" /> : <ChevronUp className="w-3 h-3" />}
+                Make primary
+              </button>
+            )}
+          </div>
 
-      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
-        <div className="space-y-0.5 min-w-0">
-          <InlineField
-            icon={<User className="w-3 h-3" />}
-            value={data.name}
-            columnId={cols.name}
-            clientId={clientId}
-            placeholder={empty ? 'Add name' : 'No name on file'}
-            onSaved={patch(nameKey)}
-          />
-          <InlineField
-            icon={<Mail className="w-3 h-3" />}
-            value={data.email}
-            columnId={cols.email}
-            clientId={clientId}
-            placeholder={empty ? 'Add email' : 'No email on file'}
-            copyable
-            hrefBuilder={v => `mailto:${v}`}
-            onSaved={patch(emailKey)}
-          />
-        </div>
-        <div className="space-y-0.5 min-w-0">
-          <InlineField
-            icon={<Phone className="w-3 h-3" />}
-            value={data.phone}
-            columnId={cols.phone}
-            clientId={clientId}
-            placeholder={empty ? 'Add phone' : 'No phone on file'}
-            copyable
-            hrefBuilder={v => `tel:${v.replace(/[^\d+]/g, '')}`}
-            onSaved={patch(phoneKey)}
-          />
-          {isPrimary && (
-            <InlineField
-              icon={<MapPin className="w-3 h-3" />}
-              value={data.location ?? ''}
-              columnId="text_mktx8q74"
-              clientId={clientId}
-              placeholder="Add location"
-              onSaved={patch('contactLocation')}
-            />
+          {/* Contact detail rows — one icon-prefixed line per field.
+              Empty cards collapse to a single call-to-action so the layout
+              doesn't feel like a fill-in-the-blank form. */}
+          {empty ? (
+            <button
+              type="button"
+              onClick={() => onClientChanged({ [emailKey]: '' } as Partial<ClientInfo>)}
+              className="mt-2 text-xs text-gray-400 hover:text-[#015280] flex items-center gap-1"
+            >
+              <span className="text-base leading-none">+</span>
+              Add name, email &amp; phone
+            </button>
+          ) : (
+            <div className="mt-2 space-y-1">
+              <InlineField
+                icon={<Mail className="w-3 h-3" />}
+                value={data.email}
+                columnId={cols.email}
+                clientId={clientId}
+                placeholder="No email on file"
+                copyable
+                hrefBuilder={v => `mailto:${v}`}
+                onSaved={patch(emailKey)}
+              />
+              <InlineField
+                icon={<Phone className="w-3 h-3" />}
+                value={data.phone}
+                columnId={cols.phone}
+                clientId={clientId}
+                placeholder="No phone on file"
+                copyable
+                hrefBuilder={v => `tel:${v.replace(/[^\d+]/g, '')}`}
+                onSaved={patch(phoneKey)}
+              />
+              {isPrimary && (
+                <InlineField
+                  icon={<MapPin className="w-3 h-3" />}
+                  value={data.location ?? ''}
+                  columnId="text_mktx8q74"
+                  clientId={clientId}
+                  placeholder="Add location"
+                  onSaved={patch('contactLocation')}
+                />
+              )}
+            </div>
           )}
         </div>
       </div>
