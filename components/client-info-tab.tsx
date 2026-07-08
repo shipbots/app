@@ -9,6 +9,7 @@ import {
   ArrowUpDown,
 } from 'lucide-react';
 import { ClientStickyNotesSummary } from './client-sticky-notes-summary';
+import { useSession } from 'next-auth/react';
 
 // ─── Customer Service "clean view" mode ──────────────────────────────────────
 // In the Customer Service surface the client record is a reference view: only
@@ -24,6 +25,142 @@ const CsModeContext = createContext(false);
 const SectionEditContext = createContext(false);
 function useFieldMode() {
   return { csMode: useContext(CsModeContext), editing: useContext(SectionEditContext) };
+}
+
+// ─── "On file / Not on file" field ───────────────────────────────────────────
+// For sensitive values (EIN, the DocuSign document) that a Customer Service rep
+// without DocuSign access may not SEE. Shows only an on-file indicator — the
+// real value never reaches the browser (redacted server-side). When `editable`
+// (EIN), a rep can still blindly enter a NEW value in the section's edit mode;
+// they never see the current one. When not editable (DocuSign), it's read-only.
+function OnFileField({
+  label,
+  onFile,
+  columnId,
+  clientId,
+  noun,
+  icon,
+  editable = false,
+}: {
+  label: string;
+  onFile: boolean;
+  columnId: string;
+  clientId: string;
+  noun: string;
+  icon?: React.ReactNode;
+  editable?: boolean;
+}) {
+  const { editing: sectionEditing } = useFieldMode();
+  const [present, setPresent] = useState(onFile);
+  const [draft, setDraft] = useState('');
+  const [entering, setEntering] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [flash, setFlash] = useState<'saved' | 'error' | null>(null);
+
+  useEffect(() => { setPresent(onFile); }, [onFile]);
+
+  const save = async () => {
+    const v = draft.trim();
+    if (!v) { setEntering(false); return; }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/client/${clientId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ columnId, value: v }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      setPresent(true);
+      setDraft('');
+      setEntering(false);
+      setFlash('saved');
+    } catch {
+      setFlash('error');
+    } finally {
+      setSaving(false);
+      setTimeout(() => setFlash(null), 2500);
+    }
+  };
+
+  const pill = (
+    <span
+      className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border ${
+        present
+          ? 'bg-green-50 text-green-700 border-green-200'
+          : 'bg-gray-100 text-gray-500 border-gray-200'
+      }`}
+    >
+      {present && <Check className="w-3 h-3" />}
+      {present ? 'On file' : 'Not on file'}
+    </span>
+  );
+
+  // Read/status view — used everywhere except an editable field in edit mode.
+  if (!sectionEditing || !editable) {
+    return (
+      <div className="flex items-center gap-2 px-1 py-1.5">
+        {icon && <span className="text-gray-400 flex-shrink-0">{icon}</span>}
+        <p className="text-[11px] text-gray-400 leading-none">{label}</p>
+        {pill}
+        {flash === 'saved' && <Check className="w-3.5 h-3.5 text-green-500" />}
+      </div>
+    );
+  }
+
+  // Editable + section is in edit mode → allow entering a NEW value blindly.
+  return (
+    <div className="flex items-start gap-2 px-1 py-1.5">
+      {icon && <span className="text-gray-400 mt-0.5 flex-shrink-0">{icon}</span>}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <p className="text-[11px] text-gray-400 leading-none">{label}</p>
+          {pill}
+        </div>
+        {entering ? (
+          <div>
+            <input
+              autoFocus
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              placeholder={`Enter ${noun}…`}
+              onKeyDown={e => {
+                if (e.key === 'Enter') save();
+                if (e.key === 'Escape') { setDraft(''); setEntering(false); }
+              }}
+              className="w-full text-sm border border-[#43c7ff] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] bg-white"
+            />
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <button
+                type="button"
+                onClick={save}
+                disabled={saving || !draft.trim()}
+                className="px-2.5 py-1 text-[11px] font-semibold rounded bg-[#015280] text-white hover:bg-[#013d60] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {saving ? 'Saving…' : present ? `Replace ${noun}` : `Save ${noun}`}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setDraft(''); setEntering(false); }}
+                className="px-2.5 py-1 text-[11px] font-medium rounded text-gray-500 hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <span className="text-[10px] text-gray-400 ml-auto">Hidden — you won&apos;t see it after saving</span>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setEntering(true)}
+            className="text-xs text-[#015280] inline-flex items-center gap-1 hover:underline"
+          >
+            <Pencil className="w-3 h-3" /> {present ? `Replace ${noun}` : `Add ${noun}`}
+          </button>
+        )}
+        {flash === 'error' && <p className="text-[11px] text-red-600 mt-1">Save failed — try again</p>}
+      </div>
+    </div>
+  );
 }
 
 // Clean read-only row used by every field in CS view mode. Renders nothing for
@@ -1264,6 +1401,13 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
   const useTwoColumnSections = fullscreen && !forceSingleColumn;
   const id = client.id;
 
+  // Who may see DocuSign (and therefore the EIN + DocuSign document). In the
+  // Customer Service surface, reps without this access see only "on file /
+  // not on file" indicators; the real values are redacted server-side.
+  const { data: session } = useSession();
+  const canDocusign = Boolean(session?.user?.canDocusign);
+  const restrictSensitive = customerService && !canDocusign;
+
   // Column options fetched once from Monday.com (status/dropdown labels)
   const [colOptions, setColOptions] = useState<Record<string, string[]>>({});
   useEffect(() => {
@@ -1580,22 +1724,47 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
               <EditField label="Country" value={localClient.billingCountry} columnId="text_mkx5kyv4" clientId={id} highlight />
               <SelectField label="Name Updated?" value={localClient.billingNameUpdated} columnId="color_mkx5yjnk" clientId={id} options={colOptions['color_mkx5yjnk'] ?? []} valueType="status" />
             </div>
-            <EditField label="🔢 EIN" value={localClient.ein} columnId="text_mkxxfg1b" clientId={id} highlight />
+            {/* EIN — hidden from CS reps without DocuSign access; they see only
+                an on-file indicator and can blindly add/replace it. */}
+            {restrictSensitive ? (
+              <OnFileField
+                label="🔢 EIN"
+                onFile={!!localClient.einOnFile}
+                columnId="text_mkxxfg1b"
+                clientId={id}
+                noun="EIN"
+                editable
+              />
+            ) : (
+              <EditField label="🔢 EIN" value={localClient.ein} columnId="text_mkxxfg1b" clientId={id} highlight />
+            )}
 
-            {/* DocuSign file + extract button */}
-            <FileField
-              label="📄 Docusign / Contract"
-              file={localClient.docusignFile}
-              columnId="files"
-              clientId={onboardingItemId || id}
-              onUploaded={newFile => {
-                setLocalClient(prev => ({ ...prev, docusignFile: newFile }));
-                // Auto-run billing extraction with the new file's assetId
-                handleExtractBilling(newFile.assetId);
-              }}
-            />
+            {/* DocuSign file — hidden from CS reps without DocuSign access; they
+                see only "on file / not on file" (read-only). */}
+            {restrictSensitive ? (
+              <OnFileField
+                label="📄 Docusign / Contract"
+                onFile={!!localClient.docusignOnFile}
+                columnId=""
+                clientId={id}
+                noun="DocuSign"
+                icon={<FileText className="w-3.5 h-3.5" />}
+              />
+            ) : (
+              <FileField
+                label="📄 Docusign / Contract"
+                file={localClient.docusignFile}
+                columnId="files"
+                clientId={onboardingItemId || id}
+                onUploaded={newFile => {
+                  setLocalClient(prev => ({ ...prev, docusignFile: newFile }));
+                  // Auto-run billing extraction with the new file's assetId
+                  handleExtractBilling(newFile.assetId);
+                }}
+              />
+            )}
 
-            {/* Date DocuSign Signed */}
+            {/* Date DocuSign Signed — visible to everyone */}
             <DateField
               label="📅 Date DocuSign Signed"
               value={localClient.dateDocusignSigned}
@@ -1604,8 +1773,9 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
               icon={<Calendar className="w-3.5 h-3.5" />}
             />
 
-            {/* Copy Billing Info button — only shown when a DocuSign file exists */}
-            {localClient.docusignFile && (
+            {/* Copy Billing Info button — onboarding only (not needed in CS),
+                and only when a DocuSign file exists. */}
+            {!customerService && localClient.docusignFile && (
               <div className="flex items-center gap-2 px-1 py-1.5 flex-wrap">
                 <button
                   type="button"

@@ -688,11 +688,14 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
   // header shows an "updating…" pill while `clientInfoFetching` is
   // true, so users see the cached view immediately instead of the
   // 1–3s spinner every open used to cost.
+  // The surface is part of the key + URL: the client API redacts EIN / DocuSign
+  // for non-DocuSign viewers on any surface except onboarding, so the CS and
+  // onboarding payloads differ and must not share a cache entry.
   const clientCacheKey = item.clientBoardItemId
-    ? `client:${item.clientBoardItemId}:${item.id}`
+    ? `client:${item.clientBoardItemId}:${item.id}:${appMode}`
     : null;
   const clientFetchUrl = item.clientBoardItemId
-    ? `/api/client/${item.clientBoardItemId}?onboardingId=${item.id}`
+    ? `/api/client/${item.clientBoardItemId}?onboardingId=${item.id}&surface=${appMode}`
     : null;
   const {
     data: clientInfoData,

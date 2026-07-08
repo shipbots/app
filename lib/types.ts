@@ -99,6 +99,13 @@ export interface ClientInfo {
   // General Account Info
   legalEntity: string;
   ein: string;
+  /** Set by the client API when `ein` has been redacted for a viewer who
+   *  can't see DocuSign (Customer Service): true = an EIN is stored but
+   *  hidden, false = none on file. Undefined when the real value is present. */
+  einOnFile?: boolean;
+  /** Same idea for the DocuSign file — true = a document is on file but the
+   *  link/download is hidden from this viewer. */
+  docusignOnFile?: boolean;
   quickbooksName: string;
   shipHeroId: string;
   shipHeroName: string;
