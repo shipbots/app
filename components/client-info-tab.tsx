@@ -169,20 +169,45 @@ function OnFileField({
 function ReadRow({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
   if (!value) return null;
   const isHtml = /<[a-z][\s\S]*>/i.test(value);
+  // Short single-line values sit iOS-style (label left, value right); long or
+  // rich-text values stack so they have room to wrap.
+  const stacked = isHtml || value.length > 42;
   return (
-    <div className="flex items-start gap-2 px-1 py-1.5">
-      {icon && <span className="text-gray-400 mt-0.5 flex-shrink-0">{icon}</span>}
-      <div className="min-w-0">
-        <p className="text-[11px] leading-none mb-0.5 text-gray-400">{label}</p>
+    <div className="flex items-start gap-2.5 px-2.5 py-[7px] border-b border-gray-100/70 last:border-b-0">
+      {icon && <span className="text-gray-300 mt-0.5 flex-shrink-0">{icon}</span>}
+      <div className={`min-w-0 flex-1 ${stacked ? '' : 'flex items-center justify-between gap-3'}`}>
+        <p className={`text-[12.5px] text-gray-500 ${stacked ? 'mb-0.5' : 'flex-shrink-0'}`}>{label}</p>
         {isHtml ? (
           <div
-            className="text-sm text-gray-900 [&_ul]:list-disc [&_ul]:ml-4 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:ml-4 [&_ol]:my-1 [&_li]:mb-0.5 [&_strong]:font-semibold [&_p]:mb-1"
+            className="text-[13.5px] text-gray-900 [&_ul]:list-disc [&_ul]:ml-4 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:ml-4 [&_ol]:my-1 [&_li]:mb-0.5 [&_strong]:font-semibold [&_p]:mb-1"
             dangerouslySetInnerHTML={{ __html: value }}
           />
         ) : (
-          <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">{value}</p>
+          <p className={`text-[13.5px] font-medium text-gray-900 whitespace-pre-wrap break-words ${stacked ? '' : 'text-right'}`}>{value}</p>
         )}
       </div>
+    </div>
+  );
+}
+
+// Read row whose value is an enumerated status/dropdown — rendered as a colour
+// pill so state reads at a glance (green = good, grey = negative/none, blue =
+// neutral). Used by SelectField in the Customer Service read view.
+function ReadPillRow({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
+  if (!value) return null;
+  const v = value.trim().toLowerCase();
+  const positive = ['yes', 'done', 'active', 'onboarded', 'complete', 'completed', 'approved', 'on file', 'live', 'ready'].some(k => v === k || v.startsWith(k));
+  const muted = ['no', 'none', 'n/a', 'na', 'inactive', 'churned', 'lost', 'not set', 'not started', 'pending'].some(k => v === k);
+  const tone = positive
+    ? 'bg-[#E7F8ED] text-[#1E7A3E]'
+    : muted
+      ? 'bg-gray-100 text-gray-500'
+      : 'bg-[#EAF3FA] text-[#0071BC]';
+  return (
+    <div className="flex items-center gap-2.5 px-2.5 py-[7px] border-b border-gray-100/70 last:border-b-0">
+      {icon && <span className="text-gray-300 flex-shrink-0">{icon}</span>}
+      <p className="text-[12.5px] text-gray-500 flex-shrink-0">{label}</p>
+      <span className={`ml-auto inline-flex items-center text-[11.5px] font-semibold px-2 py-0.5 rounded-full ${tone}`}>{value}</span>
     </div>
   );
 }
@@ -430,33 +455,35 @@ function Section({
   };
 
   return (
-    <div className="border border-gray-100 rounded-lg overflow-hidden mb-3">
-      <div className="w-full flex items-center gap-2 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors">
+    <div className="rounded-2xl bg-white border border-gray-200/70 shadow-[0_1px_2px_rgba(20,24,40,.04),0_6px_16px_rgba(20,24,40,.04)] overflow-hidden mb-2.5">
+      <div className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-gray-50/70 transition-colors">
         <button
           type="button"
           onClick={() => setOpen(o => !o)}
-          className="flex-1 flex items-center justify-between gap-2 text-left min-w-0"
+          className="flex-1 flex items-center gap-2.5 text-left min-w-0"
         >
-          <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider truncate">{title}</span>
-          {open ? <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />}
+          <ChevronRight
+            className={`w-4 h-4 text-gray-300 flex-shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
+          />
+          <span className="text-[13px] font-semibold text-gray-800 tracking-[-0.01em] truncate">{title}</span>
         </button>
         {csMode && (
           <button
             type="button"
             onClick={toggleEdit}
-            className={`flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md border transition-colors flex-shrink-0 ${
+            className={`text-[12.5px] font-semibold px-2 py-0.5 rounded-full transition-colors flex-shrink-0 ${
               editing
-                ? 'border-[#015280] bg-[#015280] text-white hover:bg-[#013d60]'
-                : 'border-gray-200 text-[#015280] hover:bg-[#e6f8ff] hover:border-[#43c7ff]'
+                ? 'bg-[#015280] text-white hover:bg-[#013d60]'
+                : 'text-[#0071BC] hover:bg-[#e6f8ff]'
             }`}
             title={editing ? 'Finish editing this section' : 'Edit this section'}
           >
-            {editing ? <><Check className="w-3 h-3" /> Done</> : <><Pencil className="w-3 h-3" /> Edit</>}
+            {editing ? 'Done' : 'Edit'}
           </button>
         )}
       </div>
       {open && hasContent && (
-        <div className="px-3 py-2 space-y-0.5">
+        <div className="border-t border-gray-100 px-2 py-1">
           <SectionEditContext.Provider value={editing}>{children}</SectionEditContext.Provider>
         </div>
       )}
@@ -555,7 +582,7 @@ function SelectField({
   const { csMode, editing } = useFieldMode();
   if (csMode && !editing) {
     if (!value) return null;
-    return <ReadRow label={label} value={value} icon={icon} />;
+    return <ReadPillRow label={label} value={value} icon={icon} />;
   }
 
   // Compact dropdown (always used — just changes how the empty vs filled state looks)
@@ -1626,7 +1653,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
 
   return (
     <CsModeContext.Provider value={customerService}>
-    <div className="p-4 overflow-y-auto h-full">
+    <div className="p-3 overflow-y-auto h-full bg-[#F2F2F7]">
 
       {/* Compact sticky-notes preview at the top of Client Info, for
           the side-panel view only. The fullscreen view already renders

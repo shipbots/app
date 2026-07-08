@@ -553,21 +553,25 @@ function ContactCard({
   const phoneKey: keyof ClientInfo = slot === 1 ? 'contactPhone' : slot === 2 ? 'contact2Phone' : 'contact3Phone';
 
   return (
-    <section className={`flex flex-col rounded-lg border p-2 ${
-      isPrimary ? 'border-[#43c7ff] bg-[#f0fbff]/40' : 'border-gray-200 bg-white'
-    } ${empty ? 'border-dashed' : ''}`}>
-      <div className="flex items-center justify-between mb-1 gap-2">
+    <section className={`flex flex-col rounded-2xl p-2.5 bg-white ${
+      isPrimary
+        ? 'shadow-[0_0_0_1.5px_#0071BC,0_6px_16px_rgba(20,24,40,.06)]'
+        : empty
+          ? 'border border-dashed border-gray-200'
+          : 'border border-gray-200/70 shadow-[0_1px_2px_rgba(20,24,40,.04),0_6px_16px_rgba(20,24,40,.04)]'
+    }`}>
+      <div className="flex items-center justify-between mb-1.5 gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Contact {slot}</p>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-[.06em] whitespace-nowrap">Contact {slot}</p>
           {isPrimary && hubUser && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-1.5 py-0.5 whitespace-nowrap">
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-[#E7F8ED] text-[#1E7A3E] rounded-full px-2 py-0.5 whitespace-nowrap">
               <ShieldCheck className="w-2.5 h-2.5" />
               Hub user
             </span>
           )}
         </div>
         {isPrimary ? (
-          <span className="text-[10px] font-semibold bg-[#015280] text-white px-2 py-0.5 rounded-full inline-flex items-center gap-0.5 flex-shrink-0">
+          <span className="text-[10px] font-semibold bg-[#EAF3FA] text-[#0071BC] px-2 py-0.5 rounded-full inline-flex items-center gap-0.5 flex-shrink-0">
             Primary
           </span>
         ) : (
@@ -575,7 +579,7 @@ function ContactCard({
             type="button"
             onClick={() => onMakePrimary(slot as 2 | 3)}
             disabled={empty || promoting !== null}
-            className="text-[10px] font-semibold border border-gray-300 hover:border-[#43c7ff] hover:text-[#015280] text-gray-500 px-2 py-0.5 rounded-full disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1 flex-shrink-0"
+            className="text-[11px] font-semibold text-[#0071BC] hover:bg-[#EAF3FA] px-2 py-0.5 rounded-full disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed inline-flex items-center gap-1 flex-shrink-0"
             title={empty ? 'Add contact info first' : 'Swap with the current primary contact'}
           >
             {promoting === slot ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <ChevronUp className="w-2.5 h-2.5" />}

@@ -1302,7 +1302,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
         {/* Right column: sticky notes (spans from the panel top) + metrics */}
         <div
           ref={rightColRef}
-          className="flex-1 min-w-0 flex flex-col gap-4 p-5 bg-gray-50 relative overflow-y-auto"
+          className="flex-1 min-w-0 flex flex-col gap-4 p-4 bg-[#F2F2F7] relative overflow-y-auto"
         >
           <div
             className="flex-shrink-0"
@@ -1324,11 +1324,11 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
             <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-gray-200 group-hover:bg-[#43c7ff] transition-colors" />
           </div>
 
-          <section className="bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden flex-1 min-h-[160px]">
-            <header className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 bg-gray-50 flex-shrink-0">
-              <BarChart3 className="w-4 h-4 text-[#015280]" />
+          <section className="bg-white rounded-2xl border border-gray-200/70 shadow-[0_1px_2px_rgba(20,24,40,.04),0_6px_16px_rgba(20,24,40,.04)] flex flex-col overflow-hidden flex-1 min-h-[160px]">
+            <header className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 flex-shrink-0">
+              <BarChart3 className="w-4 h-4 text-[#0071BC]" />
               <h2 className="text-sm font-semibold text-gray-900">Client Performance Metrics</h2>
-              <span className="ml-auto text-[10px] font-semibold uppercase tracking-wider bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded">
+              <span className="ml-auto text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">
                 Coming soon
               </span>
             </header>
