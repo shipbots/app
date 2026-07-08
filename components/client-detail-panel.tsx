@@ -971,17 +971,16 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
   // without duplicating the entire tab/content rendering.
 
   const tabsRowJsx = (
-    <div className="flex gap-1 flex-wrap">
+    <div className="inline-flex flex-wrap gap-1 bg-gray-100/70 rounded-xl p-1">
       {tabs.map((tab) => (
         <button
           key={tab.id}
           onClick={() => setActiveTab(tab.id)}
-          className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+          className={`relative flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
             activeTab === tab.id
-              ? 'font-semibold'
-              : 'text-gray-600 hover:bg-gray-100'
+              ? 'bg-white text-[#015280] font-semibold shadow-[0_1px_2px_rgba(0,0,0,.08)]'
+              : 'text-gray-500 hover:text-gray-700'
           }`}
-          style={activeTab === tab.id ? { background: 'var(--brand-cyan-light)', color: 'var(--brand-navy)' } : {}}
         >
           {tab.icon}
           {tab.label}
@@ -1169,21 +1168,21 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
         <button
           onClick={handleRefresh}
           disabled={refreshing || loadingClient}
-          className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+          className="p-1.5 hover:bg-gray-100 rounded-xl transition-colors disabled:opacity-50"
           title="Refresh client data"
         >
-          <RefreshCw className={`w-4 h-4 text-gray-500 ${refreshing || loadingClient ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-4 h-4 text-gray-400 ${refreshing || loadingClient ? 'animate-spin' : ''}`} />
         </button>
         <button
           onClick={() => setFullscreen(f => !f)}
-          className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+          className="p-1.5 hover:bg-gray-100 rounded-xl transition-colors"
           title="Exit fullscreen"
         >
-          <Minimize2 className="w-4 h-4 text-gray-500" />
+          <Minimize2 className="w-4 h-4 text-gray-400" />
         </button>
         <button
           onClick={onClose}
-          className="flex items-center gap-1 px-2 py-1.5 hover:bg-red-50 hover:text-red-500 text-gray-500 rounded-lg transition-colors text-xs font-medium"
+          className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-red-50 hover:text-red-500 text-gray-500 rounded-xl transition-colors text-xs font-medium"
           title="Close panel (Esc)"
         >
           <X className="w-4 h-4" />
@@ -1278,10 +1277,10 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
             inside ClientHeader now, so the body starts immediately with
             the tabs. */}
         <div
-          className="min-w-0 flex flex-col border-r border-gray-200"
+          className="min-w-0 flex flex-col border-r border-gray-100"
           style={{ width: `${leftColPct}%` }}
         >
-          <div className="px-5 pt-3 pb-3 border-b border-gray-200 flex-shrink-0">
+          <div className="px-4 pt-3 pb-3 border-b border-gray-100 flex-shrink-0 bg-white">
             {tabsRowJsx}
           </div>
           <div className="flex-1 overflow-hidden">
@@ -1498,17 +1497,16 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-1 mt-4 flex-wrap">
+          <div className="inline-flex gap-1 mt-4 flex-wrap bg-gray-100/70 rounded-xl p-1">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`relative flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
                   activeTab === tab.id
-                    ? 'font-semibold'
-                    : 'text-gray-600 hover:bg-gray-100'
+                    ? 'bg-white text-[#015280] font-semibold shadow-[0_1px_2px_rgba(0,0,0,.08)]'
+                    : 'text-gray-500 hover:text-gray-700'
                 }`}
-                style={activeTab === tab.id ? { background: 'var(--brand-cyan-light)', color: 'var(--brand-navy)' } : {}}
               >
                 {tab.icon}
                 {tab.label}
