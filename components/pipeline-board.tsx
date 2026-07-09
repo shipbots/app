@@ -11,8 +11,9 @@ import { CalendarView } from './calendar-view';
 import { TasksView } from './tasks-view';
 import { ClientsView } from './clients-view';
 import { MiniAppsView } from './mini-apps-view';
+import { NotesView } from './notes-view';
 import { useSession } from 'next-auth/react';
-import { Search, Bell, RefreshCw, ChevronDown, ChevronRight, LayoutGrid, CalendarDays, CheckSquare, UserPlus, Users, Sparkles } from 'lucide-react';
+import { Search, Bell, RefreshCw, ChevronDown, ChevronRight, LayoutGrid, CalendarDays, CheckSquare, UserPlus, Users, Sparkles, StickyNote as StickyNoteIcon } from 'lucide-react';
 import { AddClientModal, CreatedClientResult } from './add-client-modal';
 import { CHECKLIST_STEPS } from '@/lib/constants';
 
@@ -48,11 +49,13 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     // 'apps' is CS-only; render-side guard already prevents it leaking
     // into the onboarding surface even if the URL is wrong.
     if (v === 'apps' && isCustomerService) return 'apps';
+    // 'notes' is Onboarding-only — personal on-device scratchpad.
+    if (v === 'notes' && !isCustomerService) return 'notes';
     // CS reps land on the per-client browser by default — their primary
     // workflow is "look up a client" rather than "see the kanban".
     return isCustomerService ? 'clients' : 'pipeline';
   })();
-  const [viewMode, setViewMode] = useState<'pipeline' | 'calendar' | 'tasks' | 'clients' | 'apps'>(initialView);
+  const [viewMode, setViewMode] = useState<'pipeline' | 'calendar' | 'tasks' | 'clients' | 'apps' | 'notes'>(initialView);
 
   // Auto-open a client's detail panel when the URL carries
   // ?clientId=<id>. The id can be either an onboarding-board item id OR
@@ -364,6 +367,24 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
                     Mini Apps
                   </button>
                 )}
+                {!isCustomerService && (
+                  <button
+                    onClick={() => setViewMode('notes')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
+                      viewMode === 'notes'
+                        ? 'text-[#015280] font-semibold'
+                        : 'text-white/80 hover:text-white hover:bg-white/10'
+                    }`}
+                    style={{
+                      borderLeft: '1px solid rgba(255,255,255,0.2)',
+                      ...(viewMode === 'notes' ? { background: 'var(--brand-cyan)' } : {}),
+                    }}
+                    title="Personal on-device notes — only you can see these."
+                  >
+                    <StickyNoteIcon className="w-3.5 h-3.5" />
+                    Notes
+                  </button>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -464,6 +485,15 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
         {/* ── Mini Apps view (Customer Service only) ── */}
         {viewMode === 'apps' && isCustomerService && (
           <MiniAppsView />
+        )}
+
+        {/* ── Notes view (Onboarding surface) ──
+            Personal on-device scratchpad. Stored per-user in
+            localStorage so nothing leaks to the team or requires new
+            infra. See components/notes-view.tsx for the storage
+            details. */}
+        {viewMode === 'notes' && !isCustomerService && (
+          <NotesView />
         )}
 
         {/* ── Pipeline / Kanban view ── */}
