@@ -1,43 +1,56 @@
 /**
- * GET  /api/documents/[clientId]  — list documents for a client
- * POST /api/documents/[clientId]  — add a link (JSON) or upload a file (FormData)
- * DELETE /api/documents/[clientId]?docId=xxx  — delete a document (and file if applicable)
+ * Client documents — shared storage on the Clients board.
+ *
+ * v1 wrote the docs array as JSON to `data/documents/<clientId>.json` on
+ * the local filesystem, which works in dev but fails on Vercel (the
+ * runtime filesystem is read-only outside /tmp). v2 mirrors the
+ * sticky-notes pattern: the array lives as JSON in a Monday `long_text`
+ * column on the Clients board.
+ *
+ * Column id comes from MONDAY_DOCUMENTS_COL_ID. Run
+ * POST /api/admin/setup-documents once to create the column and copy the
+ * returned id into Vercel env vars, then redeploy.
+ *
+ * Race model: last-write-wins. Team is small and the docs list is short
+ * so this is acceptable for v1; a merge-on-write upgrade is possible if
+ * conflicts start showing up.
+ *
+ * File uploads: NOT supported in this version — the file bytes still need
+ * blob storage. The POST handler returns 501 for multipart bodies with a
+ * clear message so the UI can point users at the link flow (which works)
+ * and know that files will land in a follow-up.
  */
-import { NextRequest } from 'next/server';
-import { promises as fs } from 'fs';
-import path from 'path';
+
+import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
+import { fetchClientColumn, updateClientField } from '@/lib/monday';
 
 export interface ClientDocument {
   id: string;
   type: 'link' | 'file';
   name: string;
-  url: string;          // For link: the URL. For file: /client-docs/{clientId}/{filename}
-  fileType?: string;    // original MIME type for uploaded files
-  fileName?: string;    // original filename for uploaded files
+  url: string;
+  fileType?: string;
+  fileName?: string;
   docIcon: 'gdoc' | 'gsheet' | 'gslides' | 'gdrive' | 'pdf' | 'generic';
   createdAt: string;
 }
 
-const DATA_DIR = path.join(process.cwd(), 'data', 'documents');
-const UPLOAD_DIR = path.join(process.cwd(), 'public', 'client-docs');
+const DOCS_COL_ENV = 'MONDAY_DOCUMENTS_COL_ID';
 
-async function readDocs(clientId: string): Promise<ClientDocument[]> {
-  const file = path.join(DATA_DIR, `${clientId}.json`);
-  try {
-    const raw = await fs.readFile(file, 'utf-8');
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
+function getDocsColumnId(): string | null {
+  const id = process.env[DOCS_COL_ENV];
+  if (!id || typeof id !== 'string') return null;
+  return id.trim() || null;
 }
 
-async function writeDocs(clientId: string, docs: ClientDocument[]): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(
-    path.join(DATA_DIR, `${clientId}.json`),
-    JSON.stringify(docs, null, 2),
-    'utf-8'
+function notConfiguredResponse() {
+  return NextResponse.json(
+    {
+      error: `${DOCS_COL_ENV} env var is not set`,
+      hint: 'POST /api/admin/setup-documents once to create the column on the Clients board, then paste the returned id into Vercel env vars and redeploy.',
+    },
+    { status: 503 },
   );
 }
 
@@ -53,14 +66,44 @@ function detectDocIcon(url: string, mimeType?: string): ClientDocument['docIcon'
   return 'generic';
 }
 
+// Read the array from the Monday column. Malformed JSON collapses to an
+// empty list — a bad blob shouldn't take down the docs tab.
+async function readDocs(clientId: string, colId: string): Promise<ClientDocument[]> {
+  const raw = await fetchClientColumn(clientId, colId);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((d: unknown): d is ClientDocument =>
+      !!d && typeof (d as ClientDocument).id === 'string',
+    );
+  } catch {
+    return [];
+  }
+}
+
+async function writeDocs(clientId: string, colId: string, docs: ClientDocument[]): Promise<void> {
+  // updateClientField auto-detects the column type from Monday's schema,
+  // so a valueType arg isn't needed here — mirrors sticky-notes.
+  await updateClientField(clientId, colId, JSON.stringify(docs));
+}
+
 // ── GET ───────────────────────────────────────────────────────────────────────
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ clientId: string }> }
 ) {
+  const colId = getDocsColumnId();
+  if (!colId) return notConfiguredResponse();
+
   const { clientId } = await params;
-  const docs = await readDocs(clientId);
-  return Response.json(docs);
+  try {
+    const docs = await readDocs(clientId, colId);
+    return NextResponse.json(docs);
+  } catch (err) {
+    console.error('[documents GET] failed:', err);
+    return NextResponse.json({ error: 'Failed to load documents' }, { status: 502 });
+  }
 }
 
 // ── POST ──────────────────────────────────────────────────────────────────────
@@ -68,69 +111,56 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ clientId: string }> }
 ) {
+  const colId = getDocsColumnId();
+  if (!colId) return notConfiguredResponse();
+
   const { clientId } = await params;
   const contentType = req.headers.get('content-type') ?? '';
 
-  let newDoc: ClientDocument;
-
   if (contentType.includes('multipart/form-data')) {
-    // File upload
-    const formData = await req.formData();
-    const file = formData.get('file') as File | null;
-    const customName = (formData.get('name') as string | null)?.trim();
-
-    if (!file) {
-      return Response.json({ error: 'No file provided' }, { status: 400 });
-    }
-
-    const ext = file.name.split('.').pop() ?? '';
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const uniqueName = `${randomUUID()}_${safeName}`;
-    const clientUploadDir = path.join(UPLOAD_DIR, clientId);
-    await fs.mkdir(clientUploadDir, { recursive: true });
-    const filePath = path.join(clientUploadDir, uniqueName);
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await fs.writeFile(filePath, buffer);
-
-    newDoc = {
-      id: randomUUID(),
-      type: 'file',
-      name: customName || file.name,
-      url: `/client-docs/${clientId}/${uniqueName}`,
-      fileType: file.type,
-      fileName: file.name,
-      docIcon: detectDocIcon(file.name, file.type),
-      createdAt: new Date().toISOString(),
-    };
-
-    // Suppress unused variable warning
-    void ext;
-  } else {
-    // Link
-    const body = await req.json();
-    const url: string = (body.url ?? '').trim();
-    const name: string = (body.name ?? '').trim();
-
-    if (!url) {
-      return Response.json({ error: 'URL is required' }, { status: 400 });
-    }
-
-    newDoc = {
-      id: randomUUID(),
-      type: 'link',
-      name: name || url,
-      url,
-      docIcon: detectDocIcon(url),
-      createdAt: new Date().toISOString(),
-    };
+    // File uploads need blob storage; the Monday long_text column only
+    // holds JSON. Return 501 with a clear message so the UI can point
+    // users at the link flow (which works) until we add Vercel Blob.
+    return NextResponse.json(
+      {
+        error: 'File uploads are temporarily unavailable',
+        hint: 'Please paste the document URL in the "Add link" form instead — link saves work.',
+      },
+      { status: 501 },
+    );
   }
 
-  const docs = await readDocs(clientId);
-  docs.unshift(newDoc);
-  await writeDocs(clientId, docs);
+  let body: { url?: unknown; name?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
 
-  return Response.json(newDoc, { status: 201 });
+  const url = typeof body.url === 'string' ? body.url.trim() : '';
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!url) {
+    return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+  }
+
+  const newDoc: ClientDocument = {
+    id: randomUUID(),
+    type: 'link',
+    name: name || url,
+    url,
+    docIcon: detectDocIcon(url),
+    createdAt: new Date().toISOString(),
+  };
+
+  try {
+    const docs = await readDocs(clientId, colId);
+    docs.unshift(newDoc);
+    await writeDocs(clientId, colId, docs);
+    return NextResponse.json(newDoc, { status: 201 });
+  } catch (err) {
+    console.error('[documents POST] failed:', err);
+    return NextResponse.json({ error: 'Failed to save link' }, { status: 502 });
+  }
 }
 
 // ── PATCH ─────────────────────────────────────────────────────────────────────
@@ -138,20 +168,34 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ clientId: string }> }
 ) {
-  const { clientId } = await params;
-  const { docId, name } = await req.json();
+  const colId = getDocsColumnId();
+  if (!colId) return notConfiguredResponse();
 
-  if (!docId || !name?.trim()) {
-    return Response.json({ error: 'docId and name required' }, { status: 400 });
+  const { clientId } = await params;
+  let body: { docId?: unknown; name?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const docs = await readDocs(clientId);
-  const idx = docs.findIndex(d => d.id === docId);
-  if (idx === -1) return Response.json({ error: 'Not found' }, { status: 404 });
+  const docId = typeof body.docId === 'string' ? body.docId : '';
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!docId || !name) {
+    return NextResponse.json({ error: 'docId and name required' }, { status: 400 });
+  }
 
-  docs[idx] = { ...docs[idx], name: name.trim() };
-  await writeDocs(clientId, docs);
-  return Response.json(docs[idx]);
+  try {
+    const docs = await readDocs(clientId, colId);
+    const idx = docs.findIndex(d => d.id === docId);
+    if (idx === -1) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    docs[idx] = { ...docs[idx], name };
+    await writeDocs(clientId, colId, docs);
+    return NextResponse.json(docs[idx]);
+  } catch (err) {
+    console.error('[documents PATCH] failed:', err);
+    return NextResponse.json({ error: 'Failed to rename' }, { status: 502 });
+  }
 }
 
 // ── DELETE ────────────────────────────────────────────────────────────────────
@@ -159,29 +203,25 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ clientId: string }> }
 ) {
+  const colId = getDocsColumnId();
+  if (!colId) return notConfiguredResponse();
+
   const { clientId } = await params;
-  const { searchParams } = new URL(req.url);
-  const docId = searchParams.get('docId');
-
+  const docId = new URL(req.url).searchParams.get('docId');
   if (!docId) {
-    return Response.json({ error: 'docId required' }, { status: 400 });
+    return NextResponse.json({ error: 'docId required' }, { status: 400 });
   }
 
-  const docs = await readDocs(clientId);
-  const target = docs.find(d => d.id === docId);
-
-  if (!target) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
+  try {
+    const docs = await readDocs(clientId, colId);
+    const remaining = docs.filter(d => d.id !== docId);
+    if (remaining.length === docs.length) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+    await writeDocs(clientId, colId, remaining);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error('[documents DELETE] failed:', err);
+    return NextResponse.json({ error: 'Failed to delete' }, { status: 502 });
   }
-
-  // Delete physical file if it was uploaded
-  if (target.type === 'file' && target.url.startsWith('/client-docs/')) {
-    const filePath = path.join(process.cwd(), 'public', target.url);
-    await fs.unlink(filePath).catch(() => { /* already gone */ });
-  }
-
-  const updated = docs.filter(d => d.id !== docId);
-  await writeDocs(clientId, updated);
-
-  return Response.json({ ok: true });
 }
