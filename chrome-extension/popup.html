@@ -6,12 +6,18 @@
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
+  <!-- Header is a link: clicking anywhere (logo + title) opens the
+       Customer Service dashboard in a new tab. Popup script rewrites
+       the href to the configured base URL so this works whether the
+       user is on prod or a preview deploy. -->
   <header class="header">
-    <img src="icons/icon-48.png" alt="ShipBots" width="28" height="28" />
-    <div>
-      <p class="title">ShipBots</p>
-      <p class="subtitle">Customer Service</p>
-    </div>
+    <button id="header-home" class="header-link" type="button" title="Open the ShipBots Customer Service dashboard">
+      <img src="icons/icon-48.png" alt="ShipBots" width="28" height="28" />
+      <div>
+        <p class="title">ShipBots</p>
+        <p class="subtitle">Customer Service</p>
+      </div>
+    </button>
   </header>
 
   <!-- Detail view: shown when the user picks a client from search. Holds
@@ -116,6 +122,14 @@
       <button class="tile" data-app="returns-dashboard" title="Opens the ShipBots Returns Dashboard.">
         <span class="tile-icon" aria-hidden="true">↩️</span>
         <span class="tile-label">Returns<br/>Dashboard</span>
+      </button>
+      <button class="tile" data-app="bol-uploader" title="Upload a Bill of Lading — Claude reads it and files it to the client.">
+        <span class="tile-icon" aria-hidden="true">🚛</span>
+        <span class="tile-label">BOL<br/>Uploader</span>
+      </button>
+      <button class="tile" data-app="photo-to-po" title="Snap a photo of an invoice — Claude drafts a ShipHero PO. In development.">
+        <span class="tile-icon" aria-hidden="true">📸</span>
+        <span class="tile-label">Photo to PO</span>
       </button>
     </div>
 

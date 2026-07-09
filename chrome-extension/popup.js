@@ -601,23 +601,16 @@ function buildSection(section, client) {
     let any = false;
     for (const field of section.fields) {
       const hasValue = fieldHasValue(client, field);
-      const spec = EDITABLE_KEYS[field.key];
-      // Skip empty fields UNLESS they're editable — for editable fields we
-      // still render a placeholder "+ Add" so the user can enter data
-      // directly from the popup without opening the dashboard.
-      if (!hasValue && !spec) continue;
+      // Read-only display: skip empty fields entirely. Editing happens
+      // in the dashboard (Edit ↗ button in the detail header); the
+      // extension shows only what's on file, no inline edit affordances
+      // or "+ Add" placeholders. Cleaner scanning, no accidental
+      // overwrites from within the popup.
+      if (!hasValue) continue;
       const dt = document.createElement('dt');
       dt.textContent = field.label;
       const dd = document.createElement('dd');
-      if (hasValue) {
-        dd.appendChild(renderField(client, field));
-      } else {
-        const add = document.createElement('span');
-        add.className = 'edit-empty';
-        add.textContent = '+ Add';
-        dd.appendChild(add);
-      }
-      if (spec) attachInlineEdit(dd, client, field, spec);
+      dd.appendChild(renderField(client, field));
       body.appendChild(dt);
       body.appendChild(dd);
       any = true;
@@ -1131,6 +1124,12 @@ const MINI_APPS = {
   'help-shiphero':      { external: 'https://help.shipbots.com' },
   'help-portal':        { external: 'https://helpportal.shipbots.com' },
   'returns-dashboard':  { external: 'https://script.google.com/a/macros/shipbots.com/s/AKfycbyqXjipgq_siGVjEkFUnE0q1qcTyuAGO8jf77B1vZhx0CK9xG2e3qLnG6BbRp6SYPKS/exec' },
+  // BOL Uploader is an in-dashboard app like CSV Order Formatter, so it
+  // deep-links to the mini-apps view rather than an external URL.
+  'bol-uploader':       { dashPath: '/customer-service?view=apps' },
+  // Photo to PO is still marked "coming soon" in the dashboard — clicking
+  // the tile just opens the Mini Apps grid where the placeholder lives.
+  'photo-to-po':        { dashPath: '/customer-service?view=apps' },
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -1153,6 +1152,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     searchStatus.classList.toggle('error', !!isError);
   }
 
+  // Header logo → open the CS dashboard in a new tab. Same base URL as
+  // every other openPath() call so preview builds stay routed.
+  document.getElementById('header-home')?.addEventListener('click', () => {
+    void openPath('/customer-service');
+  });
+
   async function ensureIndex() {
     if (clientIndex || indexError) return;
     showStatus('Loading clients…');
@@ -1162,11 +1167,49 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (err) {
       indexError = err;
       if (err.code === 'unauthorized') {
-        showStatus('Sign in at the dashboard first, then reopen this popup.', true);
+        // Replace the whole search view with a big "Sign in" CTA — the
+        // previous behavior asked users to sign in "at the dashboard,
+        // then reopen this popup", which was two steps and required
+        // knowing WHERE the dashboard was. The button below does it
+        // directly + gives them a clear entry point on first install.
+        showLoginGate();
       } else {
         showStatus(`Couldn't load clients (${err.message || 'network error'}).`, true);
       }
     }
+  }
+
+  // Full-panel takeover shown when the popup detects a 401. Hides the
+  // search input, mini-apps grid, and quick-launch buttons behind a
+  // single "Sign in to ShipBots" card. Clicking the button opens the
+  // dashboard's /login route in a new tab; once the user signs in there
+  // they can reopen the popup and the index request will succeed.
+  function showLoginGate() {
+    const searchView = document.getElementById('search-view');
+    if (!searchView) return;
+    if (document.getElementById('login-gate')) return;
+    searchView.innerHTML = '';
+    const gate = document.createElement('div');
+    gate.id = 'login-gate';
+    gate.className = 'login-gate';
+    gate.innerHTML = `
+      <div class="login-gate-icon" aria-hidden="true">🔒</div>
+      <h2 class="login-gate-title">Sign in to ShipBots</h2>
+      <p class="login-gate-body">
+        The extension needs a signed-in ShipBots session. Sign in with your
+        <strong>@shipbots.com</strong> Google account, then reopen this popup.
+      </p>
+      <button id="login-gate-btn" type="button" class="login-gate-btn">
+        Sign in →
+      </button>
+      <p class="login-gate-hint">
+        Opens the ShipBots dashboard in a new tab.
+      </p>
+    `;
+    searchView.appendChild(gate);
+    document.getElementById('login-gate-btn').addEventListener('click', () => {
+      void openPath('/login');
+    });
   }
 
   function openSelectedClient(client) {

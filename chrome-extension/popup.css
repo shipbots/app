@@ -66,6 +66,69 @@ body.detail-open {
 .title { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .02em; }
 .subtitle { margin: 2px 0 0 0; font-size: 11px; color: rgba(255,255,255,.65); }
 
+/* Header logo + title is a button so the whole row is one big click
+   target that opens the dashboard. Strips native button chrome so it
+   still LOOKS like the old <header> layout — just interactive. */
+.header-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  border-radius: 6px;
+  transition: opacity .12s;
+}
+.header-link:hover { opacity: .85; }
+.header-link:focus { outline: 2px solid rgba(255,255,255,.6); outline-offset: 2px; }
+
+/* Full-panel login gate shown on 401 — replaces the search UI with a
+   single "Sign in" CTA that opens the dashboard's login page. */
+.login-gate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px 12px 8px;
+  gap: 10px;
+}
+.login-gate-icon { font-size: 30px; line-height: 1; }
+.login-gate-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #111827;
+}
+.login-gate-body {
+  margin: 0;
+  font-size: 12px;
+  color: #4b5563;
+  line-height: 1.5;
+  max-width: 260px;
+}
+.login-gate-btn {
+  margin-top: 4px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  background: #015280;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .12s;
+}
+.login-gate-btn:hover { background: #01416a; }
+.login-gate-hint {
+  margin: 0;
+  font-size: 10px;
+  color: #9ca3af;
+}
+
 .body { padding: 14px 16px 16px; }
 
 .hint { margin: 0 0 8px; font-size: 12px; color: #6b7280; }
