@@ -439,7 +439,15 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
                     index={clientIndex}
                     indexStatus={clientIndexStatus}
                     anchorRef={searchAnchorRef}
-                    onSelect={item => { setSelectedItem(item); setSearchQuery(''); }}
+                    onSelect={item => {
+                      setSelectedItem(item);
+                      // CS reps land straight in the full expanded view (all
+                      // sections + sticky notes) from search — same as the
+                      // extension's "Edit ↗" deep-link. Onboarding keeps the
+                      // narrow side panel.
+                      if (isCustomerService) setDetailFullscreen(true);
+                      setSearchQuery('');
+                    }}
                     onClose={() => setSearchQuery('')}
                   />
                 )}
