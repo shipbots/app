@@ -71,6 +71,40 @@ async function fetchClientIndex() {
   return Array.isArray(data) ? data : [];
 }
 
+// ── Client-index cache (chrome.storage.local) ───────────────────────
+// The search-index fetch from Monday takes ~10s, so the popup felt
+// dead on every open. We now stash the last successful index in
+// chrome.storage.local and hydrate from it instantly — the user can
+// search immediately while a fresh copy loads in the background.
+// Stale entries are still served (no TTL gate on read): a background
+// refresh always runs, so the worst case is a few-seconds-old list,
+// which is exactly the tradeoff the user asked for.
+const INDEX_CACHE_KEY = 'clientIndexCacheV1';
+
+function readIndexCache() {
+  return new Promise(resolve => {
+    try {
+      chrome.storage.local.get([INDEX_CACHE_KEY], result => {
+        // chrome.runtime.lastError just means "not set" — treat as miss.
+        if (chrome.runtime.lastError) { resolve(null); return; }
+        const entry = result && result[INDEX_CACHE_KEY];
+        if (entry && Array.isArray(entry.data)) resolve(entry);
+        else resolve(null);
+      });
+    } catch { resolve(null); }
+  });
+}
+
+function writeIndexCache(data) {
+  return new Promise(resolve => {
+    try {
+      // Date.now() is fine here — this runs in the extension popup, not
+      // a workflow context.
+      chrome.storage.local.set({ [INDEX_CACHE_KEY]: { at: Date.now(), data } }, () => resolve());
+    } catch { resolve(); }
+  });
+}
+
 // Quick-and-dirty fuzzy match: case-insensitive contains across the most
 // useful client fields. Ranks exact-prefix matches above contains.
 // Searchable field registry. `contact` is 1/2/3 for contact slots, undefined
@@ -1375,25 +1409,64 @@ document.addEventListener('DOMContentLoaded', async () => {
     void openPath('/customer-service');
   });
 
-  async function ensureIndex() {
-    if (clientIndex || indexError) return;
-    showStatus('Loading clients…');
+  // Stale-while-revalidate. First call hydrates from the cache
+  // (instant) and kicks a background refresh; the returned promise
+  // resolves as soon as SOME data is available (cache hit → immediately,
+  // cache miss → after the network fetch). Subsequent calls reuse the
+  // same promise so the eager call + focus + first keystroke don't
+  // triple-fetch.
+  let indexReadyPromise = null;
+  function ensureIndex() {
+    if (!indexReadyPromise) indexReadyPromise = hydrateAndRefresh();
+    return indexReadyPromise;
+  }
+
+  async function hydrateAndRefresh() {
+    const cached = await readIndexCache();
+    if (cached && cached.data.length) {
+      clientIndex = cached.data;
+      showStatus('Updating client list…');
+      // Refresh in the background — search already works off the cache.
+      void refreshIndex(false);
+    } else {
+      // No cache (first ever open, or storage cleared): must wait on
+      // the network before search can do anything.
+      showStatus('Loading clients…');
+      await refreshIndex(true);
+    }
+  }
+
+  async function refreshIndex(isForeground) {
     try {
-      clientIndex = await fetchClientIndex();
+      const fresh = await fetchClientIndex();
+      clientIndex = fresh;
+      indexError = null;
+      await writeIndexCache(fresh);
       showStatus('');
+      // If the user is mid-search, re-render against the fresh data.
+      refreshCurrentSearch();
     } catch (err) {
       indexError = err;
       if (err.code === 'unauthorized') {
-        // Replace the whole search view with a big "Sign in" CTA — the
-        // previous behavior asked users to sign in "at the dashboard,
-        // then reopen this popup", which was two steps and required
-        // knowing WHERE the dashboard was. The button below does it
-        // directly + gives them a clear entry point on first install.
-        showLoginGate();
-      } else {
+        // Take over the whole view only when we have nothing to show.
+        // With cached data present, keep it usable and hint quietly.
+        if (!clientIndex) showLoginGate();
+        else showStatus('Showing saved clients — sign in to refresh', false);
+      } else if (isForeground) {
         showStatus(`Couldn't load clients (${err.message || 'network error'}).`, true);
       }
+      // Background failure with cached data → stay silent, keep the list.
     }
+  }
+
+  // Re-run the active query after a background refresh so results
+  // reflect the freshest index without the user retyping.
+  function refreshCurrentSearch() {
+    const q = searchInput.value.trim();
+    if (!q || !clientIndex) return;
+    activeResults = filterClients(clientIndex, q);
+    activeIdx = activeResults.length > 0 ? 0 : -1;
+    renderResults(activeResults, searchResults, activeIdx);
   }
 
   // Full-panel takeover shown when the popup detects a 401. Hides the
