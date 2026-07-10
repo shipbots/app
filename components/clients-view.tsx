@@ -28,8 +28,11 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { prefetchCached } from '@/hooks/use-cached-fetch';
 import { useClientSearchIndex } from '@/hooks/use-client-search-index';
+import { usePersistentCollapse } from '@/hooks/use-persistent-collapse';
 import { CLIENT_GROUP_EXITED_ID, type ClientIndexEntry } from '@/lib/client-search';
 import { OnboardingItem, SubItem, ClientInfo } from '@/lib/types';
+import type { Project } from '@/lib/projects';
+import { MyProjectsPanel } from './my-projects-panel';
 import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search, ChevronsUpDown, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Filter, X, Eye, EyeOff, ListChecks, Warehouse, UserCog, ArrowUpDown } from 'lucide-react';
 
 // ── Sort config used by both client tables ──────────────────────────────────
@@ -75,6 +78,10 @@ interface ClientsViewProps {
    *  dropdown instead). The tables then always show the full list — search
    *  no longer filters them. */
   hideLocalSearch?: boolean;
+  /** Projects (scaffold) for the home-page "My Projects" panel + click-through
+   *  to the project detail modal owned by the board. */
+  projects?: Project[];
+  onOpenProject?: (p: Project) => void;
 }
 
 // CLIENT_GROUP_EXITED_ID ("Exited" group == inactive) is imported from
@@ -854,8 +861,13 @@ function MyTasksPanel({
     return m;
   }, [items]);
 
+  // Collapse state persists per-user across logins (see usePersistentCollapse).
+  const [collapsed, setCollapsed] = usePersistentCollapse(
+    `shipbots:cs:mytasks-collapsed:${(currentUserEmail ?? 'anon').toLowerCase()}`,
+  );
+
   return (
-    <aside className="w-80 flex-shrink-0 bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col sticky top-0 self-start max-h-[calc(100vh-140px)]">
+    <aside className="w-full flex-shrink-0 bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col">
       <header className="px-4 py-2.5 border-b border-gray-200 bg-gray-50 flex items-center gap-2 flex-shrink-0">
         <CheckSquare className="w-4 h-4 text-[#015280]" />
         <div className="flex-1 min-w-0">
@@ -865,8 +877,18 @@ function MyTasksPanel({
           </p>
         </div>
         <span className="text-xs text-gray-500 font-medium">{myTasks.length}</span>
+        <button
+          type="button"
+          onClick={() => setCollapsed(c => !c)}
+          className="p-1 rounded hover:bg-gray-200 text-gray-500"
+          title={collapsed ? 'Expand' : 'Collapse'}
+          aria-label={collapsed ? 'Expand My Tasks' : 'Collapse My Tasks'}
+        >
+          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </button>
       </header>
-      <div className="overflow-y-auto flex-1">
+      {!collapsed && (
+      <div className="overflow-y-auto">
         {loading && (
           <div className="flex items-center gap-2 px-4 py-6 text-xs text-gray-400 justify-center">
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -919,6 +941,7 @@ function MyTasksPanel({
           </ul>
         )}
       </div>
+      )}
     </aside>
   );
 }
@@ -936,6 +959,8 @@ export function ClientsView({
   externalQuery,
   onExternalQueryChange,
   hideLocalSearch = false,
+  projects = [],
+  onOpenProject,
 }: ClientsViewProps) {
   // When the CS header hosts the search, the view treats `externalQuery`
   // as the source of truth and the local input goes away entirely. This
@@ -1287,14 +1312,24 @@ export function ClientsView({
             }
           />
         </div>
-        <MyTasksPanel
-          tasks={allTasks}
-          loading={loadingTasks}
-          currentUserName={currentUserName}
-          currentUserEmail={currentUserEmail}
-          items={items}
-          onSelectClient={onSelectItem}
-        />
+        {/* Right rail — sticky column that stacks My Tasks + My Projects and
+            scrolls on its own if tall, so it stays visible while the tables
+            scroll independently. */}
+        <div className="w-80 flex-shrink-0 flex flex-col gap-3 sticky top-0 self-start max-h-[calc(100vh-120px)] overflow-y-auto">
+          <MyTasksPanel
+            tasks={allTasks}
+            loading={loadingTasks}
+            currentUserName={currentUserName}
+            currentUserEmail={currentUserEmail}
+            items={items}
+            onSelectClient={onSelectItem}
+          />
+          <MyProjectsPanel
+            projects={projects}
+            currentUserEmail={currentUserEmail}
+            onOpenProject={onOpenProject ?? (() => {})}
+          />
+        </div>
       </div>
       {bulkAction && (
         <BulkActionModal

@@ -13,9 +13,13 @@ import { ClientsView } from './clients-view';
 import { MiniAppsView } from './mini-apps-view';
 import { NotesView } from './notes-view';
 import { ClientSearchResults } from './client-search-results';
+import { ProjectsView } from './projects-view';
+import { ProjectDetailModal } from './project-detail-modal';
+import { newId } from './project-bits';
+import { MOCK_PROJECTS, DEFAULT_PROJECT_STATUSES, type Project } from '@/lib/projects';
 import { useClientSearchIndex } from '@/hooks/use-client-search-index';
 import { useSession } from 'next-auth/react';
-import { Search, Bell, RefreshCw, ChevronDown, ChevronRight, LayoutGrid, CalendarDays, CheckSquare, UserPlus, Users, Sparkles, StickyNote as StickyNoteIcon } from 'lucide-react';
+import { Search, Bell, RefreshCw, ChevronDown, ChevronRight, LayoutGrid, CalendarDays, CheckSquare, UserPlus, Users, Sparkles, FolderKanban, StickyNote as StickyNoteIcon } from 'lucide-react';
 import { AddClientModal, CreatedClientResult } from './add-client-modal';
 import { CHECKLIST_STEPS } from '@/lib/constants';
 
@@ -48,16 +52,17 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     if (typeof window === 'undefined') return isCustomerService ? 'clients' : 'pipeline';
     const v = new URLSearchParams(window.location.search).get('view');
     if (v === 'tasks' || v === 'calendar' || v === 'pipeline' || v === 'clients') return v;
-    // 'apps' is CS-only; render-side guard already prevents it leaking
-    // into the onboarding surface even if the URL is wrong.
+    // 'apps' and 'projects' are CS-only; render-side guards already prevent
+    // them leaking into the onboarding surface even if the URL is wrong.
     if (v === 'apps' && isCustomerService) return 'apps';
+    if (v === 'projects' && isCustomerService) return 'projects';
     // 'notes' is Onboarding-only — personal on-device scratchpad.
     if (v === 'notes' && !isCustomerService) return 'notes';
     // CS reps land on the per-client browser by default — their primary
     // workflow is "look up a client" rather than "see the kanban".
     return isCustomerService ? 'clients' : 'pipeline';
   })();
-  const [viewMode, setViewMode] = useState<'pipeline' | 'calendar' | 'tasks' | 'clients' | 'apps' | 'notes'>(initialView);
+  const [viewMode, setViewMode] = useState<'pipeline' | 'calendar' | 'tasks' | 'clients' | 'apps' | 'notes' | 'projects'>(initialView);
 
   // Auto-open a client's detail panel when the URL carries
   // ?clientId=<id>. The id can be either an onboarding-board item id OR
@@ -102,6 +107,40 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
   const [showAddClient, setShowAddClient] = useState(false);
   // Locally injected items (newly created clients before next server reload)
   const [localItems, setLocalItems] = useState<OnboardingItem[]>([]);
+
+  // ── Projects (SCAFFOLD / preview) ──
+  // Session-only state seeded from mock data — no backend yet. `projects`
+  // feeds both the Projects workspace and the home-page "My Projects" panel;
+  // `selectedProject` drives the detail modal. Edits are upserted here so the
+  // preview feels live, but nothing persists across a reload.
+  const [projects, setProjects] = useState<Project[]>(MOCK_PROJECTS);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [selectedProjectIsNew, setSelectedProjectIsNew] = useState(false);
+  const handleProjectSave = (p: Project) => {
+    setProjects(prev => (prev.some(x => x.id === p.id) ? prev.map(x => (x.id === p.id ? p : x)) : [p, ...prev]));
+  };
+  const openExistingProject = (p: Project) => { setSelectedProjectIsNew(false); setSelectedProject(p); };
+  const openNewProject = () => {
+    const email = session?.user?.email ?? '';
+    const nowIso = new Date().toISOString();
+    setSelectedProjectIsNew(true);
+    setSelectedProject({
+      id: newId('proj'),
+      name: '',
+      clientBoardItemId: null,
+      clientName: '',
+      status: DEFAULT_PROJECT_STATUSES[0],
+      ownerEmail: email,
+      note: '',
+      dueDate: null,
+      subtasks: [],
+      documents: [],
+      adhocCreated: false,
+      createdByEmail: email,
+      createdAt: nowIso,
+      activity: [{ id: newId('act'), kind: 'created', actorEmail: email, at: nowIso, summary: 'created the project' }],
+    });
+  };
 
   const handleClientCreated = (result: CreatedClientResult) => {
     const now = new Date().toISOString();
@@ -199,6 +238,30 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     }),
     [allItems, statusOverrides, itemOverrides]
   );
+
+  // Option lists for the project detail modal's client + assignee pickers.
+  const projectClientOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const opts: { id: string | null; name: string }[] = [];
+    for (const it of overriddenAllItems) {
+      const key = it.clientBoardItemId || it.name;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      opts.push({ id: it.clientBoardItemId, name: it.name });
+    }
+    return opts.sort((a, b) => a.name.localeCompare(b.name));
+  }, [overriddenAllItems]);
+
+  const projectAgentOptions = useMemo(() => {
+    const set = new Set<string>();
+    if (session?.user?.email) set.add(session.user.email);
+    for (const e of Object.values(agentEmailMap)) if (e) set.add(e);
+    for (const p of projects) {
+      if (p.ownerEmail) set.add(p.ownerEmail);
+      for (const s of p.subtasks) if (s.assigneeEmail) set.add(s.assigneeEmail);
+    }
+    return Array.from(set).filter(Boolean).sort();
+  }, [agentEmailMap, projects, session]);
 
   // Legacy in-memory filter — now only narrows the Calendar and Tasks views,
   // where filtering the surface still makes sense. The kanban board and the
@@ -363,6 +426,23 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
                 </button>
                 {isCustomerService && (
                   <button
+                    onClick={() => setViewMode('projects')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
+                      viewMode === 'projects'
+                        ? 'text-[#015280] font-semibold'
+                        : 'text-white/80 hover:text-white hover:bg-white/10'
+                    }`}
+                    style={{
+                      borderLeft: '1px solid rgba(255,255,255,0.2)',
+                      ...(viewMode === 'projects' ? { background: 'var(--brand-cyan)' } : {}),
+                    }}
+                  >
+                    <FolderKanban className="w-3.5 h-3.5" />
+                    Projects
+                  </button>
+                )}
+                {isCustomerService && (
+                  <button
                     onClick={() => setViewMode('apps')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
                       viewMode === 'apps'
@@ -487,6 +567,19 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
             currentUserName={session?.user?.name ?? null}
             clientGroupOverrides={clientGroupOverrides}
             hideLocalSearch
+            projects={projects}
+            onOpenProject={openExistingProject}
+          />
+        )}
+
+        {/* ── Projects workspace (Customer Service only) ──
+            SCAFFOLD: preview over mock data until the backend is chosen. */}
+        {viewMode === 'projects' && isCustomerService && (
+          <ProjectsView
+            projects={projects}
+            currentUserEmail={session?.user?.email ?? null}
+            onOpenProject={openExistingProject}
+            onNewProject={openNewProject}
           />
         )}
 
@@ -649,6 +742,19 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
         <AddClientModal
           onClose={() => setShowAddClient(false)}
           onCreated={handleClientCreated}
+        />
+      )}
+
+      {selectedProject && (
+        <ProjectDetailModal
+          key={selectedProject.id}
+          project={selectedProject}
+          isNew={selectedProjectIsNew}
+          clientOptions={projectClientOptions}
+          agentOptions={projectAgentOptions}
+          currentUserEmail={session?.user?.email ?? null}
+          onClose={() => { setSelectedProject(null); setSelectedProjectIsNew(false); }}
+          onSave={handleProjectSave}
         />
       )}
     </div>
