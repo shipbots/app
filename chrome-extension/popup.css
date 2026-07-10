@@ -824,15 +824,20 @@ body.detail-open {
   flex-direction: column;
   gap: 4px;
 }
+/* Tinted card + solid left accent so an attached doc registers at a
+   glance instead of blending into the field rows around it. Matches
+   the dashboard section-documents styling. */
 .detail-docs-item {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 6px;
-  border: 1px solid #f0f0f0;
+  padding: 6px 8px;
+  border: 1px solid rgba(0, 113, 188, .2);
+  border-left: 4px solid #0071BC;
   border-radius: 6px;
-  background: #fff;
+  background: rgba(234, 243, 250, .7);
 }
+.detail-docs-item .detail-docs-name { font-weight: 600; color: #111827; }
 .detail-docs-glyph {
   flex-shrink: 0;
   font-size: 13px;

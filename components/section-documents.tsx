@@ -186,7 +186,7 @@ export function SectionDocuments({
           <Paperclip className="w-3.5 h-3.5 text-[#0071BC] flex-shrink-0" />
           <h4 className="text-xs font-semibold text-gray-900 uppercase tracking-wider truncate">{label}</h4>
           {(files.length + links.length) > 0 && (
-            <span className="text-[10px] font-bold bg-gray-100 text-gray-600 rounded-full px-1.5 py-0.5 leading-none">
+            <span className="text-[10px] font-bold bg-[#0071BC] text-white rounded-full px-1.5 py-0.5 leading-none">
               {files.length + links.length}
             </span>
           )}
@@ -288,7 +288,10 @@ export function SectionDocuments({
                 No documents yet — add a file or link on the right.
               </p>
             ) : (
-              <ul className="divide-y divide-gray-100 border border-gray-100 rounded-md">
+              // Each doc is its own tinted card with a solid left accent
+              // in the brand blue — attached docs must register at a
+              // glance, not read as just another form row.
+              <ul className="space-y-1.5">
                 {files.map(f => (
                   <FileRow
                     key={f.assetId}
@@ -301,9 +304,9 @@ export function SectionDocuments({
                   />
                 ))}
                 {links.map(l => (
-                  <li key={l.id} className="flex items-center gap-2 px-2.5 py-2">
+                  <li key={l.id} className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-[#EAF3FA]/70 border border-[#0071BC]/20 border-l-4 border-l-[#0071BC]">
                     <Link2 className="w-5 h-5 text-[#0071BC] flex-shrink-0" />
-                    <span className="flex-1 min-w-0 text-[13px] text-gray-800 truncate" title={l.url}>
+                    <span className="flex-1 min-w-0 text-[13px] font-medium text-gray-900 truncate" title={l.url}>
                       {l.name}
                     </span>
                     <a
@@ -432,7 +435,7 @@ function FileRow({
   };
 
   return (
-    <li className="flex items-center gap-2 px-2.5 py-2">
+    <li className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-[#EAF3FA]/70 border border-[#0071BC]/20 border-l-4 border-l-[#0071BC]">
       {/* Bigger icon so it's obvious there's a document attached. */}
       <FileText className="w-5 h-5 text-[#0071BC] flex-shrink-0" />
       <div className="flex-1 min-w-0">
@@ -470,7 +473,7 @@ function FileRow({
           </div>
         ) : (
           <div className="group flex items-center gap-1.5 min-w-0">
-            <span className="text-[13px] text-gray-800 truncate" title={file.name}>{file.name}</span>
+            <span className="text-[13px] font-medium text-gray-900 truncate" title={file.name}>{file.name}</span>
             <button
               type="button"
               onClick={() => setEditing(true)}
