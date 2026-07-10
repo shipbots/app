@@ -33,7 +33,7 @@ import { CLIENT_GROUP_EXITED_ID, type ClientIndexEntry } from '@/lib/client-sear
 import { OnboardingItem, SubItem, ClientInfo } from '@/lib/types';
 import type { Project } from '@/lib/projects';
 import { MyProjectsPanel } from './my-projects-panel';
-import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search, ChevronsUpDown, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Filter, X, Eye, EyeOff, ListChecks, Warehouse, UserCog, ArrowUpDown } from 'lucide-react';
+import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search, ChevronsUpDown, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Filter, X, Eye, EyeOff, ListChecks, Warehouse, UserCog, ArrowUpDown, FolderKanban } from 'lucide-react';
 
 // ── Sort config used by both client tables ──────────────────────────────────
 type SortColumn = 'client' | 'manager' | 'contact' | 'portal' | 'warehouse';
@@ -397,6 +397,7 @@ function ClientRow({
   portal,
   warehouse,
   inactive,
+  activeProjects = 0,
   onSelect,
   selectable = false,
   selected = false,
@@ -410,6 +411,8 @@ function ClientRow({
   warehouse: string;
   /** True when the client is in the "Exited" group on the Clients board. */
   inactive: boolean;
+  /** Count of this client's active (not-completed) projects. */
+  activeProjects?: number;
   onSelect: () => void;
   selectable?: boolean;
   selected?: boolean;
@@ -467,6 +470,19 @@ function ClientRow({
             </span>
           )}
         </div>
+      </td>
+      <td className="px-4 py-2.5">
+        {activeProjects > 0 ? (
+          <span
+            title={`${activeProjects} active project${activeProjects === 1 ? '' : 's'}`}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-[#015280] bg-[#e6f8ff] rounded-full px-2 py-0.5"
+          >
+            <FolderKanban className="w-3 h-3" />
+            {activeProjects}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-300">—</span>
+        )}
       </td>
       <td className="px-4 py-2.5">
         {portal ? (
@@ -681,6 +697,7 @@ function ClientTable({
   selectedIds,
   onToggleSelect,
   onSelectAll,
+  activeProjectsFor,
   heightClass,
 }: {
   title: string;
@@ -709,6 +726,9 @@ function ClientTable({
    *  Clients-board record; the callback flips them ALL on or ALL off
    *  depending on the current select-all state. */
   onSelectAll?: (visibleIds: string[], turnOn: boolean) => void;
+  /** Count of active (not-completed) projects for a client — drives the
+   *  Projects badge column. */
+  activeProjectsFor?: (item: OnboardingItem) => number;
   /** Tailwind height classes for the table shell. When omitted the table
    *  fills its flex parent (`flex-1 min-h-0`); the scrollable CS layout
    *  passes explicit heights so each table keeps a consistent size while the
@@ -788,6 +808,9 @@ function ClientTable({
                   </th>
                 )}
                 <SortHeader label="Client" column="client" sort={sort} onChange={onSortChange} />
+                <th className="px-4 py-2 text-left">
+                  <span className="uppercase tracking-wider text-[11px] font-semibold text-gray-500">Projects</span>
+                </th>
                 <SortHeader label="AppDot / Portal" column="portal" sort={sort} onChange={onSortChange} />
                 <SortHeader label="Warehouse" column="warehouse" sort={sort} onChange={onSortChange} />
                 <SortHeader label="Account Manager" column="manager" sort={sort} onChange={onSortChange} />
@@ -803,6 +826,7 @@ function ClientTable({
                   portal={portalFor(item.clientBoardItemId)}
                   warehouse={warehouseFor(item.clientBoardItemId)}
                   inactive={isInactive(item.clientBoardItemId)}
+                  activeProjects={activeProjectsFor?.(item) ?? 0}
                   onSelect={() => onSelectItem(item)}
                   selectable={selectable}
                   selected={item.clientBoardItemId ? selectedIds?.has(item.clientBoardItemId) ?? false : false}
@@ -1133,6 +1157,24 @@ export function ClientsView({
     });
   }, [visibilityFiltered, selectedManagers, agentEmailMap]);
 
+  // Active-project count per client (active = status is not "completed"), for
+  // the Projects badge column. Mock projects link by client name (no board id
+  // yet); real ones will link by clientBoardItemId, which is preferred here.
+  const activeProjectsFor = useMemo(() => {
+    const byId: Record<string, number> = {};
+    const byName: Record<string, number> = {};
+    for (const p of projects) {
+      if (p.status.kind === 'completed') continue;
+      if (p.clientBoardItemId) byId[p.clientBoardItemId] = (byId[p.clientBoardItemId] ?? 0) + 1;
+      const n = (p.clientName ?? '').toLowerCase();
+      if (n) byName[n] = (byName[n] ?? 0) + 1;
+    }
+    return (item: OnboardingItem): number => {
+      if (item.clientBoardItemId && byId[item.clientBoardItemId] != null) return byId[item.clientBoardItemId];
+      return byName[(item.name ?? '').toLowerCase()] ?? 0;
+    };
+  }, [projects]);
+
   return (
     // Vertical scroll container: each table below keeps a fixed, comfortable
     // size and the whole page scrolls to fit them — so more tables/sections
@@ -1235,6 +1277,7 @@ export function ClientsView({
             onSelectItem={onSelectItem}
             sort={mySort}
             onSortChange={setMySort}
+            activeProjectsFor={activeProjectsFor}
             heightClass="h-[36vh] min-h-[200px]"
           />
           {/* Bulk action bar sits directly above the All Clients table,
@@ -1260,6 +1303,7 @@ export function ClientsView({
             onSelectItem={onSelectItem}
             sort={allSort}
             onSortChange={setAllSort}
+            activeProjectsFor={activeProjectsFor}
             heightClass="h-[58vh] min-h-[340px]"
             selectable={bulkMode}
             selectedIds={selectedIds}

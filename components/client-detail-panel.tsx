@@ -1113,6 +1113,8 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
             hideHeader={fullscreen}
             hideContactInfo={fullscreen}
             customerService={isCustomerService}
+            projects={projects}
+            onOpenProject={onOpenProject}
             onboardingItemId={item.id}
             deliveredDate={item.deliveredDate}
             inventoryDelivered={item.inventoryDelivered}
@@ -1644,6 +1646,8 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
                 client={clientInfo}
                 fullscreen={fullscreen}
                 customerService={isCustomerService}
+                projects={projects}
+                onOpenProject={onOpenProject}
                 onboardingItemId={item.id}
                 deliveredDate={item.deliveredDate}
                 inventoryDelivered={item.inventoryDelivered}

@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { ClientStickyNotesSummary } from './client-sticky-notes-summary';
 import { SectionDocuments } from './section-documents';
+import { ClientProjectsBox } from './client-projects-box';
+import type { Project } from '@/lib/projects';
 import { useSession } from 'next-auth/react';
 
 // ─── Customer Service "clean view" mode ──────────────────────────────────────
@@ -247,6 +249,11 @@ interface ClientInfoTabProps {
    *  with a per-section Edit button that reveals all fields for editing.
    *  Off (default) in Onboarding, which keeps the always-editable layout. */
   customerService?: boolean;
+  /** Projects (scaffold) + opener — renders a "Projects for this client" box
+   *  in the side-panel (non-fullscreen) CS view. The expanded view shows its
+   *  own box in the right column, so this one is gated to !fullscreen. */
+  projects?: Project[];
+  onOpenProject?: (p: Project) => void;
 }
 
 // ─── Copyable + Editable field (for portal login credentials) ────────────────
@@ -1633,7 +1640,7 @@ function FileField({
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
-export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, hideHeader = false, hideContactInfo = false, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange, onDeliveredDateSaved, onEstimatedDeliveryDateSaved, customerService = false }: ClientInfoTabProps) {
+export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, hideHeader = false, hideContactInfo = false, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange, onDeliveredDateSaved, onEstimatedDeliveryDateSaved, customerService = false, projects = [], onOpenProject }: ClientInfoTabProps) {
   // The "two-column-per-section" layout is the standard fullscreen treatment
   // when the panel is the only thing on screen. The CS expanded view sets
   // forceSingleColumn so the right half of the screen can host its own
@@ -1910,6 +1917,20 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
           summary would be a duplicate there. Renders nothing when
           there are no notes / setup is incomplete either way. */}
       {id && !fullscreen && <ClientStickyNotesSummary clientBoardItemId={id} />}
+
+      {/* Projects for this client — side-panel (non-expanded) view. The
+          expanded view renders its own box in the right column, so gate this
+          to !fullscreen to avoid a duplicate. CS only. */}
+      {!fullscreen && customerService && onOpenProject && (
+        <div className="mb-3">
+          <ClientProjectsBox
+            projects={projects}
+            clientBoardItemId={id || null}
+            clientName={localClient.name}
+            onOpenProject={onOpenProject}
+          />
+        </div>
+      )}
 
       {/* ── Client Name (editable — renames both boards) ── */}
       {!hideHeader && (
