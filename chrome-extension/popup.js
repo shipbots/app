@@ -784,8 +784,123 @@ function renderClientDetail(client) {
   pills.appendChild(agentPill);
   if (pills.childElementCount > 0) sectionsEl.appendChild(pills);
 
+  // Attach the Documents section BEFORE the field sections so reps
+  // spot uploaded files without scrolling. Injects an empty
+  // collapsible placeholder immediately, then fires a background
+  // fetch that populates or removes it based on the response.
+  const docsWrap = buildDocumentsSectionShell();
+  sectionsEl.appendChild(docsWrap);
+  void loadSectionFilesInto(docsWrap, client.id);
+
   for (const section of DETAIL_SECTIONS) {
     sectionsEl.appendChild(buildSection(section, client));
+  }
+}
+
+// ── Section files (Documents) ──────────────────────────────────────
+// Read-only mirror of the dashboard's Docs tab aggregated view.
+// Renders one collapsible section listing every file uploaded from
+// any of Receiving / Packing / Returns / General, each tagged with a
+// section chip. Falls back to an empty state; hides the whole
+// section if the storage isn't configured or the fetch fails.
+const SECTION_CHIP_LABEL = {
+  documents: 'General',
+  receiving: 'Receiving',
+  packing:   'Packing',
+  returns:   'Returns',
+};
+
+function buildDocumentsSectionShell() {
+  const wrap = document.createElement('div');
+  wrap.className = 'detail-section';
+  const header = document.createElement('button');
+  header.className = 'detail-section-header';
+  header.type = 'button';
+  header.setAttribute('aria-expanded', 'true');
+  const title = document.createElement('span');
+  title.className = 'detail-section-title';
+  title.textContent = 'Documents';
+  const chev = document.createElement('span');
+  chev.className = 'detail-section-chev';
+  chev.textContent = '›';
+  header.appendChild(title);
+  header.appendChild(chev);
+
+  const body = document.createElement('div');
+  body.className = 'detail-section-body detail-docs-body';
+  body.hidden = false;
+  // Loading pip so the section doesn't appear empty during fetch.
+  const loading = document.createElement('p');
+  loading.className = 'detail-docs-loading';
+  loading.textContent = 'Loading documents…';
+  body.appendChild(loading);
+
+  header.addEventListener('click', () => {
+    const expanded = header.getAttribute('aria-expanded') === 'true';
+    header.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+    body.hidden = expanded;
+  });
+
+  wrap.appendChild(header);
+  wrap.appendChild(body);
+  // Stash header + count node so the loader can update the title later.
+  wrap._docsHeader = title;
+  wrap._docsBody = body;
+  return wrap;
+}
+
+async function loadSectionFilesInto(wrap, clientBoardItemId) {
+  if (!clientBoardItemId) { wrap.remove(); return; }
+  const body = wrap._docsBody;
+  try {
+    const base = await getBaseUrl();
+    const res = await fetch(
+      `${base}/api/client/${encodeURIComponent(clientBoardItemId)}/section-files/all`,
+      { credentials: 'include' },
+    );
+    // 503 = storage not configured yet; 401 = unauthenticated; either
+    // way we hide the section rather than nag the rep from the popup.
+    if (res.status === 503 || res.status === 401) { wrap.remove(); return; }
+    if (!res.ok) throw new Error(`section-files ${res.status}`);
+    const files = await res.json();
+    if (!Array.isArray(files) || files.length === 0) { wrap.remove(); return; }
+
+    // Update the header with a live count so reps see (3) etc.
+    wrap._docsHeader.textContent = `Documents (${files.length})`;
+
+    body.innerHTML = '';
+    const list = document.createElement('ul');
+    list.className = 'detail-docs-list';
+    for (const f of files) {
+      const li = document.createElement('li');
+      li.className = 'detail-docs-item';
+      const chip = document.createElement('span');
+      chip.className = `detail-docs-chip detail-docs-chip-${f.category || 'documents'}`;
+      chip.textContent = SECTION_CHIP_LABEL[f.category] || 'General';
+      li.appendChild(chip);
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'detail-docs-name';
+      nameSpan.textContent = f.name || 'Untitled';
+      nameSpan.title = f.name || '';
+      li.appendChild(nameSpan);
+
+      if (f.url) {
+        const link = document.createElement('a');
+        link.href = f.url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.className = 'detail-docs-open';
+        link.textContent = 'Open ↗';
+        li.appendChild(link);
+      }
+      list.appendChild(li);
+    }
+    body.appendChild(list);
+  } catch (err) {
+    console.error('[section-files] load failed', err);
+    // Silent fail — read-only surface. The dashboard covers the case.
+    wrap.remove();
   }
 }
 

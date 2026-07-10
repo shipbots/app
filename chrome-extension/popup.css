@@ -806,3 +806,62 @@ body.detail-open {
 .detail-contact-line a { color: #015280; text-decoration: none; }
 .detail-contact-line a:hover { text-decoration: underline; }
 
+/* Documents section — aggregated view of every uploaded file across
+   the Receiving / Packing / Returns / General columns. Read-only in
+   the extension; renaming and uploading live in the dashboard. */
+.detail-docs-body { padding: 6px 10px 10px; }
+.detail-docs-loading {
+  margin: 4px 0;
+  font-size: 11px;
+  font-style: italic;
+  color: #9ca3af;
+}
+.detail-docs-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.detail-docs-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  background: #fff;
+}
+.detail-docs-chip {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.detail-docs-chip-documents { background: #f3f4f6; color: #4b5563; }
+.detail-docs-chip-receiving { background: #d1fae5; color: #065f46; }
+.detail-docs-chip-packing   { background: #dbeafe; color: #1e40af; }
+.detail-docs-chip-returns   { background: #ffe4e6; color: #9f1239; }
+.detail-docs-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.detail-docs-open {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #0071BC;
+  text-decoration: none;
+}
+.detail-docs-open:hover { text-decoration: underline; }
+
