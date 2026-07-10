@@ -9,6 +9,7 @@ import {
   ArrowUpDown,
 } from 'lucide-react';
 import { ClientStickyNotesSummary } from './client-sticky-notes-summary';
+import { SectionDocuments } from './section-documents';
 import { useSession } from 'next-auth/react';
 
 // ─── Customer Service "clean view" mode ──────────────────────────────────────
@@ -2116,6 +2117,12 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
         <EditField label="🗄️ Initial Inventory Storing Needs" value={localClient.initialInventoryStoringNeeds} columnId="text_mkw2z2tp" clientId={id} />
         <EditField label="📝 Notes on Initial Inventory" value={localClient.notesOnInitialInventory} columnId="long_text_mktqapsv" clientId={id} multiline />
         <EditField label="📝 Notes for Receiving" value={localClient.notesForReceiving} columnId="long_text_mkxecta8" clientId={id} multiline />
+        <SectionDocuments
+          clientBoardItemId={id}
+          category="receiving"
+          label="Receiving Documents"
+          hint="Attach anything the receiving team needs — labels, quality checks, etc. Also appears in the general Docs tab."
+        />
       </Section>
 
       {/* ── Packing & Shipping Requirements ── */}
@@ -2142,6 +2149,12 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
         <EditField label="📝 Additional Notes" value={localClient.additionalNotes} columnId="long_text_mktran3x" clientId={id} multiline />
         <EditField label="📝 Additional Shipping Requirement Notes" value={localClient.additionalShippingNotes} columnId="long_text_mkwy13zg" clientId={id} multiline />
         <EditField label="📝 Notes for Packing" value={localClient.notesForPacking} columnId="long_text_mkxfv1hr" clientId={id} multiline />
+        <SectionDocuments
+          clientBoardItemId={id}
+          category="packing"
+          label="Packing Documents"
+          hint="Attach anything the packing team needs — inserts, labels, packaging specs. Also appears in the general Docs tab."
+        />
       </Section>
 
       {/* ── Returns Specifications ── */}
@@ -2153,6 +2166,12 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
         <SelectField label="💔 Returns - Damaged Condition" value={localClient.returnsDamagedCondition} columnId="color_mkxfa9h5" clientId={id} options={colOptions['color_mkxfa9h5'] ?? []} valueType="status" />
         <SelectField label="✨ Returns - New Condition" value={localClient.returnsNewCondition} columnId="color_mkxfkdyh" clientId={id} options={colOptions['color_mkxfkdyh'] ?? []} valueType="status" />
         <SelectField label="♻️ Returns - Used Condition" value={localClient.returnsUsedCondition} columnId="color_mkxfxdx5" clientId={id} options={colOptions['color_mkxfxdx5'] ?? []} valueType="status" />
+        <SectionDocuments
+          clientBoardItemId={id}
+          category="returns"
+          label="Returns Reference Documents"
+          hint="Attach anything returns needs — RMAs, quality specs, damage handling. Also appears in the general Docs tab."
+        />
       </Section>
 
       {/* ── ShipBots Support Portal Login ──

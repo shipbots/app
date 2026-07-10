@@ -760,6 +760,13 @@ export function DocumentsTab({
   // upload/extract section.
   const canDocusign = Boolean(session?.user?.canDocusign);
   const isAdmin = Boolean((session?.user as { isAdmin?: boolean } | undefined)?.isAdmin);
+  // Docs storage lives on the CLIENTS board (long_text + 4 file
+  // columns). The `clientId` prop is the ONBOARDING item id — safe
+  // for the DocuSign flow which reads from the onboarding board's
+  // files column but wrong for docs on the Clients board. Prefer
+  // clientBoardItemId when we have it; fall back to clientId only
+  // so a partially-linked item doesn't hard-crash.
+  const docsClientId = clientBoardItemId || clientId;
   const [docs, setDocs]   = useState<ClientDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode]   = useState<'link' | 'upload' | null>(null);
@@ -771,13 +778,16 @@ export function DocumentsTab({
   const [unconfigured, setUnconfigured] = useState(false);
   const [setupRunning, setSetupRunning] = useState(false);
   const [setupError, setSetupError] = useState('');
-  const [setupResult, setSetupResult] = useState<{ columnId: string } | null>(null);
+  // `columnId` is the long_text id (links storage). `envBlock` is the
+  // combined lines for every file column too — we run both bootstraps
+  // in one click so admins paste one block into Vercel.
+  const [setupResult, setSetupResult] = useState<{ columnId: string; envBlock: string } | null>(null);
   const [setupCopied, setSetupCopied] = useState(false);
 
   useEffect(() => {
     setLoading(true);
     setUnconfigured(false);
-    fetch(`/api/documents/${clientId}`)
+    fetch(`/api/documents/${docsClientId}`)
       .then(async r => {
         if (r.status === 503) { setUnconfigured(true); setDocs([]); return; }
         if (!r.ok) throw new Error(`${r.status}`);
@@ -786,21 +796,26 @@ export function DocumentsTab({
       })
       .catch(() => setDocs([]))
       .finally(() => setLoading(false));
-  }, [clientId]);
+  }, [docsClientId]);
 
   const runSetup = async () => {
     if (setupRunning) return;
     setSetupRunning(true);
     setSetupError('');
     try {
-      const res = await fetch('/api/admin/setup-documents', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.detail || data?.error || `setup failed (${res.status})`);
-      if (!data?.columnId) throw new Error('No column id in response');
-      setSetupResult({ columnId: data.columnId });
+      // Long_text column for links
+      const linkRes = await fetch('/api/admin/setup-documents', { method: 'POST', credentials: 'include' });
+      const linkData = await linkRes.json().catch(() => ({}));
+      if (!linkRes.ok) throw new Error(linkData?.detail || linkData?.error || `setup-documents (${linkRes.status})`);
+      if (!linkData?.columnId) throw new Error('No column id from setup-documents');
+      // 4 file columns for uploads (documents / receiving / packing / returns)
+      const fileRes = await fetch('/api/admin/setup-doc-columns', { method: 'POST', credentials: 'include' });
+      const fileData = await fileRes.json().catch(() => ({}));
+      if (!fileRes.ok) throw new Error(fileData?.error || `setup-doc-columns (${fileRes.status})`);
+      // Merge both env var lines into one block.
+      const envLines = [`MONDAY_DOCUMENTS_COL_ID=${linkData.columnId}`];
+      if (fileData?.envBlock) envLines.push(String(fileData.envBlock));
+      setSetupResult({ columnId: linkData.columnId, envBlock: envLines.join('\n') });
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : 'unknown error');
     } finally {
@@ -810,7 +825,9 @@ export function DocumentsTab({
   const copySetupId = async () => {
     if (!setupResult) return;
     try {
-      await navigator.clipboard.writeText(setupResult.columnId);
+      // Copy the entire env block (all 5 vars) so the admin's paste
+      // into Vercel captures every column in one shot.
+      await navigator.clipboard.writeText(setupResult.envBlock);
       setSetupCopied(true);
       setTimeout(() => setSetupCopied(false), 1800);
     } catch { /* clipboard denied — user can select manually */ }
@@ -870,6 +887,16 @@ export function DocumentsTab({
         </div>
       )}
 
+      {/* ── Aggregated section files ──
+          Files uploaded inside Receiving / Packing / Returns sections
+          (see components/section-documents.tsx) show up here in one
+          combined list, tagged with the section they came from. Reads
+          /api/client/[id]/section-files/all which walks every
+          configured section column on the Clients board. */}
+      {clientBoardItemId && (
+        <AggregatedSectionFiles clientBoardItemId={clientBoardItemId} />
+      )}
+
       {/* ── DocuSign pinned section — restricted to the DocuSign group ── */}
       {canDocusign && (
         <>
@@ -907,15 +934,18 @@ export function DocumentsTab({
         </div>
       )}
 
-      {/* ── Inline forms ── */}
+      {/* ── Inline forms ──
+          Sub-forms hit /api/documents/[id]; passing docsClientId keeps
+          those writes on the Clients board where the storage columns
+          actually live. */}
       {mode === 'link' && (
         <div className="p-4 bg-blue-50/60 border border-blue-100 rounded-lg">
-          <AddLinkForm clientId={clientId} onAdded={handleAdded} onCancel={() => setMode(null)} />
+          <AddLinkForm clientId={docsClientId} onAdded={handleAdded} onCancel={() => setMode(null)} />
         </div>
       )}
       {mode === 'upload' && (
         <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
-          <UploadForm clientId={clientId} onAdded={handleAdded} onCancel={() => setMode(null)} />
+          <UploadForm clientId={docsClientId} onAdded={handleAdded} onCancel={() => setMode(null)} />
         </div>
       )}
 
@@ -932,7 +962,7 @@ export function DocumentsTab({
             <DocRow
               key={doc.id}
               doc={doc}
-              clientId={clientId}
+              clientId={docsClientId}
               onDeleted={handleDeleted}
               onRenamed={handleRenamed}
             />
@@ -951,28 +981,29 @@ export function DocumentsTab({
               Column created
             </h3>
             <p className="text-xs text-gray-600 mb-3">
-              A long_text column called <strong>Documents</strong> was added to the Clients
-              board. Copy the id below and paste it into Vercel.
+              Created a <strong>Documents</strong> long_text column (links) plus file columns
+              for the general Docs tab and each section (Receiving / Packing / Returns). Paste
+              every line below into Vercel&apos;s env vars.
             </p>
-            <div className="bg-gray-50 border border-gray-200 rounded p-2.5 mb-3 flex items-center gap-2">
-              <code className="flex-1 text-xs font-mono text-gray-800 break-all select-all">
-                {setupResult.columnId}
-              </code>
+            <div className="bg-gray-50 border border-gray-200 rounded p-2.5 mb-3 flex items-start gap-2">
+              <pre className="flex-1 text-[11px] font-mono text-gray-800 whitespace-pre-wrap break-all select-all">
+                {setupResult.envBlock}
+              </pre>
               <button
                 type="button"
                 onClick={copySetupId}
-                title="Copy to clipboard"
-                className="px-2 py-1 rounded bg-white border border-gray-300 hover:bg-gray-50 text-xs font-medium text-gray-700 flex items-center gap-1"
+                title="Copy all env vars"
+                className="px-2 py-1 rounded bg-white border border-gray-300 hover:bg-gray-50 text-xs font-medium text-gray-700 flex items-center gap-1 flex-shrink-0"
               >
                 {setupCopied ? <Check className="w-3 h-3 text-emerald-600" /> : <FileText className="w-3 h-3" />}
-                {setupCopied ? 'Copied' : 'Copy'}
+                {setupCopied ? 'Copied' : 'Copy all'}
               </button>
             </div>
             <ol className="text-[11px] text-gray-600 space-y-1 mb-4 list-decimal pl-5">
               <li>Open Vercel → Settings → Environment Variables.</li>
-              <li>Add <code className="px-1 py-0.5 bg-gray-100 rounded">MONDAY_DOCUMENTS_COL_ID</code> with the value above.</li>
-              <li>Apply to all environments and redeploy.</li>
-              <li>Refresh this page. The setup panel disappears and links save.</li>
+              <li>Paste every line above (KEY=value pairs) — apply to all environments.</li>
+              <li>Redeploy.</li>
+              <li>Refresh this page. The setup panel disappears; links + section uploads work.</li>
             </ol>
             <div className="flex justify-end">
               <button
@@ -987,5 +1018,104 @@ export function DocumentsTab({
         </div>
       )}
     </div>
+  );
+}
+
+// ── AggregatedSectionFiles ──────────────────────────────────────────
+// Shows every file uploaded via the per-section drop zones (Receiving,
+// Packing, Returns) as one list, with a colored chip identifying the
+// origin section. Purely a read view — reps upload from the Client Info
+// section drop zones and see the results here.
+interface SectionFileItem {
+  assetId: string;
+  name: string;
+  url: string;
+  createdAt: string;
+  fileType: string;
+  category: 'documents' | 'receiving' | 'packing' | 'returns';
+}
+const SECTION_CHIP: Record<SectionFileItem['category'], { label: string; className: string }> = {
+  documents: { label: 'General',   className: 'bg-gray-100 text-gray-700' },
+  receiving: { label: 'Receiving', className: 'bg-emerald-100 text-emerald-800' },
+  packing:   { label: 'Packing',   className: 'bg-blue-100 text-blue-800' },
+  returns:   { label: 'Returns',   className: 'bg-rose-100 text-rose-800' },
+};
+function AggregatedSectionFiles({ clientBoardItemId }: { clientBoardItemId: string }) {
+  const [files, setFiles] = useState<SectionFileItem[]>([]);
+  const [state, setState] = useState<'loading' | 'ready' | 'unconfigured' | 'error'>('loading');
+  useEffect(() => {
+    let cancelled = false;
+    setState('loading');
+    fetch(`/api/client/${clientBoardItemId}/section-files/all`)
+      .then(async r => {
+        if (cancelled) return;
+        if (r.status === 503) { setState('unconfigured'); setFiles([]); return; }
+        if (!r.ok) throw new Error(`${r.status}`);
+        const data = await r.json();
+        setFiles(Array.isArray(data) ? data : []);
+        setState('ready');
+      })
+      .catch(() => { if (!cancelled) { setState('error'); setFiles([]); } });
+    return () => { cancelled = true; };
+  }, [clientBoardItemId]);
+
+  if (state === 'unconfigured') {
+    // Section-file columns aren't set up yet — stay quiet in the docs
+    // tab. The Client Info section drop zones already surface an amber
+    // "not configured" note that admins can act on from there.
+    return null;
+  }
+  if (state === 'loading') {
+    return (
+      <div className="flex items-center gap-2 text-xs text-gray-400 px-1 py-2">
+        <Loader2 className="w-3 h-3 animate-spin" />
+        Loading section files…
+      </div>
+    );
+  }
+  if (state === 'error') {
+    return (
+      <div className="rounded-md bg-rose-50 border border-rose-200 px-2.5 py-1.5 text-xs text-rose-800">
+        Failed to load section files.
+      </div>
+    );
+  }
+  if (files.length === 0) return null;
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white p-3">
+      <header className="flex items-center gap-1.5 mb-2">
+        <FileText className="w-4 h-4 text-[#0071BC]" />
+        <h3 className="text-xs font-semibold text-gray-900 uppercase tracking-wider">
+          Uploaded from sections
+        </h3>
+        <span className="text-[10px] font-bold bg-gray-100 text-gray-600 rounded-full px-1.5 py-0.5 leading-none">
+          {files.length}
+        </span>
+      </header>
+      <ul className="divide-y divide-gray-100 border border-gray-100 rounded-md">
+        {files.map(f => {
+          const chip = SECTION_CHIP[f.category];
+          return (
+            <li key={`${f.category}-${f.assetId}`} className="flex items-center gap-2 px-2.5 py-1.5">
+              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${chip.className}`}>
+                {chip.label}
+              </span>
+              <span className="text-[12px] text-gray-800 truncate flex-1" title={f.name}>{f.name}</span>
+              {f.url && (
+                <a
+                  href={f.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-[#0071BC] hover:underline inline-flex items-center gap-0.5 flex-shrink-0"
+                >
+                  Open
+                  <ExternalLink className="w-2.5 h-2.5" />
+                </a>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
