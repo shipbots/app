@@ -300,7 +300,7 @@ export function SectionDocuments({
                     onRenamed={(newName) => setFiles(prev => prev.map(x =>
                       x.assetId === f.assetId ? { ...x, name: newName } : x
                     ))}
-                    onPreview={() => setPreviewFile({ name: f.name, url: f.url, fileType: f.fileType })}
+                    onPreview={() => setPreviewFile({ name: f.name, url: f.url, fileType: f.fileType, assetId: f.assetId })}
                   />
                 ))}
                 {links.map(l => (

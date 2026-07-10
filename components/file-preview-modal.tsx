@@ -20,6 +20,15 @@ export interface PreviewableFile {
   name: string;
   url: string;
   fileType?: string;
+  /**
+   * Monday asset id. When present, the modal renders through
+   * /api/asset-proxy instead of the raw signed URL — Monday serves
+   * assets with Content-Disposition: attachment, which forces a
+   * download instead of an inline render. The proxy re-streams with
+   * `inline` so PDFs/images display, and `download=1` gives the
+   * Download button a same-origin attachment URL.
+   */
+  assetId?: string;
 }
 
 const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'heic']);
@@ -74,6 +83,17 @@ export function FilePreviewModal({ file, onClose }: { file: PreviewableFile | nu
   // — S3 attachment headers usually trigger a download there anyway.
   const downloadFile = async () => {
     if (!file || downloading) return;
+    // Monday assets: the proxy's download=1 variant is same-origin with
+    // an attachment disposition — a plain anchor click saves with the
+    // right filename, no blob fetch needed.
+    if (file.assetId) {
+      const a = document.createElement('a');
+      a.href = `/api/asset-proxy?assetId=${encodeURIComponent(file.assetId)}&download=1`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return;
+    }
     setDownloading(true);
     try {
       const res = await fetch(file.url);
@@ -99,6 +119,12 @@ export function FilePreviewModal({ file, onClose }: { file: PreviewableFile | nu
   const isImage = IMAGE_EXTS.has(ext);
   const isPdf = PDF_EXTS.has(ext);
   const canInline = isImage || isPdf;
+  // Monday assets must render through the proxy — the raw signed URL
+  // carries Content-Disposition: attachment and downloads instead of
+  // displaying. Links / non-Monday files keep their original URL.
+  const inlineUrl = file.assetId
+    ? `/api/asset-proxy?assetId=${encodeURIComponent(file.assetId)}`
+    : file.url;
 
   return (
     <div
@@ -121,7 +147,7 @@ export function FilePreviewModal({ file, onClose }: { file: PreviewableFile | nu
               {downloading ? 'Downloading…' : 'Download'}
             </button>
             <a
-              href={file.url}
+              href={inlineUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-[11px] text-gray-600 hover:text-[#015280] px-2 py-1 rounded hover:bg-gray-50"
@@ -142,13 +168,13 @@ export function FilePreviewModal({ file, onClose }: { file: PreviewableFile | nu
         <div className="flex-1 min-h-0 bg-gray-50 overflow-auto flex items-center justify-center">
           {isImage ? (
             <img
-              src={file.url}
+              src={inlineUrl}
               alt={file.name}
               className="max-w-full max-h-full object-contain"
             />
           ) : isPdf ? (
             <iframe
-              src={file.url}
+              src={inlineUrl}
               className="w-full h-full border-0"
               title={file.name}
             />
@@ -160,7 +186,7 @@ export function FilePreviewModal({ file, onClose }: { file: PreviewableFile | nu
                 Inline preview supports PDFs and images. Open the file in a new tab to view it.
               </p>
               <a
-                href={file.url}
+                href={inlineUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-[#015280] hover:bg-[#01416a] text-white text-sm font-semibold"

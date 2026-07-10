@@ -955,7 +955,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
       .then((files: Array<{ assetId: string; name: string; url: string; fileType?: string }>) => {
         if (cancelled || !Array.isArray(files)) return;
         const match = files.find(f => String(f.assetId) === assetId);
-        if (match) setDeepLinkPreview({ name: match.name, url: match.url, fileType: match.fileType });
+        if (match) setDeepLinkPreview({ name: match.name, url: match.url, fileType: match.fileType, assetId: match.assetId });
       })
       .catch(() => { /* no preview — the panel itself still opened */ });
     return () => { cancelled = true; };
