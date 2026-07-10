@@ -865,3 +865,21 @@ body.detail-open {
 }
 .detail-docs-open:hover { text-decoration: underline; }
 
+/* Paperclip badge on the collapsed section header — signals that the
+   section has one or more attached documents so reps don't miss them
+   without expanding. Rendered by stampAttachmentBadge() at runtime. */
+.detail-attach-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: #eaf3fa;
+  color: #0071BC;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+

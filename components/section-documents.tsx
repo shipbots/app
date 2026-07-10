@@ -18,7 +18,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Upload, ExternalLink, FileText, Paperclip, Pencil, Check, X as XIcon } from 'lucide-react';
+import { Loader2, Upload, FileText, Paperclip, Pencil, Check, X as XIcon, Eye } from 'lucide-react';
+import { FilePreviewModal, type PreviewableFile } from './file-preview-modal';
 
 interface SectionFile {
   assetId: string;
@@ -47,6 +48,7 @@ export function SectionDocuments({
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [previewFile, setPreviewFile] = useState<PreviewableFile | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -186,6 +188,7 @@ export function SectionDocuments({
                     onRenamed={(newName) => setFiles(prev => prev.map(x =>
                       x.assetId === f.assetId ? { ...x, name: newName } : x
                     ))}
+                    onPreview={() => setPreviewFile({ name: f.name, url: f.url, fileType: f.fileType })}
                   />
                 ))}
               </ul>
@@ -224,6 +227,7 @@ export function SectionDocuments({
           </label>
         </div>
       )}
+      <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
     </section>
   );
 }
@@ -234,14 +238,18 @@ export function SectionDocuments({
 // alias is stored in the shared docs long_text column and shows up
 // everywhere the file appears (this section AND the Docs tab
 // aggregated list) because both endpoints apply aliases on read.
+// Click Preview to open an inline modal (PDFs/images); the modal
+// itself still offers an "Open in new tab" for full-window viewing.
 function FileRow({
   file,
   clientBoardItemId,
   onRenamed,
+  onPreview,
 }: {
   file: SectionFile;
   clientBoardItemId: string;
   onRenamed: (newName: string) => void;
+  onPreview: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(file.name);
@@ -338,15 +346,15 @@ function FileRow({
         )}
       </div>
       {file.url && !editing && (
-        <a
-          href={file.url}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
+          onClick={onPreview}
           className="text-[11px] text-[#0071BC] hover:underline inline-flex items-center gap-0.5 flex-shrink-0"
+          title="Preview inline (PDF / image)"
         >
-          Open
-          <ExternalLink className="w-2.5 h-2.5" />
-        </a>
+          <Eye className="w-3 h-3" />
+          Preview
+        </button>
       )}
     </li>
   );

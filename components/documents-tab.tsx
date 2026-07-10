@@ -5,10 +5,11 @@ import { useSession } from 'next-auth/react';
 import {
   FileText, Link2, Plus, Trash2, ExternalLink, Loader2,
   Upload, X, FileSpreadsheet, Presentation, HardDrive, File, Pencil, Check,
-  ShieldCheck, AlertTriangle, RefreshCw,
+  ShieldCheck, AlertTriangle, RefreshCw, Eye,
 } from 'lucide-react';
 import type { ClientDocument } from '@/app/api/documents/[clientId]/route';
 import type { MonFile, ClientInfo } from '@/lib/types';
+import { FilePreviewModal } from './file-preview-modal';
 
 interface DocumentsTabProps {
   clientId: string;
@@ -1059,6 +1060,7 @@ const SECTION_CHIP: Record<SectionFileItem['category'], { label: string; classNa
 };
 function AggregatedSectionFiles({ clientBoardItemId }: { clientBoardItemId: string }) {
   const [files, setFiles] = useState<SectionFileItem[]>([]);
+  const [previewFile, setPreviewFile] = useState<{ name: string; url: string; fileType?: string } | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'unconfigured' | 'error'>('loading');
   useEffect(() => {
     let cancelled = false;
@@ -1119,20 +1121,21 @@ function AggregatedSectionFiles({ clientBoardItemId }: { clientBoardItemId: stri
               </span>
               <span className="text-[12px] text-gray-800 truncate flex-1" title={f.name}>{f.name}</span>
               {f.url && (
-                <a
-                  href={f.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={() => setPreviewFile({ name: f.name, url: f.url, fileType: f.fileType })}
                   className="text-[11px] text-[#0071BC] hover:underline inline-flex items-center gap-0.5 flex-shrink-0"
+                  title="Preview inline (PDF / image)"
                 >
-                  Open
-                  <ExternalLink className="w-2.5 h-2.5" />
-                </a>
+                  <Eye className="w-3 h-3" />
+                  Preview
+                </button>
               )}
             </li>
           );
         })}
       </ul>
+      <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
     </section>
   );
 }

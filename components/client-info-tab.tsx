@@ -6,7 +6,7 @@ import {
   Mail, Phone, MapPin, ExternalLink, Check, Pencil,
   ChevronDown, ChevronRight, Upload, FileText, Sparkles, Calendar, Plus,
   UserCheck, UserPlus, X, Loader2, ShieldCheck, Users, Copy, KeyRound, LogIn,
-  ArrowUpDown,
+  ArrowUpDown, Paperclip,
 } from 'lucide-react';
 import { ClientStickyNotesSummary } from './client-sticky-notes-summary';
 import { SectionDocuments } from './section-documents';
@@ -476,10 +476,18 @@ function Section({
   title,
   children,
   defaultOpen = false,
+  attachmentCount = 0,
 }: {
   title: string;
   children: React.ReactNode;
   defaultOpen?: boolean;
+  /**
+   * When non-zero, renders a small paperclip badge in the collapsed
+   * header so reps notice a document is attached without expanding
+   * the section. Comes from the aggregated section-files fetch at
+   * the ClientInfoTab level; counts are keyed by category.
+   */
+  attachmentCount?: number;
 }) {
   const csMode = useContext(CsModeContext);
   const [open, setOpen] = useState(defaultOpen);
@@ -509,6 +517,15 @@ function Section({
             className={`w-4 h-4 text-gray-300 flex-shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
           />
           <span className="text-[13px] font-semibold text-gray-800 tracking-[-0.01em] truncate">{title}</span>
+          {attachmentCount > 0 && (
+            <span
+              className="inline-flex items-center gap-0.5 text-[10px] font-bold bg-[#EAF3FA] text-[#0071BC] rounded-full px-1.5 py-0.5 leading-none flex-shrink-0"
+              title={`${attachmentCount} attached document${attachmentCount === 1 ? '' : 's'}`}
+            >
+              <Paperclip className="w-2.5 h-2.5" />
+              {attachmentCount}
+            </span>
+          )}
         </button>
         {csMode && (
           <button
@@ -1633,6 +1650,30 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
 
   // Column options fetched once from Monday.com (status/dropdown labels)
   const [colOptions, setColOptions] = useState<Record<string, string[]>>({});
+  // Attachment counts per section — powers the paperclip badge on
+  // each collapsed Section header. Fetched once on mount; not
+  // refetched on upload (badge is best-effort awareness, the actual
+  // list in SectionDocuments always live-refreshes after a save).
+  const [attachmentCounts, setAttachmentCounts] = useState<Record<string, number>>({
+    documents: 0, receiving: 0, packing: 0, returns: 0,
+  });
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    fetch(`/api/client/${encodeURIComponent(id)}/section-files/all`)
+      .then(r => r.ok ? r.json() : [])
+      .then((files: Array<{ category?: string }>) => {
+        if (cancelled) return;
+        const next: Record<string, number> = { documents: 0, receiving: 0, packing: 0, returns: 0 };
+        for (const f of Array.isArray(files) ? files : []) {
+          const cat = f.category ?? '';
+          if (cat in next) next[cat] += 1;
+        }
+        setAttachmentCounts(next);
+      })
+      .catch(() => { /* leave zeros in place; badges just don't show */ });
+    return () => { cancelled = true; };
+  }, [id]);
   useEffect(() => {
     fetch('/api/client/column-options')
       .then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); })
@@ -2079,7 +2120,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
       )}
 
       {/* ── Receiving ── */}
-      <Section title="Receiving">
+      <Section title="Receiving" attachmentCount={attachmentCounts.receiving}>
         <DateField
           label="Initial Inventory Est. Delivery Date"
           value={localClient.initialInventoryDate}
@@ -2126,7 +2167,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
       </Section>
 
       {/* ── Packing & Shipping Requirements ── */}
-      <Section title="Packing & Shipping Requirements">
+      <Section title="Packing & Shipping Requirements" attachmentCount={attachmentCounts.packing}>
         <EditField label="🛒 E-Commerce Platforms" value={localClient.ecommercePlatforms} columnId="long_text_mktra0sm" clientId={id} multiline />
         <EditField label="🔢 # of SKUs" value={localClient.skuCount} columnId="text_mktqrstq" clientId={id} />
         <SelectField label="🔄 Current Fulfillment Method" value={localClient.currentFulfillmentMethod} columnId="dropdown_mktq27te" clientId={id} options={colOptions['dropdown_mktq27te'] ?? []} valueType="dropdown" />
@@ -2158,7 +2199,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
       </Section>
 
       {/* ── Returns Specifications ── */}
-      <Section title="Returns Specifications" defaultOpen={false}>
+      <Section title="Returns Specifications" defaultOpen={false} attachmentCount={attachmentCounts.returns}>
         <SelectField label="⭐ Product Category" value={localClient.productCategory} columnId="color_mktq81r3" clientId={id} options={colOptions['color_mktq81r3'] ?? []} valueType="status" />
         <SelectField label="🔄 Returns Process" value={localClient.returnsProcess} columnId="color_mkxfrgba" clientId={id} options={colOptions['color_mkxfrgba'] ?? []} valueType="status" />
         <EditField label="📝 Notes for Returns" value={localClient.notesForReturns} columnId="long_text_mkxeajq4" clientId={id} multiline />

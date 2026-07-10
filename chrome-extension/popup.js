@@ -790,11 +790,45 @@ function renderClientDetail(client) {
   // fetch that populates or removes it based on the response.
   const docsWrap = buildDocumentsSectionShell();
   sectionsEl.appendChild(docsWrap);
-  void loadSectionFilesInto(docsWrap, client.id);
 
+  const fieldSections = [];
   for (const section of DETAIL_SECTIONS) {
-    sectionsEl.appendChild(buildSection(section, client));
+    const wrap = buildSection(section, client);
+    fieldSections.push({ section, wrap });
+    sectionsEl.appendChild(wrap);
   }
+
+  // Fetch the files once, populate Documents section AND stamp
+  // paperclip badges on any collapsed field section that owns files
+  // (Receiving / Packing / Returns). Categories map by section key.
+  void loadSectionFilesInto(docsWrap, client.id, fieldSections);
+}
+
+// Maps a field-section key from DETAIL_SECTIONS to the section-file
+// category used by /api/client/[id]/section-files. Field sections
+// without a category (contacts, portal, etc.) don't get a badge.
+const SECTION_KEY_TO_CATEGORY = {
+  receiving: 'receiving',
+  packing: 'packing',
+  returns: 'returns',
+};
+
+// Stamp a small "📎 N" pill inside a section's header so the count is
+// visible even when the section is collapsed. Called from the section-
+// files loader once counts are known. Idempotent — replaces an existing
+// badge if the section is re-stamped.
+function stampAttachmentBadge(sectionWrap, count) {
+  const header = sectionWrap.querySelector('.detail-section-header');
+  if (!header) return;
+  const existing = header.querySelector('.detail-attach-badge');
+  if (existing) existing.remove();
+  const badge = document.createElement('span');
+  badge.className = 'detail-attach-badge';
+  badge.title = `${count} attached document${count === 1 ? '' : 's'}`;
+  badge.textContent = `📎 ${count}`;
+  // Insert before the chevron so title + badge sit on the left group.
+  const chev = header.querySelector('.detail-section-chev');
+  if (chev) header.insertBefore(badge, chev); else header.appendChild(badge);
 }
 
 // ── Section files (Documents) ──────────────────────────────────────
@@ -849,7 +883,7 @@ function buildDocumentsSectionShell() {
   return wrap;
 }
 
-async function loadSectionFilesInto(wrap, clientBoardItemId) {
+async function loadSectionFilesInto(wrap, clientBoardItemId, fieldSections) {
   if (!clientBoardItemId) { wrap.remove(); return; }
   const body = wrap._docsBody;
   try {
@@ -864,6 +898,22 @@ async function loadSectionFilesInto(wrap, clientBoardItemId) {
     if (!res.ok) throw new Error(`section-files ${res.status}`);
     const files = await res.json();
     if (!Array.isArray(files) || files.length === 0) { wrap.remove(); return; }
+
+    // Stamp paperclip badges on the field sections that own files
+    // (Receiving / Packing / Returns) so reps can see attachments
+    // exist without expanding the section.
+    if (Array.isArray(fieldSections)) {
+      const perCategory = {};
+      for (const f of files) {
+        if (!f?.category) continue;
+        perCategory[f.category] = (perCategory[f.category] || 0) + 1;
+      }
+      for (const { section, wrap: sectionWrap } of fieldSections) {
+        const cat = SECTION_KEY_TO_CATEGORY[section.key];
+        const count = cat ? perCategory[cat] : 0;
+        if (count > 0) stampAttachmentBadge(sectionWrap, count);
+      }
+    }
 
     // Update the header with a live count so reps see (3) etc.
     wrap._docsHeader.textContent = `Documents (${files.length})`;
