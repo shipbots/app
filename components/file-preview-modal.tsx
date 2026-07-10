@@ -34,6 +34,20 @@ export interface PreviewableFile {
 const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'heic']);
 const PDF_EXTS = new Set(['pdf']);
 
+// Mirror of the proxy's host allowlist — a URL Monday serves files from
+// (monday.com or its S3 buckets). Used to decide whether to route a
+// raw url through the inline proxy vs. link out directly.
+function isMondayHostedUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return false;
+    const h = u.hostname.toLowerCase();
+    return h === 'monday.com' || h.endsWith('.monday.com') || h.endsWith('.amazonaws.com');
+  } catch {
+    return false;
+  }
+}
+
 // A real file extension: short and alphanumeric. Filters out garbage
 // like a whole alias name ("wholesale instructions") or Monday's
 // literal fileType value "ASSET".
@@ -83,12 +97,18 @@ export function FilePreviewModal({ file, onClose }: { file: PreviewableFile | nu
   // — S3 attachment headers usually trigger a download there anyway.
   const downloadFile = async () => {
     if (!file || downloading) return;
-    // Monday assets: the proxy's download=1 variant is same-origin with
-    // an attachment disposition — a plain anchor click saves with the
-    // right filename, no blob fetch needed.
-    if (file.assetId) {
+    // Monday assets (by id, or by Monday-hosted url): the proxy's
+    // download=1 variant is same-origin with an attachment disposition,
+    // so a plain anchor click saves with the right filename — no blob
+    // fetch, no CORS issues.
+    const proxyDownload = file.assetId
+      ? `/api/asset-proxy?assetId=${encodeURIComponent(file.assetId)}&download=1`
+      : isMondayHostedUrl(file.url)
+        ? `/api/asset-proxy?url=${encodeURIComponent(file.url)}&download=1`
+        : '';
+    if (proxyDownload) {
       const a = document.createElement('a');
-      a.href = `/api/asset-proxy?assetId=${encodeURIComponent(file.assetId)}&download=1`;
+      a.href = proxyDownload;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -121,10 +141,15 @@ export function FilePreviewModal({ file, onClose }: { file: PreviewableFile | nu
   const canInline = isImage || isPdf;
   // Monday assets must render through the proxy — the raw signed URL
   // carries Content-Disposition: attachment and downloads instead of
-  // displaying. Links / non-Monday files keep their original URL.
+  // displaying. Prefer the asset id (always resolves a fresh signed
+  // URL); fall back to proxying a Monday-hosted URL directly so a file
+  // that somehow lacks an id still previews instead of downloading.
+  // Genuine external links (non-Monday hosts) keep their original URL.
   const inlineUrl = file.assetId
     ? `/api/asset-proxy?assetId=${encodeURIComponent(file.assetId)}`
-    : file.url;
+    : isMondayHostedUrl(file.url)
+      ? `/api/asset-proxy?url=${encodeURIComponent(file.url)}`
+      : file.url;
 
   return (
     <div
