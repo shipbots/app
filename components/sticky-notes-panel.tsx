@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, X, GripVertical, StickyNote, Clock, Wrench, Copy, Check, Loader2 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
+import { firstNameFromEmail } from '@/lib/agent-name';
 
 // ── Palette ─────────────────────────────────────────────────────────────────
 export type NoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'purple' | 'orange';
@@ -93,10 +94,11 @@ async function pushNotes(clientBoardItemId: string, notes: StickyNote[]): Promis
   }
 }
 
-// First two characters of the email, uppercased. Used as a discrete
-// author tag in the note header. Empty string if no email.
-function initialsOf(email: string | null | undefined): string {
-  return (email ?? '').trim().slice(0, 2).toUpperCase();
+// Author tag shown in the note header. Delegates to
+// firstNameFromEmail so display is consistent with the agent pill /
+// assign menu — reps see "Cynthia" rather than "CY".
+function authorLabel(email: string | null | undefined): string {
+  return firstNameFromEmail(email);
 }
 
 // "Jun 23" style short label for the note's createdAt timestamp.
@@ -153,7 +155,7 @@ function StickyCard({
   const expiryRef = useRef<HTMLDivElement>(null);
   const styles = COLOR_STYLES[note.color];
   const dateLabel = shortDate(note.createdAt);
-  const initials = initialsOf(note.authorEmail);
+  const initials = authorLabel(note.authorEmail);
 
   // Close the expiry popover on outside click so it doesn't sit open if the
   // user clicks elsewhere.

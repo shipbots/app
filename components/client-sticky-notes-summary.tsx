@@ -26,6 +26,7 @@
 import { useEffect, useState } from 'react';
 import { StickyNote as StickyNoteIcon } from 'lucide-react';
 import { COLOR_STYLES, type StickyNote, type NoteColor } from './sticky-notes-panel';
+import { firstNameFromEmail } from '@/lib/agent-name';
 
 function isActive(n: StickyNote, nowMs: number): boolean {
   if (!n || typeof n.id !== 'string') return false;
@@ -40,8 +41,11 @@ function shortDate(iso: string | undefined): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+// Author tag on each compact chip. Delegates to firstNameFromEmail so
+// the tag reads "Cynthia" instead of "CY" — matches the sticky-notes
+// pane and the agent pill.
 function initials(email: string | undefined): string {
-  return (email ?? '').trim().slice(0, 2).toUpperCase();
+  return firstNameFromEmail(email);
 }
 
 export function ClientStickyNotesSummary({ clientBoardItemId }: { clientBoardItemId: string }) {

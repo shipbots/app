@@ -18,6 +18,7 @@ import { ShipHeroPO } from '@/app/api/shiphero-pos/route';
 import { SubItem } from '@/lib/types';
 import type { BolRecord } from '@/lib/bol';
 import { PIPELINE_STAGES, INACTIVE_STATUSES, CLIENT_GROUP_EXITED } from '@/lib/constants';
+import { firstNameFromEmail } from '@/lib/agent-name';
 import {
   X, FileText, ClipboardList, Video, Mail, ExternalLink,
   Maximize2, Minimize2, UserPlus, ChevronDown, MailWarning, Phone, Package, CheckSquare, RefreshCw, FolderOpen,
@@ -142,7 +143,10 @@ function AgentAssignButton({
         ) : currentEmail ? (
           <>
             <AgentBadge email={currentEmail} />
-            <span className="max-w-[120px] truncate">{currentEmail}</span>
+            {/* First name only in the visible label; hover title above
+                still shows the full email so the source of truth is
+                one keystroke away when a rep needs it. */}
+            <span className="max-w-[120px] truncate">{firstNameFromEmail(currentEmail)}</span>
             <ChevronDown className="w-3 h-3" />
           </>
         ) : (
@@ -167,12 +171,13 @@ function AgentAssignButton({
               key={email}
               type="button"
               onClick={() => assign(email)}
+              title={email}
               className={`w-full text-left px-3 py-2 text-xs hover:bg-blue-50 flex items-center gap-2 transition-colors ${
                 email === currentEmail ? 'font-semibold text-blue-600 bg-blue-50' : 'text-gray-700'
               }`}
             >
               <AgentBadge email={email} />
-              {email}
+              {firstNameFromEmail(email)}
             </button>
           ))}
           <div className="border-t border-gray-100 my-1" />

@@ -9,6 +9,18 @@
 
 const DEFAULT_BASE_URL = 'https://app-snowy-eight-64.vercel.app';
 
+// Duplicate of lib/agent-name.ts. The extension can't import from the
+// dashboard's src/, so we keep a small parallel copy. If the algorithm
+// changes upstream, update both places.
+function firstNameFromEmail(email) {
+  if (!email) return '';
+  const trimmed = String(email).trim();
+  if (!trimmed) return '';
+  const local = trimmed.split('@')[0];
+  if (!local) return '';
+  return local.charAt(0).toUpperCase() + local.slice(1).toLowerCase();
+}
+
 // The client currently shown in the detail view. Set in showClientDetail;
 // used by the sticky-note composer so it knows which client to post to.
 let activeClientId = null;
@@ -756,7 +768,9 @@ function renderClientDetail(client) {
   agentPill.type = 'button';
   if (agentEmail) {
     agentPill.className = 'detail-pill agent detail-pill-clickable';
-    agentPill.textContent = `Agent: ${agentEmail} ▾`;
+    // Show only the first name (capitalized). Full email stays in the
+    // title tooltip so a rep can copy it if they need to.
+    agentPill.textContent = `Agent: ${firstNameFromEmail(agentEmail)} ▾`;
     agentPill.title = `Support agent: ${agentEmail} — click to reassign`;
   } else {
     agentPill.className = 'detail-pill agent-none detail-pill-clickable';
@@ -856,15 +870,17 @@ function openAgentMenu(anchor, client) {
       }
       const currentEmail = (client.supportAgentEmail || '').trim().toLowerCase();
       for (const email of agents) {
+        const label = firstNameFromEmail(email);
         const row = document.createElement('button');
         row.type = 'button';
         row.className = 'detail-agent-menu-item';
         if (email.toLowerCase() === currentEmail) row.classList.add('is-current');
-        row.textContent = email;
+        row.textContent = label;
+        row.title = email; // full email lives in the hover tooltip
         row.addEventListener('click', async () => {
           if (!activeClientId) return closeAgentMenu();
           row.disabled = true;
-          row.textContent = `${email} — saving…`;
+          row.textContent = `${label} — saving…`;
           try {
             await assignAgent(activeClientId, email);
             client.supportAgentEmail = email;
@@ -873,13 +889,13 @@ function openAgentMenu(anchor, client) {
             if (btn) {
               btn.classList.remove('agent-none');
               btn.classList.add('agent');
-              btn.textContent = `Agent: ${email} ▾`;
+              btn.textContent = `Agent: ${label} ▾`;
               btn.title = `Support agent: ${email} — click to reassign`;
             }
             closeAgentMenu();
           } catch (err) {
             console.error('[agent-menu] assign failed', err);
-            row.textContent = `${email} — failed`;
+            row.textContent = `${label} — failed`;
             row.disabled = false;
           }
         });
