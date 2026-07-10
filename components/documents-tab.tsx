@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import type { ClientDocument } from '@/app/api/documents/[clientId]/route';
 import type { MonFile, ClientInfo } from '@/lib/types';
-import { FilePreviewModal } from './file-preview-modal';
+import { FilePreviewModal, type PreviewableFile } from './file-preview-modal';
 
 interface DocumentsTabProps {
   clientId: string;
@@ -1051,7 +1051,7 @@ const SECTION_CHIP: Record<SectionFileItem['category'], { label: string; classNa
 };
 function AggregatedSectionFiles({ clientBoardItemId }: { clientBoardItemId: string }) {
   const [files, setFiles] = useState<SectionFileItem[]>([]);
-  const [previewFile, setPreviewFile] = useState<{ name: string; url: string; fileType?: string } | null>(null);
+  const [previewFile, setPreviewFile] = useState<PreviewableFile | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'unconfigured' | 'error'>('loading');
   useEffect(() => {
     let cancelled = false;
@@ -1114,7 +1114,10 @@ function AggregatedSectionFiles({ clientBoardItemId }: { clientBoardItemId: stri
               {f.url && (
                 <button
                   type="button"
-                  onClick={() => setPreviewFile({ name: f.name, url: f.url, fileType: f.fileType })}
+                  // assetId is what routes the modal through
+                  // /api/asset-proxy — without it the iframe hits
+                  // Monday's raw attachment URL and force-downloads.
+                  onClick={() => setPreviewFile({ name: f.name, url: f.url, fileType: f.fileType, assetId: f.assetId })}
                   className="text-[11px] text-[#0071BC] hover:underline inline-flex items-center gap-0.5 flex-shrink-0"
                   title="Preview inline (PDF / image)"
                 >
