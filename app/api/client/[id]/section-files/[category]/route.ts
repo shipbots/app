@@ -25,6 +25,17 @@ import {
   isDocCategory,
   type DocCategory,
 } from '@/lib/section-docs';
+import { readAll as readDocsBlob } from '@/lib/docs-storage';
+
+const DOCS_COL_ENV = 'MONDAY_DOCUMENTS_COL_ID';
+// Small in-request cache so listing ALL categories (4 file cols) only
+// fetches the alias map once instead of four times.
+async function fetchAliases(clientId: string): Promise<Record<string, string>> {
+  const col = process.env[DOCS_COL_ENV]?.trim();
+  if (!col) return {};
+  try { return (await readDocsBlob(clientId, col)).aliases; }
+  catch { return {}; }
+}
 
 const MONDAY_API_URL = 'https://api.monday.com/v2';
 
@@ -132,6 +143,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string; category: string }> },
 ) {
   const { id, category } = await params;
+  // Apply display-name aliases stored in the shared docs long_text
+  // column. Fetched once per request so listing 'all' four categories
+  // doesn't fan out four Monday round-trips just for aliases.
+  const applyAliases = (files: SectionFile[], aliases: Record<string, string>): SectionFile[] =>
+    files.map(f => aliases[f.assetId] ? { ...f, name: aliases[f.assetId] } : f);
+
   if (category === 'all') {
     const configured = getAllConfiguredColumns();
     if (configured.length === 0) {
@@ -140,11 +157,12 @@ export async function GET(
         { status: 503 },
       );
     }
+    const aliases = await fetchAliases(id);
     const all: SectionFile[] = [];
     for (const { category: cat, columnId } of configured) {
       try {
         const files = await listFiles(id, cat, columnId);
-        all.push(...files);
+        all.push(...applyAliases(files, aliases));
       } catch (err) {
         console.error(`[section-files GET all/${cat}] failed:`, err);
       }
@@ -164,7 +182,11 @@ export async function GET(
     );
   }
   try {
-    return NextResponse.json(await listFiles(id, category, columnId));
+    const [files, aliases] = await Promise.all([
+      listFiles(id, category, columnId),
+      fetchAliases(id),
+    ]);
+    return NextResponse.json(applyAliases(files, aliases));
   } catch (err) {
     console.error(`[section-files GET ${category}] failed:`, err);
     return NextResponse.json({ error: 'Failed to list files' }, { status: 502 });

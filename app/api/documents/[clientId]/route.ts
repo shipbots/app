@@ -23,7 +23,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
-import { fetchClientColumn, updateClientField } from '@/lib/monday';
+import { readAll, writeLinks } from '@/lib/docs-storage';
 
 export interface ClientDocument {
   id: string;
@@ -66,26 +66,14 @@ function detectDocIcon(url: string, mimeType?: string): ClientDocument['docIcon'
   return 'generic';
 }
 
-// Read the array from the Monday column. Malformed JSON collapses to an
-// empty list — a bad blob shouldn't take down the docs tab.
+// Local shims over the shared docs-storage helpers so the rest of
+// this file keeps its old signatures. All persistence logic lives
+// in lib/docs-storage.ts and is shared with the /aliases route.
 async function readDocs(clientId: string, colId: string): Promise<ClientDocument[]> {
-  const raw = await fetchClientColumn(clientId, colId);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((d: unknown): d is ClientDocument =>
-      !!d && typeof (d as ClientDocument).id === 'string',
-    );
-  } catch {
-    return [];
-  }
+  return (await readAll(clientId, colId)).links;
 }
-
 async function writeDocs(clientId: string, colId: string, docs: ClientDocument[]): Promise<void> {
-  // updateClientField auto-detects the column type from Monday's schema,
-  // so a valueType arg isn't needed here — mirrors sticky-notes.
-  await updateClientField(clientId, colId, JSON.stringify(docs));
+  await writeLinks(clientId, colId, docs);
 }
 
 // ── GET ───────────────────────────────────────────────────────────────────────

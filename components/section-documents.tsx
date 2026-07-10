@@ -18,7 +18,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Upload, ExternalLink, FileText, Paperclip } from 'lucide-react';
+import { Loader2, Upload, ExternalLink, FileText, Paperclip, Pencil, Check, X as XIcon } from 'lucide-react';
 
 interface SectionFile {
   assetId: string;
@@ -165,24 +165,50 @@ export function SectionDocuments({
       )}
 
       {status === 'ready' && (
-        <div className="space-y-2">
-          {/* Drop zone stays visible even with files present — matches
-              the affordance reps expect from other doc dashboards and
-              makes it obvious this is an upload target. */}
+        // Two-column layout: existing files on the left take the room
+        // they need, upload drop-zone on the right as a square button.
+        // Files own the visual weight so reps first see what's on file;
+        // the upload square is small but obvious enough to hit for
+        // one-off additions.
+        <div className="grid grid-cols-[1fr_auto] gap-3 items-start">
+          <div>
+            {files.length === 0 ? (
+              <p className="text-[11px] text-gray-400 italic px-1 py-1">
+                No documents yet — use the upload square on the right.
+              </p>
+            ) : (
+              <ul className="divide-y divide-gray-100 border border-gray-100 rounded-md">
+                {files.map(f => (
+                  <FileRow
+                    key={f.assetId}
+                    file={f}
+                    clientBoardItemId={clientBoardItemId}
+                    onRenamed={(newName) => setFiles(prev => prev.map(x =>
+                      x.assetId === f.assetId ? { ...x, name: newName } : x
+                    ))}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+          {/* Square upload target — right-hand column. Same footprint
+              whether files are present or not, so reps always know
+              where to look to add another. */}
           <label
             htmlFor={`section-docs-file-${category}`}
             onDragOver={e => { e.preventDefault(); setDragActive(true); }}
             onDragLeave={() => setDragActive(false)}
             onDrop={onDrop}
-            className={`block rounded-md border-2 border-dashed cursor-pointer transition-colors px-3 py-3 text-center ${
+            className={`w-24 h-24 rounded-md border-2 border-dashed cursor-pointer transition-colors flex flex-col items-center justify-center text-center flex-shrink-0 ${
               dragActive
                 ? 'border-[#43c7ff] bg-[#e6f8ff]'
                 : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
             }`}
+            title="Click or drop a file here to attach it to this section"
           >
-            <Upload className={`w-4 h-4 mx-auto mb-1 ${dragActive ? 'text-[#015280]' : 'text-gray-400'}`} />
-            <p className="text-[11px] text-gray-600">
-              <span className="font-semibold text-[#015280]">Click to choose</span> or drop a file here
+            <Upload className={`w-5 h-5 mb-1 ${dragActive ? 'text-[#015280]' : 'text-gray-400'}`} />
+            <p className="text-[10px] text-gray-600 leading-tight px-1">
+              <span className="font-semibold text-[#015280]">Add</span><br/>document
             </p>
             <input
               ref={inputRef}
@@ -192,40 +218,136 @@ export function SectionDocuments({
               onChange={e => {
                 const f = e.currentTarget.files?.[0];
                 if (f) void upload(f);
-                e.currentTarget.value = ''; // allow re-picking the same file
+                e.currentTarget.value = '';
               }}
             />
           </label>
-
-          {files.length === 0 ? (
-            <p className="text-[11px] text-gray-400 italic px-1">
-              No documents yet — attach one above.
-            </p>
-          ) : (
-            <ul className="divide-y divide-gray-100 border border-gray-100 rounded-md">
-              {files.map(f => (
-                <li key={f.assetId} className="flex items-center justify-between gap-2 px-2.5 py-1.5">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                    <span className="text-[12px] text-gray-800 truncate" title={f.name}>{f.name}</span>
-                  </div>
-                  {f.url ? (
-                    <a
-                      href={f.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[11px] text-[#0071BC] hover:underline inline-flex items-center gap-0.5 flex-shrink-0"
-                    >
-                      Open
-                      <ExternalLink className="w-2.5 h-2.5" />
-                    </a>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
       )}
     </section>
+  );
+}
+
+// ── FileRow ────────────────────────────────────────────────────────
+// One row per uploaded file. Bigger FileText icon so reps can tell at
+// a glance a document is attached. Click the pencil to rename — the
+// alias is stored in the shared docs long_text column and shows up
+// everywhere the file appears (this section AND the Docs tab
+// aggregated list) because both endpoints apply aliases on read.
+function FileRow({
+  file,
+  clientBoardItemId,
+  onRenamed,
+}: {
+  file: SectionFile;
+  clientBoardItemId: string;
+  onRenamed: (newName: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(file.name);
+  const [saving, setSaving] = useState(false);
+  const [renameError, setRenameError] = useState<string>('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setDraft(file.name); }, [file.name]);
+  useEffect(() => {
+    if (editing) setTimeout(() => inputRef.current?.select(), 30);
+  }, [editing]);
+
+  const save = async () => {
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === file.name) { setEditing(false); return; }
+    setSaving(true);
+    setRenameError('');
+    try {
+      // GET current alias map, patch this asset's entry, PUT back.
+      // Fetching first avoids clobbering aliases another rep just set.
+      const cur = await fetch(`/api/documents/${clientBoardItemId}/aliases`);
+      const curBody = await cur.json().catch(() => ({}));
+      if (!cur.ok) throw new Error(curBody?.error || `${cur.status}`);
+      const next = { ...(curBody.aliases || {}), [file.assetId]: trimmed };
+      const put = await fetch(`/api/documents/${clientBoardItemId}/aliases`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ aliases: next }),
+      });
+      const putBody = await put.json().catch(() => ({}));
+      if (!put.ok) throw new Error(putBody?.error || `${put.status}`);
+      onRenamed(trimmed);
+      setEditing(false);
+    } catch (err) {
+      console.error('[FileRow rename] failed:', err);
+      setRenameError(err instanceof Error ? err.message : 'Rename failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <li className="flex items-center gap-2 px-2.5 py-2">
+      {/* Bigger icon so it's obvious there's a document attached. */}
+      <FileText className="w-5 h-5 text-[#0071BC] flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        {editing ? (
+          <div className="flex items-center gap-1">
+            <input
+              ref={inputRef}
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') void save();
+                if (e.key === 'Escape') { setDraft(file.name); setEditing(false); setRenameError(''); }
+              }}
+              disabled={saving}
+              className="flex-1 min-w-0 text-[13px] border border-[#43c7ff] rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] bg-white"
+            />
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={saving}
+              className="p-1 rounded hover:bg-emerald-50 text-emerald-600 disabled:opacity-50"
+              title="Save"
+            >
+              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setDraft(file.name); setEditing(false); setRenameError(''); }}
+              disabled={saving}
+              className="p-1 rounded hover:bg-gray-100 text-gray-500 disabled:opacity-50"
+              title="Cancel"
+            >
+              <XIcon className="w-3 h-3" />
+            </button>
+          </div>
+        ) : (
+          <div className="group flex items-center gap-1.5 min-w-0">
+            <span className="text-[13px] text-gray-800 truncate" title={file.name}>{file.name}</span>
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-[#015280] transition-opacity flex-shrink-0"
+              title="Rename"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+        {renameError && (
+          <p className="text-[10px] text-rose-600 mt-0.5">{renameError}</p>
+        )}
+      </div>
+      {file.url && !editing && (
+        <a
+          href={file.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[11px] text-[#0071BC] hover:underline inline-flex items-center gap-0.5 flex-shrink-0"
+        >
+          Open
+          <ExternalLink className="w-2.5 h-2.5" />
+        </a>
+      )}
+    </li>
   );
 }
