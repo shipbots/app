@@ -838,6 +838,11 @@ body.detail-open {
   background: rgba(234, 243, 250, .7);
 }
 .detail-docs-item .detail-docs-name { font-weight: 600; color: #111827; }
+.detail-docs-item-clickable { cursor: pointer; transition: background .12s, border-color .12s; }
+.detail-docs-item-clickable:hover {
+  background: #dcedfa;
+  border-color: rgba(0, 113, 188, .45);
+}
 .detail-docs-glyph {
   flex-shrink: 0;
   font-size: 13px;

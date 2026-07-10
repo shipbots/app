@@ -877,35 +877,53 @@ function buildDocumentsSectionShell() {
   return wrap;
 }
 
-// Compact doc list (📄 files / 🔗 links) with Open links. Shared by
-// the general Documents section and the per-section injections.
-function renderDocsList(items) {
+// Compact doc list (📄 files / 🔗 links). Whole row is clickable:
+//   - links open their URL directly in a new tab;
+//   - files deep-link into the client's EXPANDED dashboard view with
+//     &previewAsset=<assetId>, which auto-opens the preview modal
+//     (with its Download button) as soon as the dashboard lands.
+function renderDocsList(items, clientBoardItemId) {
   const list = document.createElement('ul');
   list.className = 'detail-docs-list';
   for (const item of items) {
     const li = document.createElement('li');
-    li.className = 'detail-docs-item';
+    li.className = 'detail-docs-item detail-docs-item-clickable';
+
+    const isLink = item.kind === 'link';
+    const activate = () => {
+      if (isLink) {
+        if (item.url) openExternal(item.url);
+      } else if (clientBoardItemId && item.assetId) {
+        void openPath(
+          `/customer-service?clientId=${encodeURIComponent(clientBoardItemId)}` +
+          `&expanded=1&previewAsset=${encodeURIComponent(item.assetId)}`,
+        );
+      } else if (item.url) {
+        // File without an asset id (shouldn't happen) — raw URL beats
+        // a dead click.
+        openExternal(item.url);
+      }
+    };
+    li.addEventListener('click', activate);
+    li.title = isLink
+      ? (item.url || item.name || '')
+      : 'Open the dashboard preview for this document';
 
     const glyph = document.createElement('span');
     glyph.className = 'detail-docs-glyph';
-    glyph.textContent = item.kind === 'link' ? '🔗' : '📄';
+    glyph.textContent = isLink ? '🔗' : '📄';
     li.appendChild(glyph);
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'detail-docs-name';
     nameSpan.textContent = item.name || 'Untitled';
-    nameSpan.title = item.url || item.name || '';
     li.appendChild(nameSpan);
 
-    if (item.url) {
-      const link = document.createElement('a');
-      link.href = item.url;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.className = 'detail-docs-open';
-      link.textContent = 'Open ↗';
-      li.appendChild(link);
-    }
+    const action = document.createElement('span');
+    action.className = 'detail-docs-open';
+    action.textContent = isLink ? 'Open ↗' : 'Preview ↗';
+    li.appendChild(action);
+
     list.appendChild(li);
   }
   return list;
@@ -934,7 +952,7 @@ async function loadClientDocs(wrap, clientBoardItemId, fieldSections) {
     const byCat = { documents: [], receiving: [], packing: [], returns: [] };
     for (const f of Array.isArray(files) ? files : []) {
       const cat = SECTION_DOC_CATEGORIES.has(f?.category) ? f.category : 'documents';
-      byCat[cat].push({ name: f.name, url: f.url, kind: 'file' });
+      byCat[cat].push({ name: f.name, url: f.url, kind: 'file', assetId: f.assetId });
     }
     for (const l of Array.isArray(links) ? links : []) {
       const cat = SECTION_DOC_CATEGORIES.has(l?.category) ? l.category : 'documents';
@@ -954,7 +972,7 @@ async function loadClientDocs(wrap, clientBoardItemId, fieldSections) {
         const holder = document.createElement('div');
         holder.className = 'detail-docs-inline';
         holder.style.gridColumn = '1 / -1';
-        holder.appendChild(renderDocsList(items));
+        holder.appendChild(renderDocsList(items, clientBoardItemId));
         sectionBody.insertBefore(holder, sectionBody.firstChild);
       }
     }
@@ -964,7 +982,7 @@ async function loadClientDocs(wrap, clientBoardItemId, fieldSections) {
     if (!general.length) { wrap.remove(); return; }
     wrap._docsHeader.textContent = `Documents (${general.length})`;
     body.innerHTML = '';
-    body.appendChild(renderDocsList(general));
+    body.appendChild(renderDocsList(general, clientBoardItemId));
   } catch (err) {
     console.error('[client-docs] load failed', err);
     // Silent fail — read-only surface. The dashboard covers the case.

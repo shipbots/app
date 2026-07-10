@@ -13,8 +13,8 @@
  * to save-as, print, or paste into another tool).
  */
 
-import { useEffect } from 'react';
-import { X, ExternalLink, FileText } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { X, ExternalLink, FileText, Download, Loader2 } from 'lucide-react';
 
 export interface PreviewableFile {
   name: string;
@@ -58,12 +58,41 @@ function extOf(name: string, fileType?: string, url?: string): string {
 }
 
 export function FilePreviewModal({ file, onClose }: { file: PreviewableFile | null; onClose: () => void }) {
+  const [downloading, setDownloading] = useState(false);
+
   useEffect(() => {
     if (!file) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [file, onClose]);
+
+  // Force a save-as instead of navigating. The `download` attribute is
+  // ignored on cross-origin URLs (Monday's signed S3 links), so we pull
+  // the bytes into a blob and download the object URL. If the host
+  // blocks CORS fetches, fall back to opening the raw URL in a new tab
+  // — S3 attachment headers usually trigger a download there anyway.
+  const downloadFile = async () => {
+    if (!file || downloading) return;
+    setDownloading(true);
+    try {
+      const res = await fetch(file.url);
+      if (!res.ok) throw new Error(`${res.status}`);
+      const blob = await res.blob();
+      const obj = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = obj;
+      a.download = file.name || 'document';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(obj);
+    } catch {
+      window.open(file.url, '_blank', 'noopener,noreferrer');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   if (!file) return null;
   const ext = extOf(file.name, file.fileType, file.url);
@@ -82,6 +111,15 @@ export function FilePreviewModal({ file, onClose }: { file: PreviewableFile | nu
             {file.name}
           </h3>
           <div className="flex items-center gap-1 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => void downloadFile()}
+              disabled={downloading}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-white bg-[#015280] hover:bg-[#01416a] px-2.5 py-1 rounded disabled:opacity-60"
+            >
+              {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+              {downloading ? 'Downloading…' : 'Download'}
+            </button>
             <a
               href={file.url}
               target="_blank"

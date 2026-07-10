@@ -19,6 +19,7 @@ import { SubItem } from '@/lib/types';
 import type { BolRecord } from '@/lib/bol';
 import { PIPELINE_STAGES, INACTIVE_STATUSES, CLIENT_GROUP_EXITED } from '@/lib/constants';
 import { firstNameFromEmail } from '@/lib/agent-name';
+import { FilePreviewModal, type PreviewableFile } from './file-preview-modal';
 import {
   X, FileText, ClipboardList, Video, Mail, ExternalLink,
   Maximize2, Minimize2, UserPlus, ChevronDown, MailWarning, Phone, Package, CheckSquare, RefreshCw, FolderOpen,
@@ -937,12 +938,41 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
   }, [item.id, item.name]);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Escape key closes the panel
+  // Deep-linked file preview. The Chrome extension opens
+  // /customer-service?clientId=…&expanded=1&previewAsset=<assetId> when
+  // a rep clicks an attached file in the popup — the dashboard lands on
+  // this client's expanded view and pops the preview modal for that
+  // file immediately. Honored once on mount, same contract as the
+  // ?clientId handling in pipeline-board.
+  const [deepLinkPreview, setDeepLinkPreview] = useState<PreviewableFile | null>(null);
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    if (typeof window === 'undefined') return;
+    const assetId = new URLSearchParams(window.location.search).get('previewAsset');
+    if (!assetId || !item.clientBoardItemId) return;
+    let cancelled = false;
+    fetch(`/api/client/${item.clientBoardItemId}/section-files/all`)
+      .then(r => r.ok ? r.json() : [])
+      .then((files: Array<{ assetId: string; name: string; url: string; fileType?: string }>) => {
+        if (cancelled || !Array.isArray(files)) return;
+        const match = files.find(f => String(f.assetId) === assetId);
+        if (match) setDeepLinkPreview({ name: match.name, url: match.url, fileType: match.fileType });
+      })
+      .catch(() => { /* no preview — the panel itself still opened */ });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const deepLinkPreviewModal = (
+    <FilePreviewModal file={deepLinkPreview} onClose={() => setDeepLinkPreview(null)} />
+  );
+
+  // Escape key closes the panel — unless the deep-linked preview modal
+  // is up, in which case Esc belongs to the modal (it has its own
+  // listener) and the panel stays open underneath.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape' && !deepLinkPreview) onClose(); };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
+  }, [onClose, deepLinkPreview]);
 
   // Mirror the server-owned supportAgentEmail into local state so
   // the AgentAssign child (which optimistically updates agentEmail
@@ -1278,6 +1308,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
         ref={expandedRef}
         className={`fixed right-0 top-12 h-[calc(100vh-48px)] z-40 w-full bg-white shadow-2xl flex flex-col animate-slide-in border-l border-gray-200 overflow-hidden ${dragKind ? (dragKind === 'col' ? 'cursor-col-resize' : 'cursor-row-resize') : ''}`}
       >
+        {deepLinkPreviewModal}
         {/* ClientHeader — only renders when we have clientInfo loaded so we
             don't churn the layout while it's still fetching. */}
         {clientInfo && item.clientBoardItemId && (
@@ -1399,6 +1430,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
     )}
     {/* ── Panel — fixed to the right edge, kanban board stays interactive ── */}
     <div className={`fixed right-0 top-12 h-[calc(100vh-48px)] z-40 ${panelWidth} bg-white shadow-2xl flex flex-col animate-slide-in border-l border-gray-200`}>
+        {deepLinkPreviewModal}
         {/* Header */}
         <div className="p-4 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-start justify-between gap-2">
