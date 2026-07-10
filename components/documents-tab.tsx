@@ -759,17 +759,62 @@ export function DocumentsTab({
   // Everyone else gets the rest of the Documents tab without the DocuSign
   // upload/extract section.
   const canDocusign = Boolean(session?.user?.canDocusign);
+  const isAdmin = Boolean((session?.user as { isAdmin?: boolean } | undefined)?.isAdmin);
   const [docs, setDocs]   = useState<ClientDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode]   = useState<'link' | 'upload' | null>(null);
+  // Storage bootstrap state — the docs API returns 503 when the
+  // MONDAY_DOCUMENTS_COL_ID env var isn't configured. In that case we
+  // show a Setup panel for admins (mirrors the sticky-notes flow) so
+  // they can create the column and get the id to paste into Vercel
+  // without leaving the app.
+  const [unconfigured, setUnconfigured] = useState(false);
+  const [setupRunning, setSetupRunning] = useState(false);
+  const [setupError, setSetupError] = useState('');
+  const [setupResult, setSetupResult] = useState<{ columnId: string } | null>(null);
+  const [setupCopied, setSetupCopied] = useState(false);
 
   useEffect(() => {
+    setLoading(true);
+    setUnconfigured(false);
     fetch(`/api/documents/${clientId}`)
-      .then(r => r.json())
-      .then(data => setDocs(Array.isArray(data) ? data : []))
+      .then(async r => {
+        if (r.status === 503) { setUnconfigured(true); setDocs([]); return; }
+        if (!r.ok) throw new Error(`${r.status}`);
+        const data = await r.json();
+        setDocs(Array.isArray(data) ? data : []);
+      })
       .catch(() => setDocs([]))
       .finally(() => setLoading(false));
   }, [clientId]);
+
+  const runSetup = async () => {
+    if (setupRunning) return;
+    setSetupRunning(true);
+    setSetupError('');
+    try {
+      const res = await fetch('/api/admin/setup-documents', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.detail || data?.error || `setup failed (${res.status})`);
+      if (!data?.columnId) throw new Error('No column id in response');
+      setSetupResult({ columnId: data.columnId });
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'unknown error');
+    } finally {
+      setSetupRunning(false);
+    }
+  };
+  const copySetupId = async () => {
+    if (!setupResult) return;
+    try {
+      await navigator.clipboard.writeText(setupResult.columnId);
+      setSetupCopied(true);
+      setTimeout(() => setSetupCopied(false), 1800);
+    } catch { /* clipboard denied — user can select manually */ }
+  };
 
   const handleAdded   = (doc: ClientDocument)              => { setDocs(prev => [doc, ...prev]); setMode(null); };
   const handleDeleted = (id: string)                       => setDocs(prev => prev.filter(d => d.id !== id));
@@ -786,6 +831,44 @@ export function DocumentsTab({
 
   return (
     <div className="p-4 overflow-y-auto max-h-[calc(100vh-200px)] space-y-5">
+
+      {/* Storage bootstrap — API returned 503 because
+          MONDAY_DOCUMENTS_COL_ID isn't set. Admins get a one-click
+          panel that hits /api/admin/setup-documents and shows the
+          created column id to paste into Vercel. Non-admins just see
+          a plain "ask an admin" note. */}
+      {unconfigured && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+          <h3 className="text-sm font-semibold text-amber-900 mb-1">
+            Documents storage isn&apos;t configured yet
+          </h3>
+          <p className="text-xs text-amber-800 mb-3">
+            Links save to a shared <code className="px-1 py-0.5 bg-white/60 rounded text-[11px]">Documents</code> long_text
+            column on Monday&apos;s Clients board. Run the one-time bootstrap to create it and copy the id
+            into Vercel&apos;s env vars.
+          </p>
+          {isAdmin ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={runSetup}
+                disabled={setupRunning}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#015280] text-white text-xs font-semibold hover:bg-[#01416a] disabled:opacity-60 transition-colors"
+              >
+                {setupRunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                {setupRunning ? 'Creating column…' : 'Setup Documents storage'}
+              </button>
+              {setupError && (
+                <span className="text-[11px] text-red-700">Setup failed: {setupError}</span>
+              )}
+            </div>
+          ) : (
+            <p className="text-[11px] text-amber-800 italic">
+              Ask an admin (someone with a shipbots.com account and the isAdmin flag) to run the setup.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* ── DocuSign pinned section — restricted to the DocuSign group ── */}
       {canDocusign && (
@@ -854,6 +937,53 @@ export function DocumentsTab({
               onRenamed={handleRenamed}
             />
           ))}
+        </div>
+      )}
+
+      {/* Setup success — modal with the created column id + copy button
+          + Vercel env var instructions. Same pattern as sticky-notes so
+          admins already know the flow. */}
+      {setupResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-5">
+            <h3 className="text-base font-semibold text-gray-900 mb-1 flex items-center gap-1.5">
+              <Check className="w-4 h-4 text-emerald-600" />
+              Column created
+            </h3>
+            <p className="text-xs text-gray-600 mb-3">
+              A long_text column called <strong>Documents</strong> was added to the Clients
+              board. Copy the id below and paste it into Vercel.
+            </p>
+            <div className="bg-gray-50 border border-gray-200 rounded p-2.5 mb-3 flex items-center gap-2">
+              <code className="flex-1 text-xs font-mono text-gray-800 break-all select-all">
+                {setupResult.columnId}
+              </code>
+              <button
+                type="button"
+                onClick={copySetupId}
+                title="Copy to clipboard"
+                className="px-2 py-1 rounded bg-white border border-gray-300 hover:bg-gray-50 text-xs font-medium text-gray-700 flex items-center gap-1"
+              >
+                {setupCopied ? <Check className="w-3 h-3 text-emerald-600" /> : <FileText className="w-3 h-3" />}
+                {setupCopied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+            <ol className="text-[11px] text-gray-600 space-y-1 mb-4 list-decimal pl-5">
+              <li>Open Vercel → Settings → Environment Variables.</li>
+              <li>Add <code className="px-1 py-0.5 bg-gray-100 rounded">MONDAY_DOCUMENTS_COL_ID</code> with the value above.</li>
+              <li>Apply to all environments and redeploy.</li>
+              <li>Refresh this page. The setup panel disappears and links save.</li>
+            </ol>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSetupResult(null)}
+                className="px-3 py-1.5 text-sm font-medium text-white bg-[#015280] hover:bg-[#01416a] rounded"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
