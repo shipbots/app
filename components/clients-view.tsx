@@ -27,6 +27,8 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { prefetchCached } from '@/hooks/use-cached-fetch';
+import { useClientSearchIndex } from '@/hooks/use-client-search-index';
+import { CLIENT_GROUP_EXITED_ID, type ClientIndexEntry } from '@/lib/client-search';
 import { OnboardingItem, SubItem, ClientInfo } from '@/lib/types';
 import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search, ChevronsUpDown, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Filter, X, Eye, EyeOff, ListChecks, Warehouse, UserCog, ArrowUpDown } from 'lucide-react';
 
@@ -47,31 +49,8 @@ function compareStrings(a: string, b: string, dir: SortDir): number {
   return dir === 'asc' ? r : -r;
 }
 
-// Shape returned by /api/clients/search-index — denormalized for cross-field search.
-type ClientIndexEntry = {
-  id: string;
-  name: string;
-  legalEntity: string;
-  storeName: string;
-  shipHeroName: string;
-  // Primary / secondary / tertiary contacts — search spans all three so reps
-  // can find a client by any contact's name, email, or phone.
-  contactName: string;
-  contactEmail: string;
-  contactPhone: string;
-  contact2Name: string;
-  contact2Email: string;
-  contact2Phone: string;
-  contact3Name: string;
-  contact3Email: string;
-  contact3Phone: string;
-  /** AppDot / Portal dropdown label — shown as its own table column. */
-  portal: string;
-  /** Warehouse Location dropdown label — shown as its own table column. */
-  warehouse: string;
-  /** Clients-board group id — drives the Inactive filter / badge. */
-  groupId: string;
-};
+// ClientIndexEntry (the /api/clients/search-index row shape) now lives in
+// lib/client-search.ts, shared with the header search dropdown + ranking.
 
 interface ClientsViewProps {
   items: OnboardingItem[];
@@ -92,12 +71,14 @@ interface ClientsViewProps {
    *  as a single canonical input, no duplication. */
   externalQuery?: string;
   onExternalQueryChange?: (q: string) => void;
+  /** Hide the local search input entirely (the header hosts a finder
+   *  dropdown instead). The tables then always show the full list — search
+   *  no longer filters them. */
+  hideLocalSearch?: boolean;
 }
 
-// "Exited" group id — duplicated from lib/constants since this is a client
-// component that already pulls a lot in; importing constants here is fine
-// but explicit keeps the inactive-detection self-contained.
-const CLIENT_GROUP_EXITED_ID = 'group_mkq09z7j';
+// CLIENT_GROUP_EXITED_ID ("Exited" group == inactive) is imported from
+// lib/client-search.ts.
 
 // ── Contact cache (module-level so navigating between tabs reuses it) ────────
 type ContactRecord = { name: string; email: string; phone: string };
@@ -693,6 +674,7 @@ function ClientTable({
   selectedIds,
   onToggleSelect,
   onSelectAll,
+  heightClass,
 }: {
   title: string;
   subtitle?: string;
@@ -720,6 +702,11 @@ function ClientTable({
    *  Clients-board record; the callback flips them ALL on or ALL off
    *  depending on the current select-all state. */
   onSelectAll?: (visibleIds: string[], turnOn: boolean) => void;
+  /** Tailwind height classes for the table shell. When omitted the table
+   *  fills its flex parent (`flex-1 min-h-0`); the scrollable CS layout
+   *  passes explicit heights so each table keeps a consistent size while the
+   *  page scrolls to fit more of them. */
+  heightClass?: string;
 }) {
   const isInactive = (clientBoardItemId: string | null): boolean => {
     if (!clientBoardItemId) return false;
@@ -757,7 +744,7 @@ function ClientTable({
   }, [items, sort, agentEmailMap, searchIndex]);
 
   return (
-    <section className="flex flex-col bg-white border border-gray-200 rounded-xl overflow-hidden flex-1 min-h-0">
+    <section className={`flex flex-col bg-white border border-gray-200 rounded-xl overflow-hidden ${heightClass ?? 'flex-1 min-h-0'}`}>
       <header className="px-4 py-2.5 border-b border-gray-200 bg-gray-50 flex items-center justify-between flex-shrink-0 gap-3">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
@@ -868,7 +855,7 @@ function MyTasksPanel({
   }, [items]);
 
   return (
-    <aside className="w-80 flex-shrink-0 bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col min-h-0">
+    <aside className="w-80 flex-shrink-0 bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col sticky top-0 self-start max-h-[calc(100vh-140px)]">
       <header className="px-4 py-2.5 border-b border-gray-200 bg-gray-50 flex items-center gap-2 flex-shrink-0">
         <CheckSquare className="w-4 h-4 text-[#015280]" />
         <div className="flex-1 min-w-0">
@@ -948,6 +935,7 @@ export function ClientsView({
   clientGroupOverrides = {},
   externalQuery,
   onExternalQueryChange,
+  hideLocalSearch = false,
 }: ClientsViewProps) {
   // When the CS header hosts the search, the view treats `externalQuery`
   // as the source of truth and the local input goes away entirely. This
@@ -987,44 +975,27 @@ export function ClientsView({
   }, []);
   const me = (currentUserEmail ?? '').toLowerCase();
 
-  // Lazily fetch the cross-field search index (legal name, store name,
-  // ShipHero name, contact name/email/phone) and keep it keyed by Clients
-  // board item id for O(1) lookup during filtering.
-  const [searchIndex, setSearchIndex] = useState<Record<string, ClientIndexEntry> | null>(null);
-  const [indexStatus, setIndexStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  // Cross-field search index (legal name, store name, ShipHero name, contact
+  // name/email/phone), shared with the header search dropdown through a single
+  // deduped fetch. Keyed by Clients-board item id for O(1) lookup.
+  const { index: searchIndex, rows: indexRows, status: indexStatus } = useClientSearchIndex();
 
+  // Pre-warm the contact hover cache from the index so each cell shows the
+  // real primary contact immediately and hovering can page through contacts
+  // 2 / 3 without firing a per-client fetch.
   useEffect(() => {
-    let cancelled = false;
-    setIndexStatus('loading');
-    fetch('/api/clients/search-index')
-      .then(r => r.ok ? r.json() : Promise.reject(new Error(`${r.status}`)))
-      .then((rows: ClientIndexEntry[]) => {
-        if (cancelled) return;
-        const map: Record<string, ClientIndexEntry> = {};
-        for (const r of rows) {
-          map[r.id] = r;
-          // Pre-warm the contact hover cache with all three contacts so
-          // the cell can show the real primary contact immediately and
-          // hovering can page through 2 / 3 without firing a fetch.
-          if (!contactCache[r.id]) {
-            const contacts: ContactRecord[] = [
-              { name: r.contactName,  email: r.contactEmail,  phone: r.contactPhone  },
-              { name: r.contact2Name, email: r.contact2Email, phone: r.contact2Phone },
-              { name: r.contact3Name, email: r.contact3Email, phone: r.contact3Phone },
-            ].filter(c => !isEmptyContact(c));
-            contactCache[r.id] = contacts;
-          }
-        }
-        setSearchIndex(map);
-        setIndexStatus('ready');
-      })
-      .catch(err => {
-        if (cancelled) return;
-        console.error('[clients-view] search index fetch failed:', err);
-        setIndexStatus('error');
-      });
-    return () => { cancelled = true; };
-  }, []);
+    if (!indexRows) return;
+    for (const r of indexRows) {
+      if (!contactCache[r.id]) {
+        const contacts: ContactRecord[] = [
+          { name: r.contactName,  email: r.contactEmail,  phone: r.contactPhone  },
+          { name: r.contact2Name, email: r.contact2Email, phone: r.contact2Phone },
+          { name: r.contact3Name, email: r.contact3Email, phone: r.contact3Phone },
+        ].filter(c => !isEmptyContact(c));
+        contactCache[r.id] = contacts;
+      }
+    }
+  }, [indexRows]);
 
   const filtered = useMemo(() => {
     if (!query) return items;
@@ -1138,21 +1109,23 @@ export function ClientsView({
   }, [visibilityFiltered, selectedManagers, agentEmailMap]);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-gray-50 p-4 gap-3">
+    // Vertical scroll container: each table below keeps a fixed, comfortable
+    // size and the whole page scrolls to fit them — so more tables/sections
+    // can be stacked here later without squeezing the existing ones.
+    <div className="flex-1 min-h-0 flex flex-col overflow-y-auto bg-gray-50 p-4 gap-3">
       {/* Sub-header: search + view inactive toggle.
-          When the search is hosted in the CS header (controlled mode), the
-          "Browse by Client" title and the local search input both go away
-          — the surrounding row shrinks to just the inactive toggle plus
-          the index-status hint. Otherwise (fallback / other surfaces) the
-          local search input still renders. */}
+          When the header hosts the search (hideLocalSearch / controlled mode)
+          the "Browse by Client" title and the local search input both go away
+          — the surrounding row shrinks to just the inactive toggle. Otherwise
+          (fallback / other surfaces) the local search input still renders. */}
       <div className="flex items-center gap-3 flex-shrink-0">
-        {!isControlled && (
+        {!isControlled && !hideLocalSearch && (
           <div className="flex items-center gap-2 text-sm text-gray-700">
             <Users className="w-4 h-4 text-[#015280]" />
             <span className="font-semibold">Browse by Client</span>
           </div>
         )}
-        {!isControlled && (
+        {!isControlled && !hideLocalSearch && (
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
             <input
@@ -1217,8 +1190,10 @@ export function ClientsView({
         </button>
       </div>
 
-      {/* Two-column layout: stacked client tables on the left, tasks on the right */}
-      <div className="flex-1 flex gap-3 min-h-0">
+      {/* Two-column layout: stacked client tables on the left, tasks on the
+          right. `items-start` lets the tasks rail be sticky while the tables
+          column grows tall and the page scrolls. */}
+      <div className="flex gap-3 items-start">
         <div className="flex-1 flex flex-col gap-3 min-w-0">
           <ClientTable
             title="My Clients"
@@ -1235,6 +1210,7 @@ export function ClientsView({
             onSelectItem={onSelectItem}
             sort={mySort}
             onSortChange={setMySort}
+            heightClass="h-[36vh] min-h-[200px]"
           />
           {/* Bulk action bar sits directly above the All Clients table,
               which is where the checkbox column lives. Puts the count
@@ -1259,6 +1235,7 @@ export function ClientsView({
             onSelectItem={onSelectItem}
             sort={allSort}
             onSortChange={setAllSort}
+            heightClass="h-[58vh] min-h-[340px]"
             selectable={bulkMode}
             selectedIds={selectedIds}
             onToggleSelect={toggleSelected}

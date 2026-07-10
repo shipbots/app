@@ -12,6 +12,8 @@ import { TasksView } from './tasks-view';
 import { ClientsView } from './clients-view';
 import { MiniAppsView } from './mini-apps-view';
 import { NotesView } from './notes-view';
+import { ClientSearchResults } from './client-search-results';
+import { useClientSearchIndex } from '@/hooks/use-client-search-index';
 import { useSession } from 'next-auth/react';
 import { Search, Bell, RefreshCw, ChevronDown, ChevronRight, LayoutGrid, CalendarDays, CheckSquare, UserPlus, Users, Sparkles, StickyNote as StickyNoteIcon } from 'lucide-react';
 import { AddClientModal, CreatedClientResult } from './add-client-modal';
@@ -87,6 +89,11 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     if (typeof window === 'undefined') return '';
     return new URLSearchParams(window.location.search).get('q') ?? '';
   });
+  // Anchor for the search-results dropdown + the shared (deduped) client
+  // search index that powers it. The header search is a finder: it opens a
+  // dropdown of matching clients rather than filtering the view behind it.
+  const searchAnchorRef = useRef<HTMLDivElement>(null);
+  const { index: clientIndex, status: clientIndexStatus } = useClientSearchIndex();
   const [showAlerts, setShowAlerts] = useState(false);
   // Collapse terminal/noise columns by default
   const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(new Set(['Completed', 'Abandoned', 'N/A', 'ZAP ERROR']));
@@ -193,10 +200,12 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     [allItems, statusOverrides, itemOverrides]
   );
 
-  // Search filter — drives the kanban board, calendar, tasks list, and
-  // (in CS mode) ClientsView. The detail panel intentionally reads the
-  // UN-filtered list so its ClientNavigator can find any client even
-  // when the header search has narrowed the surrounding view.
+  // Legacy in-memory filter — now only narrows the Calendar and Tasks views,
+  // where filtering the surface still makes sense. The kanban board and the
+  // CS client tables intentionally ignore the header query and stay whole;
+  // the header search surfaces matches in a dropdown (ClientSearchResults)
+  // instead of rearranging those views. The detail panel likewise reads the
+  // UN-filtered list so its ClientNavigator can reach any client.
   const effectiveItems = useMemo(() => {
     if (!searchQuery) return overriddenAllItems;
     const q = searchQuery.toLowerCase();
@@ -205,14 +214,16 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     );
   }, [overriddenAllItems, searchQuery]);
 
+  // Kanban shows every client regardless of the header search (search is a
+  // finder here, not a filter).
   const groupedItems = useMemo(() => {
     const groups: Record<string, OnboardingItem[]> = {};
     for (const stage of PIPELINE_STAGES) groups[stage.status] = [];
-    for (const item of effectiveItems) {
+    for (const item of overriddenAllItems) {
       if (groups[item.status]) groups[item.status].push(item);
     }
     return groups;
-  }, [effectiveItems]);
+  }, [overriddenAllItems]);
 
   const handleRefresh = () => { setRefreshing(true); window.location.reload(); };
   const toggleColumn = (status: string) => {
@@ -401,13 +412,13 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
                 </button>
               )}
 
-              <div className="relative">
+              <div className="relative" ref={searchAnchorRef}>
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50" />
                 <input
                   type="text"
                   placeholder={isCustomerService
                     ? 'Search name, email, phone, contact, store…'
-                    : 'Search clients...'}
+                    : 'Search name, email, company…'}
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   className="pl-9 pr-4 py-2 rounded-lg text-sm text-white placeholder-white/50 focus:outline-none focus:ring-2 w-72"
@@ -417,6 +428,21 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
                     '--tw-ring-color': 'var(--brand-cyan)',
                   } as React.CSSProperties}
                 />
+                {/* Finder dropdown — shown on the primary list surfaces
+                    (CS Clients table / Onboarding kanban) whenever there's a
+                    query. Portals to <body>, so it floats over the view
+                    behind it instead of filtering it. */}
+                {searchQuery.trim() && (viewMode === 'clients' || viewMode === 'pipeline') && (
+                  <ClientSearchResults
+                    query={searchQuery}
+                    items={overriddenAllItems}
+                    index={clientIndex}
+                    indexStatus={clientIndexStatus}
+                    anchorRef={searchAnchorRef}
+                    onSelect={item => { setSelectedItem(item); setSearchQuery(''); }}
+                    onClose={() => setSearchQuery('')}
+                  />
+                )}
               </div>
               <button onClick={handleRefresh} className="p-2 rounded-lg transition-colors hover:bg-white/10" title="Refresh">
                 <RefreshCw className={`w-4 h-4 text-white/80 ${refreshing ? 'animate-spin' : ''}`} />
@@ -438,13 +464,13 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
         </header>
 
         {/* ── Browse-by-Client view (Customer Service surface) ──
-            Search moves up to the CS header so it's a single top-right
-            input; `searchQuery`/`setSearchQuery` are the same state that
-            filters the Onboarding kanban, but in CS mode the kanban isn't
-            rendered so this input purely drives ClientsView. */}
+            The header search hosts the single canonical search box; typing
+            there opens the ClientSearchResults dropdown rather than filtering
+            these tables, so ClientsView always shows the full list and hides
+            its own local search input. */}
         {viewMode === 'clients' && (
           <ClientsView
-            items={effectiveItems}
+            items={overriddenAllItems}
             allTasks={allTasks}
             loadingTasks={loadingTasks}
             agentEmailMap={agentEmailMap}
@@ -452,8 +478,7 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
             currentUserEmail={session?.user?.email ?? null}
             currentUserName={session?.user?.name ?? null}
             clientGroupOverrides={clientGroupOverrides}
-            externalQuery={isCustomerService ? searchQuery : undefined}
-            onExternalQueryChange={isCustomerService ? setSearchQuery : undefined}
+            hideLocalSearch
           />
         )}
 

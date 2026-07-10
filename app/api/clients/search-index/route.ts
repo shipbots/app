@@ -22,6 +22,12 @@
  */
 
 import { NextResponse } from 'next/server';
+import type { ClientIndexEntry } from '@/lib/client-search';
+
+// Re-exported so existing importers of the type from this route keep working;
+// the canonical definition now lives in lib/client-search.ts (shared with the
+// header search dropdown + ranking logic).
+export type { ClientIndexEntry } from '@/lib/client-search';
 
 const MONDAY_API_URL   = 'https://api.monday.com/v2';
 const CLIENTS_BOARD_ID = '7846251224';
@@ -49,30 +55,6 @@ const COLUMN_IDS = [
 
 type ColumnValue = { id: string; text: string | null };
 type Item = { id: string; name: string; column_values: ColumnValue[]; group?: { id: string } | null };
-
-export type ClientIndexEntry = {
-  id: string;
-  name: string;
-  legalEntity: string;
-  storeName: string;
-  shipHeroName: string;
-  contactName: string;
-  contactEmail: string;
-  contactPhone: string;
-  contact2Name: string;
-  contact2Email: string;
-  contact2Phone: string;
-  contact3Name: string;
-  contact3Email: string;
-  contact3Phone: string;
-  /** AppDot / Portal dropdown label, e.g. "ShipBots Portal". */
-  portal: string;
-  /** Warehouse Location dropdown label (dropdown_mktxaege on Clients). */
-  warehouse: string;
-  /** Clients-board group id (e.g. group_mkq09z7j == 'Exited'). The UI
-   *  uses this to mark clients inactive without an extra Monday query. */
-  groupId: string;
-};
 
 async function mondayQuery(query: string, variables: Record<string, unknown> | undefined, key: string) {
   const res = await fetch(MONDAY_API_URL, {
