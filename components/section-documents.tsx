@@ -83,7 +83,10 @@ export function SectionDocuments({
       if (res.status === 503) { setStatus('unconfigured'); return; }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error || `${res.status}`);
+        // Include the status code so surface errors are diagnosable
+        // ("502: column not found" is much more actionable than the
+        // bare "Upload failed" the user was seeing).
+        throw new Error(body?.error ? `${body.error} (HTTP ${res.status})` : `Upload failed (HTTP ${res.status})`);
       }
       // Optimistically prepend, then refetch so we see the exact
       // shape (createdAt, public url) Monday returns.
@@ -152,6 +155,12 @@ export function SectionDocuments({
         <div className="flex items-center gap-2 text-[11px] text-gray-400 px-1 py-2">
           <Loader2 className="w-3 h-3 animate-spin" />
           Loading…
+        </div>
+      )}
+
+      {status === 'ready' && errorMsg && (
+        <div className="rounded-md bg-rose-50 border border-rose-200 px-2.5 py-1.5 text-[11px] text-rose-800 mb-2">
+          {errorMsg}
         </div>
       )}
 
