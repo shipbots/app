@@ -24,11 +24,26 @@ export async function POST() {
     return NextResponse.json({ error: 'Admins only' }, { status: 403 });
   }
 
+  // Idempotent: if MONDAY_DOCUMENTS_COL_ID is already set, return it as
+  // "already configured" instead of creating a duplicate Monday column.
+  // Without this guard, every re-run of the setup button would spawn a
+  // fresh "Documents" long_text column on the Clients board.
+  const existing = process.env.MONDAY_DOCUMENTS_COL_ID?.trim();
+  if (existing) {
+    return NextResponse.json({
+      ok: true,
+      columnId: existing,
+      status: 'already-configured',
+      next: `MONDAY_DOCUMENTS_COL_ID is already set to ${existing}. No new column created.`,
+    });
+  }
+
   try {
     const id = await createClientsLongTextColumn('Documents');
     return NextResponse.json({
       ok: true,
       columnId: id,
+      status: 'created',
       next: `Set MONDAY_DOCUMENTS_COL_ID=${id} in Vercel Settings → Environment Variables (all environments), then redeploy.`,
     });
   } catch (err) {

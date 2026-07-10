@@ -931,7 +931,26 @@ export function DocumentsTab({
             <Upload className="w-3.5 h-3.5" />
             Upload File
           </button>
+          {/* Admin-only shortcut. Visible even when storage is configured
+              so an admin can re-run the bootstrap (idempotent) and see
+              the env-var block again — useful when Vercel env is stale
+              or a new section column needs its id after a codebase bump. */}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={runSetup}
+              disabled={setupRunning}
+              title="Create / verify the Monday storage columns and print the env vars"
+              className="ml-auto flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium rounded-md border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-60"
+            >
+              {setupRunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+              {setupRunning ? 'Checking…' : 'Storage settings'}
+            </button>
+          )}
         </div>
+      )}
+      {setupError && !unconfigured && (
+        <p className="text-[11px] text-red-600">Setup: {setupError}</p>
       )}
 
       {/* ── Inline forms ──
