@@ -67,6 +67,7 @@ function AgentAssignButton({
   const [saving, setSaving] = useState(false);
   const [newAgentInput, setNewAgentInput] = useState('');
   const [addingNew, setAddingNew] = useState(false);
+  const [newAgentError, setNewAgentError] = useState('');
   const ref = useRef<HTMLDivElement>(null);
 
   // Close on outside click
@@ -114,9 +115,24 @@ function AgentAssignButton({
     } finally { setSaving(false); }
   };
 
+  // Validates a new-agent input. Enforces a full @shipbots.com email so
+  // reps can't accidentally save partial values or invitees from other
+  // domains (dropdown options are keyed off the exact string; a garbage
+  // entry becomes a persistent bad Monday label). Returns an empty
+  // string on success, an error message otherwise.
+  const validateNewAgent = (raw: string): string => {
+    const email = raw.trim().toLowerCase();
+    if (!email) return 'Enter the full email';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Enter a valid email address';
+    if (!email.endsWith('@shipbots.com')) return 'Must be a @shipbots.com email';
+    return '';
+  };
+
   const addNewAgent = async () => {
-    const email = newAgentInput.trim();
-    if (!email) return;
+    const email = newAgentInput.trim().toLowerCase();
+    const err = validateNewAgent(email);
+    if (err) { setNewAgentError(err); return; }
+    setNewAgentError('');
     // Monday's create_labels_if_missing on the mutation auto-creates the
     // dropdown option, so we can just assign it directly. After save, refetch
     // the agent list so the new option appears for other clients too.
@@ -187,26 +203,41 @@ function AgentAssignButton({
                 type="email"
                 autoFocus
                 value={newAgentInput}
-                onChange={e => setNewAgentInput(e.target.value)}
+                onChange={e => { setNewAgentInput(e.target.value); setNewAgentError(''); }}
                 onKeyDown={e => {
                   if (e.key === 'Enter') addNewAgent();
-                  if (e.key === 'Escape') { setAddingNew(false); setNewAgentInput(''); }
+                  if (e.key === 'Escape') { setAddingNew(false); setNewAgentInput(''); setNewAgentError(''); }
                 }}
                 placeholder="agent@shipbots.com"
-                className="w-full text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={`w-full text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 ${
+                  newAgentError
+                    ? 'border-red-400 focus:ring-red-400'
+                    : 'border-gray-300 focus:ring-blue-500'
+                }`}
               />
+              {/* Format hint / inline error. Green-ish hint reminds reps
+                  the display will be just the first name so they aren't
+                  surprised when their new agent shows up as "Alice"
+                  after saving. */}
+              {newAgentError ? (
+                <p className="text-[10px] text-red-500 mt-1">{newAgentError}</p>
+              ) : (
+                <p className="text-[10px] text-gray-400 mt-1">
+                  Full email required. UI shows the first name only.
+                </p>
+              )}
               <div className="flex gap-1 mt-1">
                 <button
                   type="button"
                   onClick={addNewAgent}
-                  disabled={!newAgentInput.trim()}
+                  disabled={!!validateNewAgent(newAgentInput)}
                   className="flex-1 text-[11px] font-medium px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   Add &amp; assign
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setAddingNew(false); setNewAgentInput(''); }}
+                  onClick={() => { setAddingNew(false); setNewAgentInput(''); setNewAgentError(''); }}
                   className="text-[11px] px-2 py-1 rounded text-gray-500 hover:bg-gray-100 transition-colors"
                 >
                   Cancel
