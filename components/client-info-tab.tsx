@@ -1660,18 +1660,30 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    fetch(`/api/client/${encodeURIComponent(id)}/section-files/all`)
-      .then(r => r.ok ? r.json() : [])
-      .then((files: Array<{ category?: string }>) => {
+    // Files (Monday file columns) + categorized links (docs long_text
+    // column) both count toward the paperclip badge. Either fetch can
+    // soft-fail independently without zeroing the other's counts.
+    Promise.all([
+      fetch(`/api/client/${encodeURIComponent(id)}/section-files/all`)
+        .then(r => r.ok ? r.json() : []).catch(() => []),
+      fetch(`/api/documents/${encodeURIComponent(id)}`)
+        .then(r => r.ok ? r.json() : []).catch(() => []),
+    ])
+      .then(([files, docs]: [Array<{ category?: string }>, Array<{ category?: string }>]) => {
         if (cancelled) return;
         const next: Record<string, number> = { documents: 0, receiving: 0, packing: 0, returns: 0 };
         for (const f of Array.isArray(files) ? files : []) {
           const cat = f.category ?? '';
           if (cat in next) next[cat] += 1;
         }
+        for (const d of Array.isArray(docs) ? docs : []) {
+          const cat = d.category ?? '';
+          // Uncategorized links belong to the Docs tab only — they
+          // don't badge any section.
+          if (cat && cat !== 'documents' && cat in next) next[cat] += 1;
+        }
         setAttachmentCounts(next);
-      })
-      .catch(() => { /* leave zeros in place; badges just don't show */ });
+      });
     return () => { cancelled = true; };
   }, [id]);
   useEffect(() => {

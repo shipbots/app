@@ -15,6 +15,7 @@
 
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { isAdminEmail } from '@/lib/admins';
 import { createClientsColumn } from '@/lib/monday';
 import { CATEGORY_META, DOC_CATEGORIES, getColumnIdFor, type DocCategory } from '@/lib/section-docs';
 
@@ -27,13 +28,10 @@ interface Created {
 }
 
 export async function POST() {
-  // TEMP: admin gate lifted so any signed-in user can run the docs
-  // storage bootstrap during rollout. Restore the isAdminEmail check
-  // once the env vars are set. The proxy still requires a valid
-  // session cookie so anonymous callers can't hit this.
   const session = await auth();
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: 'Signed-in users only' }, { status: 403 });
+  const email = session?.user?.email ?? null;
+  if (!isAdminEmail(email)) {
+    return NextResponse.json({ error: 'Admins only' }, { status: 403 });
   }
 
   const results: Created[] = [];

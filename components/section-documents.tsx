@@ -18,7 +18,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Upload, FileText, Paperclip, Pencil, Check, X as XIcon, Eye } from 'lucide-react';
+import { Loader2, Upload, FileText, Paperclip, Pencil, Check, X as XIcon, Eye, Link2, ExternalLink } from 'lucide-react';
 import { FilePreviewModal, type PreviewableFile } from './file-preview-modal';
 
 interface SectionFile {
@@ -27,6 +27,15 @@ interface SectionFile {
   url: string;
   createdAt: string;
   fileType: string;
+}
+
+// Link doc from /api/documents/[clientId]?category=… — the subset of
+// ClientDocument this component needs.
+interface SectionLink {
+  id: string;
+  name: string;
+  url: string;
+  createdAt: string;
 }
 
 export function SectionDocuments({
@@ -44,23 +53,42 @@ export function SectionDocuments({
   hint?: string;
 }) {
   const [files, setFiles] = useState<SectionFile[]>([]);
+  const [links, setLinks] = useState<SectionLink[]>([]);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'unconfigured' | 'error'>('loading');
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [previewFile, setPreviewFile] = useState<PreviewableFile | null>(null);
+  // Add-link inline form (name + URL). Links save to the shared docs
+  // long_text column tagged with this section's category, so they
+  // show up here AND in the Docs tab list.
+  const [addingLink, setAddingLink] = useState(false);
+  const [linkName, setLinkName] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
+  const [savingLink, setSavingLink] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const linkNameRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     if (!clientBoardItemId) { setStatus('idle'); return; }
     setStatus('loading');
     setErrorMsg('');
     try {
-      const res = await fetch(`/api/client/${clientBoardItemId}/section-files/${category}`);
-      if (res.status === 503) { setStatus('unconfigured'); setFiles([]); return; }
-      if (!res.ok) throw new Error(`${res.status}`);
-      const data = await res.json();
+      // Files (Monday file column) + links (docs long_text column,
+      // filtered to this category) fetched together. A link-storage
+      // failure shouldn't blank the file list, so links soft-fail
+      // to [] instead of throwing.
+      const [fileRes, linkList] = await Promise.all([
+        fetch(`/api/client/${clientBoardItemId}/section-files/${category}`),
+        fetch(`/api/documents/${clientBoardItemId}?category=${category}`)
+          .then(r => r.ok ? r.json() : [])
+          .catch(() => []),
+      ]);
+      if (fileRes.status === 503) { setStatus('unconfigured'); setFiles([]); return; }
+      if (!fileRes.ok) throw new Error(`${fileRes.status}`);
+      const data = await fileRes.json();
       setFiles(Array.isArray(data) ? data : []);
+      setLinks(Array.isArray(linkList) ? linkList : []);
       setStatus('ready');
     } catch (err) {
       console.error(`[section-docs ${category}] load failed:`, err);
@@ -110,6 +138,45 @@ export function SectionDocuments({
     if (f) void upload(f);
   };
 
+  const openLinkForm = () => {
+    setAddingLink(true);
+    setLinkName('');
+    setLinkUrl('');
+    setTimeout(() => linkNameRef.current?.focus(), 30);
+  };
+  const cancelLinkForm = () => {
+    setAddingLink(false);
+    setLinkName('');
+    setLinkUrl('');
+  };
+  const submitLink = async () => {
+    const name = linkName.trim();
+    const url = linkUrl.trim();
+    if (!name) { setErrorMsg('Enter a name for the link'); return; }
+    if (!url) { setErrorMsg('Enter the URL'); return; }
+    if (!clientBoardItemId || savingLink) return;
+    setSavingLink(true);
+    setErrorMsg('');
+    try {
+      const res = await fetch(`/api/documents/${clientBoardItemId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, name, category }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error ? `${body.error} (HTTP ${res.status})` : `Save failed (HTTP ${res.status})`);
+      }
+      setLinks(prev => [body as SectionLink, ...prev]);
+      cancelLinkForm();
+    } catch (err) {
+      console.error(`[section-docs ${category}] add-link failed:`, err);
+      setErrorMsg(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSavingLink(false);
+    }
+  };
+
   if (!clientBoardItemId) return null;
 
   return (
@@ -118,9 +185,9 @@ export function SectionDocuments({
         <div className="flex items-center gap-1.5 min-w-0">
           <Paperclip className="w-3.5 h-3.5 text-[#0071BC] flex-shrink-0" />
           <h4 className="text-xs font-semibold text-gray-900 uppercase tracking-wider truncate">{label}</h4>
-          {files.length > 0 && (
+          {(files.length + links.length) > 0 && (
             <span className="text-[10px] font-bold bg-gray-100 text-gray-600 rounded-full px-1.5 py-0.5 leading-none">
-              {files.length}
+              {files.length + links.length}
             </span>
           )}
         </div>
@@ -166,17 +233,59 @@ export function SectionDocuments({
         </div>
       )}
 
+      {status === 'ready' && addingLink && (
+        <div className="mb-2 rounded-md border border-[#43c7ff]/50 bg-[#e6f8ff]/40 p-2 space-y-1.5">
+          <input
+            ref={linkNameRef}
+            type="text"
+            placeholder="Link name (e.g. Wholesale Instructions)"
+            value={linkName}
+            onChange={e => setLinkName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Escape') cancelLinkForm(); }}
+            className="w-full text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] bg-white"
+          />
+          <input
+            type="url"
+            placeholder="https://…"
+            value={linkUrl}
+            onChange={e => setLinkUrl(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') void submitLink();
+              if (e.key === 'Escape') cancelLinkForm();
+            }}
+            className="w-full text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] bg-white"
+          />
+          <div className="flex justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={cancelLinkForm}
+              disabled={savingLink}
+              className="px-2 py-0.5 text-[11px] text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void submitLink()}
+              disabled={savingLink || !linkName.trim() || !linkUrl.trim()}
+              className="px-2.5 py-0.5 text-[11px] font-semibold text-white bg-[#015280] hover:bg-[#01416a] rounded inline-flex items-center gap-1 disabled:opacity-60"
+            >
+              {savingLink && <Loader2 className="w-3 h-3 animate-spin" />}
+              Save link
+            </button>
+          </div>
+        </div>
+      )}
+
       {status === 'ready' && (
-        // Two-column layout: existing files on the left take the room
-        // they need, upload drop-zone on the right as a square button.
-        // Files own the visual weight so reps first see what's on file;
-        // the upload square is small but obvious enough to hit for
-        // one-off additions.
+        // Two-column layout: files + links on the left, add-targets on
+        // the right (upload square + add-link square stacked). Docs own
+        // the visual weight so reps first see what's on file.
         <div className="grid grid-cols-[1fr_auto] gap-3 items-start">
           <div>
-            {files.length === 0 ? (
+            {files.length === 0 && links.length === 0 ? (
               <p className="text-[11px] text-gray-400 italic px-1 py-1">
-                No documents yet — use the upload square on the right.
+                No documents yet — add a file or link on the right.
               </p>
             ) : (
               <ul className="divide-y divide-gray-100 border border-gray-100 rounded-md">
@@ -191,40 +300,71 @@ export function SectionDocuments({
                     onPreview={() => setPreviewFile({ name: f.name, url: f.url, fileType: f.fileType })}
                   />
                 ))}
+                {links.map(l => (
+                  <li key={l.id} className="flex items-center gap-2 px-2.5 py-2">
+                    <Link2 className="w-5 h-5 text-[#0071BC] flex-shrink-0" />
+                    <span className="flex-1 min-w-0 text-[13px] text-gray-800 truncate" title={l.url}>
+                      {l.name}
+                    </span>
+                    <a
+                      href={l.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] text-[#0071BC] hover:underline inline-flex items-center gap-0.5 flex-shrink-0"
+                    >
+                      Open
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </a>
+                  </li>
+                ))}
               </ul>
             )}
           </div>
-          {/* Square upload target — right-hand column. Same footprint
-              whether files are present or not, so reps always know
-              where to look to add another. */}
-          <label
-            htmlFor={`section-docs-file-${category}`}
-            onDragOver={e => { e.preventDefault(); setDragActive(true); }}
-            onDragLeave={() => setDragActive(false)}
-            onDrop={onDrop}
-            className={`w-24 h-24 rounded-md border-2 border-dashed cursor-pointer transition-colors flex flex-col items-center justify-center text-center flex-shrink-0 ${
-              dragActive
-                ? 'border-[#43c7ff] bg-[#e6f8ff]'
-                : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
-            }`}
-            title="Click or drop a file here to attach it to this section"
-          >
-            <Upload className={`w-5 h-5 mb-1 ${dragActive ? 'text-[#015280]' : 'text-gray-400'}`} />
-            <p className="text-[10px] text-gray-600 leading-tight px-1">
-              <span className="font-semibold text-[#015280]">Add</span><br/>document
-            </p>
-            <input
-              ref={inputRef}
-              id={`section-docs-file-${category}`}
-              type="file"
-              className="sr-only"
-              onChange={e => {
-                const f = e.currentTarget.files?.[0];
-                if (f) void upload(f);
-                e.currentTarget.value = '';
-              }}
-            />
-          </label>
+          {/* Add-targets column: file drop-zone on top, add-link below.
+              Fixed footprint so reps always know where to look. */}
+          <div className="flex flex-col gap-2 flex-shrink-0">
+            <label
+              htmlFor={`section-docs-file-${category}`}
+              onDragOver={e => { e.preventDefault(); setDragActive(true); }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={onDrop}
+              className={`w-24 h-24 rounded-md border-2 border-dashed cursor-pointer transition-colors flex flex-col items-center justify-center text-center ${
+                dragActive
+                  ? 'border-[#43c7ff] bg-[#e6f8ff]'
+                  : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+              }`}
+              title="Click or drop a file here to attach it to this section"
+            >
+              <Upload className={`w-5 h-5 mb-1 ${dragActive ? 'text-[#015280]' : 'text-gray-400'}`} />
+              <p className="text-[10px] text-gray-600 leading-tight px-1">
+                <span className="font-semibold text-[#015280]">Add</span><br/>document
+              </p>
+              <input
+                ref={inputRef}
+                id={`section-docs-file-${category}`}
+                type="file"
+                className="sr-only"
+                onChange={e => {
+                  const f = e.currentTarget.files?.[0];
+                  if (f) void upload(f);
+                  e.currentTarget.value = '';
+                }}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => addingLink ? cancelLinkForm() : openLinkForm()}
+              className={`w-24 rounded-md border-2 border-dashed transition-colors flex items-center justify-center gap-1 py-1.5 ${
+                addingLink
+                  ? 'border-[#43c7ff] bg-[#e6f8ff] text-[#015280]'
+                  : 'border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-600'
+              }`}
+              title="Attach a link (Google Doc, Sheet, any URL) to this section"
+            >
+              <Link2 className="w-3.5 h-3.5" />
+              <span className="text-[10px] font-semibold">Add link</span>
+            </button>
+          </div>
         </div>
       )}
       <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />

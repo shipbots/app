@@ -34,7 +34,16 @@ export interface ClientDocument {
   fileName?: string;
   docIcon: 'gdoc' | 'gsheet' | 'gslides' | 'gdrive' | 'pdf' | 'generic';
   createdAt: string;
+  /**
+   * Section a link belongs to. Absent / 'documents' → general Docs
+   * tab only. Links added from a Client Info section drop-zone carry
+   * that section's category and render in BOTH the section and the
+   * Docs tab (tagged with a chip).
+   */
+  category?: 'documents' | 'receiving' | 'packing' | 'returns';
 }
+
+const LINK_CATEGORIES = new Set(['documents', 'receiving', 'packing', 'returns']);
 
 const DOCS_COL_ENV = 'MONDAY_DOCUMENTS_COL_ID';
 
@@ -77,16 +86,22 @@ async function writeDocs(clientId: string, colId: string, docs: ClientDocument[]
 }
 
 // ── GET ───────────────────────────────────────────────────────────────────────
+// No query param → every link (Docs tab). `?category=receiving` →
+// only links tagged with that section, powering the per-section lists.
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ clientId: string }> }
 ) {
   const colId = getDocsColumnId();
   if (!colId) return notConfiguredResponse();
 
   const { clientId } = await params;
+  const categoryFilter = new URL(req.url).searchParams.get('category');
   try {
-    const docs = await readDocs(clientId, colId);
+    let docs = await readDocs(clientId, colId);
+    if (categoryFilter && LINK_CATEGORIES.has(categoryFilter)) {
+      docs = docs.filter(d => (d.category ?? 'documents') === categoryFilter);
+    }
     return NextResponse.json(docs);
   } catch (err) {
     console.error('[documents GET] failed:', err);
@@ -118,7 +133,7 @@ export async function POST(
     );
   }
 
-  let body: { url?: unknown; name?: unknown };
+  let body: { url?: unknown; name?: unknown; category?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -130,6 +145,11 @@ export async function POST(
   if (!url) {
     return NextResponse.json({ error: 'URL is required' }, { status: 400 });
   }
+  // Unknown / absent categories collapse to undefined so old callers
+  // (Docs-tab AddLinkForm) keep producing general links.
+  const category = typeof body.category === 'string' && LINK_CATEGORIES.has(body.category) && body.category !== 'documents'
+    ? (body.category as ClientDocument['category'])
+    : undefined;
 
   const newDoc: ClientDocument = {
     id: randomUUID(),
@@ -138,6 +158,7 @@ export async function POST(
     url,
     docIcon: detectDocIcon(url),
     createdAt: new Date().toISOString(),
+    ...(category ? { category } : {}),
   };
 
   try {

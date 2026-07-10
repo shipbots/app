@@ -798,20 +798,18 @@ function renderClientDetail(client) {
     sectionsEl.appendChild(wrap);
   }
 
-  // Fetch the files once, populate Documents section AND stamp
-  // paperclip badges on any collapsed field section that owns files
-  // (Receiving / Packing / Returns). Categories map by section key.
-  void loadSectionFilesInto(docsWrap, client.id, fieldSections);
+  // Fetch files + links once, distribute them into their owning
+  // sections (Receiving / Packing / Returns get their docs at the top
+  // of their own section body + a 📎 badge), and keep only general /
+  // uncategorized docs in the top "Documents" section. DocuSign never
+  // appears here — it lives on the onboarding board's files column,
+  // which none of these endpoints read.
+  void loadClientDocs(docsWrap, client.id, fieldSections);
 }
 
-// Maps a field-section key from DETAIL_SECTIONS to the section-file
-// category used by /api/client/[id]/section-files. Field sections
-// without a category (contacts, portal, etc.) don't get a badge.
-const SECTION_KEY_TO_CATEGORY = {
-  receiving: 'receiving',
-  packing: 'packing',
-  returns: 'returns',
-};
+// Field-section ids from DETAIL_SECTIONS that own a doc category.
+// Sections without one (contacts, portal, etc.) never get a docs list.
+const SECTION_DOC_CATEGORIES = new Set(['receiving', 'packing', 'returns']);
 
 // Stamp a small "📎 N" pill inside a section's header so the count is
 // visible even when the section is collapsed. Called from the section-
@@ -831,18 +829,14 @@ function stampAttachmentBadge(sectionWrap, count) {
   if (chev) header.insertBefore(badge, chev); else header.appendChild(badge);
 }
 
-// ── Section files (Documents) ──────────────────────────────────────
-// Read-only mirror of the dashboard's Docs tab aggregated view.
-// Renders one collapsible section listing every file uploaded from
-// any of Receiving / Packing / Returns / General, each tagged with a
-// section chip. Falls back to an empty state; hides the whole
-// section if the storage isn't configured or the fetch fails.
-const SECTION_CHIP_LABEL = {
-  documents: 'General',
-  receiving: 'Receiving',
-  packing:   'Packing',
-  returns:   'Returns',
-};
+// ── Client documents ────────────────────────────────────────────────
+// Read-only mirror of the dashboard's docs. Files (Monday file
+// columns) and links (docs long_text column) are fetched together and
+// distributed: section-owned docs render inside their own section
+// (Receiving / Packing / Returns) with a 📎 header badge; general /
+// uncategorized docs render in the top "Documents" section, which
+// hides itself when empty. Storage-unconfigured / auth errors hide
+// everything silently — the popup never nags about backend state.
 
 function buildDocumentsSectionShell() {
   const wrap = document.createElement('div');
@@ -883,72 +877,96 @@ function buildDocumentsSectionShell() {
   return wrap;
 }
 
-async function loadSectionFilesInto(wrap, clientBoardItemId, fieldSections) {
+// Compact doc list (📄 files / 🔗 links) with Open links. Shared by
+// the general Documents section and the per-section injections.
+function renderDocsList(items) {
+  const list = document.createElement('ul');
+  list.className = 'detail-docs-list';
+  for (const item of items) {
+    const li = document.createElement('li');
+    li.className = 'detail-docs-item';
+
+    const glyph = document.createElement('span');
+    glyph.className = 'detail-docs-glyph';
+    glyph.textContent = item.kind === 'link' ? '🔗' : '📄';
+    li.appendChild(glyph);
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'detail-docs-name';
+    nameSpan.textContent = item.name || 'Untitled';
+    nameSpan.title = item.url || item.name || '';
+    li.appendChild(nameSpan);
+
+    if (item.url) {
+      const link = document.createElement('a');
+      link.href = item.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.className = 'detail-docs-open';
+      link.textContent = 'Open ↗';
+      li.appendChild(link);
+    }
+    list.appendChild(li);
+  }
+  return list;
+}
+
+async function loadClientDocs(wrap, clientBoardItemId, fieldSections) {
   if (!clientBoardItemId) { wrap.remove(); return; }
   const body = wrap._docsBody;
   try {
     const base = await getBaseUrl();
-    const res = await fetch(
-      `${base}/api/client/${encodeURIComponent(clientBoardItemId)}/section-files/all`,
-      { credentials: 'include' },
-    );
-    // 503 = storage not configured yet; 401 = unauthenticated; either
-    // way we hide the section rather than nag the rep from the popup.
-    if (res.status === 503 || res.status === 401) { wrap.remove(); return; }
-    if (!res.ok) throw new Error(`section-files ${res.status}`);
-    const files = await res.json();
-    if (!Array.isArray(files) || files.length === 0) { wrap.remove(); return; }
+    const enc = encodeURIComponent(clientBoardItemId);
+    // Files can 503 (storage unconfigured) independently of links;
+    // links soft-fail to [] so a docs-column hiccup doesn't hide files.
+    const [fileRes, links] = await Promise.all([
+      fetch(`${base}/api/client/${enc}/section-files/all`, { credentials: 'include' }),
+      fetch(`${base}/api/documents/${enc}`, { credentials: 'include' })
+        .then(r => r.ok ? r.json() : [])
+        .catch(() => []),
+    ]);
+    if (fileRes.status === 401) { wrap.remove(); return; }
+    const files = fileRes.ok ? await fileRes.json() : [];
 
-    // Stamp paperclip badges on the field sections that own files
-    // (Receiving / Packing / Returns) so reps can see attachments
-    // exist without expanding the section.
+    // Bucket everything by category. Files default to 'documents';
+    // links only count as section docs when they carry a known
+    // section category (Docs-tab links stay general).
+    const byCat = { documents: [], receiving: [], packing: [], returns: [] };
+    for (const f of Array.isArray(files) ? files : []) {
+      const cat = SECTION_DOC_CATEGORIES.has(f?.category) ? f.category : 'documents';
+      byCat[cat].push({ name: f.name, url: f.url, kind: 'file' });
+    }
+    for (const l of Array.isArray(links) ? links : []) {
+      const cat = SECTION_DOC_CATEGORIES.has(l?.category) ? l.category : 'documents';
+      byCat[cat].push({ name: l.name, url: l.url, kind: 'link' });
+    }
+
+    // Per-section injection: docs render at the top of their own
+    // section's body (span the full dt/dd grid width) + 📎 badge on
+    // the collapsed header.
     if (Array.isArray(fieldSections)) {
-      const perCategory = {};
-      for (const f of files) {
-        if (!f?.category) continue;
-        perCategory[f.category] = (perCategory[f.category] || 0) + 1;
-      }
       for (const { section, wrap: sectionWrap } of fieldSections) {
-        const cat = SECTION_KEY_TO_CATEGORY[section.key];
-        const count = cat ? perCategory[cat] : 0;
-        if (count > 0) stampAttachmentBadge(sectionWrap, count);
+        const items = SECTION_DOC_CATEGORIES.has(section.id) ? byCat[section.id] : [];
+        if (!items.length) continue;
+        stampAttachmentBadge(sectionWrap, items.length);
+        const sectionBody = sectionWrap.querySelector('.detail-section-body');
+        if (!sectionBody) continue;
+        const holder = document.createElement('div');
+        holder.className = 'detail-docs-inline';
+        holder.style.gridColumn = '1 / -1';
+        holder.appendChild(renderDocsList(items));
+        sectionBody.insertBefore(holder, sectionBody.firstChild);
       }
     }
 
-    // Update the header with a live count so reps see (3) etc.
-    wrap._docsHeader.textContent = `Documents (${files.length})`;
-
+    // Top Documents section: general docs only. Empty → hide.
+    const general = byCat.documents;
+    if (!general.length) { wrap.remove(); return; }
+    wrap._docsHeader.textContent = `Documents (${general.length})`;
     body.innerHTML = '';
-    const list = document.createElement('ul');
-    list.className = 'detail-docs-list';
-    for (const f of files) {
-      const li = document.createElement('li');
-      li.className = 'detail-docs-item';
-      const chip = document.createElement('span');
-      chip.className = `detail-docs-chip detail-docs-chip-${f.category || 'documents'}`;
-      chip.textContent = SECTION_CHIP_LABEL[f.category] || 'General';
-      li.appendChild(chip);
-
-      const nameSpan = document.createElement('span');
-      nameSpan.className = 'detail-docs-name';
-      nameSpan.textContent = f.name || 'Untitled';
-      nameSpan.title = f.name || '';
-      li.appendChild(nameSpan);
-
-      if (f.url) {
-        const link = document.createElement('a');
-        link.href = f.url;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.className = 'detail-docs-open';
-        link.textContent = 'Open ↗';
-        li.appendChild(link);
-      }
-      list.appendChild(li);
-    }
-    body.appendChild(list);
+    body.appendChild(renderDocsList(general));
   } catch (err) {
-    console.error('[section-files] load failed', err);
+    console.error('[client-docs] load failed', err);
     // Silent fail — read-only surface. The dashboard covers the case.
     wrap.remove();
   }

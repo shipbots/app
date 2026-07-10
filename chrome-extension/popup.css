@@ -833,20 +833,18 @@ body.detail-open {
   border-radius: 6px;
   background: #fff;
 }
-.detail-docs-chip {
+.detail-docs-glyph {
   flex-shrink: 0;
-  font-size: 9px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  padding: 2px 6px;
-  border-radius: 999px;
-  white-space: nowrap;
+  font-size: 13px;
+  line-height: 1;
 }
-.detail-docs-chip-documents { background: #f3f4f6; color: #4b5563; }
-.detail-docs-chip-receiving { background: #d1fae5; color: #065f46; }
-.detail-docs-chip-packing   { background: #dbeafe; color: #1e40af; }
-.detail-docs-chip-returns   { background: #ffe4e6; color: #9f1239; }
+/* Docs list injected at the top of a field section's dt/dd grid —
+   spans the full width and separates itself from the fields below. */
+.detail-docs-inline {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f0f0f0;
+}
 .detail-docs-name {
   flex: 1;
   min-width: 0;

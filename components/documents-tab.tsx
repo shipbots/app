@@ -344,6 +344,14 @@ function DocRow({ doc, clientId, onDeleted, onRenamed }: {
         ) : (
           <div className="flex items-center gap-1.5 min-w-0">
             <p className="text-sm font-medium text-gray-800 truncate">{draftName}</p>
+            {/* Section chip — links added from a Client Info section
+                (Receiving / Packing / Returns) carry a category; show
+                where they came from so the flat list stays scannable. */}
+            {doc.category && doc.category !== 'documents' && SECTION_CHIP[doc.category] && (
+              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap flex-shrink-0 ${SECTION_CHIP[doc.category].className}`}>
+                {SECTION_CHIP[doc.category].label}
+              </span>
+            )}
             {saving
               ? <Loader2 className="w-3 h-3 text-gray-400 animate-spin flex-shrink-0" />
               : (
@@ -932,24 +940,7 @@ export function DocumentsTab({
             <Upload className="w-3.5 h-3.5" />
             Upload File
           </button>
-          {/* TEMPORARY: admin gate lifted so anyone can trigger the docs
-              storage bootstrap during rollout. Server still admin-checks
-              the API, so non-admins clicking just get a 403. Restore the
-              `isAdmin &&` guard once the env vars are set. */}
-          <button
-            type="button"
-            onClick={runSetup}
-            disabled={setupRunning}
-            title="Create / verify the Monday storage columns and print the env vars"
-            className="ml-auto flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium rounded-md border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-60"
-          >
-            {setupRunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
-            {setupRunning ? 'Checking…' : 'Storage settings'}
-          </button>
         </div>
-      )}
-      {setupError && !unconfigured && (
-        <p className="text-[11px] text-red-600">Setup: {setupError}</p>
       )}
 
       {/* ── Inline forms ──

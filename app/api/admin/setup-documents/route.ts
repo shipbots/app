@@ -14,17 +14,14 @@
 
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { isAdminEmail } from '@/lib/admins';
 import { createClientsLongTextColumn } from '@/lib/monday';
 
 export async function POST() {
-  // TEMP: admin gate lifted so any signed-in user can run the docs
-  // storage bootstrap during rollout. Restore the isAdminEmail check
-  // once the env vars are set. Any signed-in user session still gates
-  // the endpoint through the proxy middleware, so anonymous callers
-  // get bounced to /login before reaching this code.
   const session = await auth();
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: 'Signed-in users only' }, { status: 403 });
+  const email = session?.user?.email ?? null;
+  if (!isAdminEmail(email)) {
+    return NextResponse.json({ error: 'Admins only' }, { status: 403 });
   }
 
   // Idempotent: if MONDAY_DOCUMENTS_COL_ID is already set, return it as
