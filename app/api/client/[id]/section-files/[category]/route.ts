@@ -18,15 +18,28 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchClientColumn } from '@/lib/monday';
 import {
   CATEGORY_META,
-  DOC_CATEGORIES,
   getAllConfiguredColumns,
   getColumnIdFor,
   isDocCategory,
   type DocCategory,
 } from '@/lib/section-docs';
+
+const MONDAY_API_URL = 'https://api.monday.com/v2';
+
+async function mondayGql(query: string): Promise<unknown> {
+  const key = process.env.MONDAY_API_KEY;
+  if (!key) throw new Error('MONDAY_API_KEY not set');
+  const res = await fetch(MONDAY_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: key },
+    body: JSON.stringify({ query }),
+  });
+  const body = await res.json();
+  if (body?.errors?.length) throw new Error(String(body.errors[0]?.message || 'Monday error'));
+  return body?.data;
+}
 
 const MONDAY_FILE_URL = 'https://api.monday.com/v2/file';
 
@@ -45,32 +58,72 @@ function getApiKey(): string {
   return key;
 }
 
-// Parse Monday's `value` string for a file column. Shape:
-// { files: [{ assetId, name, url, createdAt, fileType, ... }, ...] }
-function parseFileColumnValue(raw: string, category: DocCategory): SectionFile[] {
-  if (!raw) return [];
+// Read the file column's raw `value` JSON (NOT the `text` field —
+// Monday's `text` for a file column is a comma-joined list of names
+// without any asset ids, which is useless for us). Then fetch each
+// asset's public_url in one batched query so the UI can open the
+// files directly. Value shape from Monday:
+//   { files: [{ assetId: <number>, name, createdAt, fileType, ... }] }
+async function listFiles(clientId: string, category: DocCategory, columnId: string): Promise<SectionFile[]> {
+  const data = await mondayGql(`query {
+    items(ids: [${clientId}]) {
+      column_values(ids: ["${columnId}"]) { id value }
+    }
+  }`) as { items?: Array<{ column_values?: Array<{ id: string; value?: string | null }> }> } | null;
+
+  const col = data?.items?.[0]?.column_values?.find(c => c.id === columnId);
+  if (!col || !col.value) return [];
+  let parsedFiles: Array<Record<string, unknown>> = [];
   try {
-    const parsed = JSON.parse(raw) as { files?: unknown };
-    const files = Array.isArray(parsed?.files) ? parsed.files : [];
-    return files
-      .filter((f): f is Record<string, unknown> => !!f && typeof f === 'object')
-      .map(f => ({
-        assetId: String(f.assetId ?? f.asset_id ?? ''),
-        name: String(f.name ?? 'Untitled'),
-        url: String(f.url ?? ''),
-        createdAt: String(f.createdAt ?? f.created_at ?? ''),
-        fileType: String(f.fileType ?? f.file_extension ?? ''),
-        category,
-      }))
-      .filter(f => f.assetId);
+    const parsed = JSON.parse(col.value) as { files?: unknown };
+    if (Array.isArray(parsed?.files)) {
+      parsedFiles = parsed.files.filter((f): f is Record<string, unknown> => !!f && typeof f === 'object');
+    }
   } catch {
     return [];
   }
-}
+  if (parsedFiles.length === 0) return [];
 
-async function listFiles(clientId: string, category: DocCategory, columnId: string): Promise<SectionFile[]> {
-  const raw = await fetchClientColumn(clientId, columnId);
-  return parseFileColumnValue(raw, category);
+  // Batch-resolve asset public URLs. Monday returns numeric ids in the
+  // file column value; the assets query takes those ids and returns
+  // signed public_urls we can link to from the UI.
+  const assetIds = parsedFiles
+    .map(f => Number(f.assetId ?? f.asset_id ?? 0))
+    .filter(n => n > 0);
+  const urlById: Record<string, string> = {};
+  if (assetIds.length > 0) {
+    try {
+      const assetsData = await mondayGql(
+        `query { assets(ids: [${assetIds.join(',')}]) { id public_url url } }`,
+      ) as { assets?: Array<{ id: string; public_url?: string | null; url?: string | null }> } | null;
+      for (const a of assetsData?.assets ?? []) {
+        urlById[String(a.id)] = a.public_url || a.url || '';
+      }
+    } catch (err) {
+      console.error('[section-files] asset URL fetch failed:', err);
+      // Fall through — list without URLs is still useful.
+    }
+  }
+
+  return parsedFiles.map(f => {
+    const assetId = String(f.assetId ?? f.asset_id ?? '');
+    return {
+      assetId,
+      name: String(f.name ?? 'Untitled'),
+      url: urlById[assetId] || '',
+      // Monday's createdAt on a file column is a Unix timestamp (seconds).
+      // Convert to ISO so the client's "sort newest first" string sort
+      // stays lexicographic. Empty when Monday didn't record one.
+      createdAt: (() => {
+        const raw = f.createdAt ?? f.created_at;
+        if (typeof raw === 'number' && raw > 0) return new Date(raw * 1000).toISOString();
+        if (typeof raw === 'string' && raw) return raw;
+        return '';
+      })(),
+      fileType: String(f.fileType ?? f.file_extension ?? ''),
+      category,
+    };
+  }).filter(f => f.assetId);
 }
 
 // ── GET ────────────────────────────────────────────────────────────
