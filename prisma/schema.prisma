@@ -1,0 +1,124 @@
+// Projects backend — Postgres (Vercel Postgres) via Prisma.
+// Documents are stored in Vercel Blob; only their URL/name/metadata live here.
+//
+// Provision: create a Vercel Postgres DB + Blob store, connect them to the
+// project, then run `npx prisma migrate deploy` (or `prisma db push`) and
+// optionally `npx prisma db seed`. Until the DB env vars exist the app runs
+// on the mock preview (see lib/db.ts `isDbConfigured`).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Vercel Postgres injects these. Pooled URL for the app, direct URL for
+  // migrations. If your provider only gives DATABASE_URL, set both to it.
+  url       = env("POSTGRES_PRISMA_URL")
+  directUrl = env("POSTGRES_URL_NON_POOLING")
+}
+
+model Project {
+  id                String            @id @default(cuid())
+  name              String
+  /// Monday Clients-board item id this project belongs to (nullable — some
+  /// clients aren't linked by id yet; clientName is the denormalized fallback).
+  clientBoardItemId String?
+  clientName        String
+  statusId          String
+  status            ProjectStatus     @relation(fields: [statusId], references: [id])
+  ownerEmail        String
+  note              String            @default("")
+  dueDate           DateTime?
+  adhocCreated      Boolean           @default(false)
+  createdByEmail    String
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  subtasks  Subtask[]
+  documents ProjectDocument[]
+  comments  ProjectComment[]
+  activity  ProjectActivity[]
+
+  @@index([clientBoardItemId])
+  @@index([ownerEmail])
+  @@index([statusId])
+}
+
+/// Status picklist — the three defaults (opened/started/completed) plus any
+/// custom statuses reps add. Shared team-wide so a custom status is reusable.
+model ProjectStatus {
+  id        String    @id @default(cuid())
+  label     String
+  kind      String    // 'opened' | 'started' | 'completed' | 'custom'
+  color     String
+  sortOrder Int       @default(0)
+  projects  Project[]
+}
+
+model Subtask {
+  id               String    @id @default(cuid())
+  projectId        String
+  project          Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title            String
+  done             Boolean   @default(false)
+  assigneeEmail    String?
+  dueDate          DateTime?
+  completedByEmail String?
+  completedAt      DateTime?
+  sortOrder        Int       @default(0)
+
+  @@index([projectId])
+  @@index([assigneeEmail])
+}
+
+model ProjectDocument {
+  id           String   @id @default(cuid())
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name         String
+  kind         String   // 'file' | 'link'
+  url          String?  // link URL, or the public Vercel Blob URL for files
+  blobPath     String?  // Vercel Blob pathname, so the file can be deleted
+  addedByEmail String
+  addedAt      DateTime @default(now())
+
+  @@index([projectId])
+}
+
+model ProjectComment {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  authorEmail String
+  text        String
+  at          DateTime @default(now())
+
+  @@index([projectId])
+}
+
+/// Append-only audit trail — who did what, when.
+model ProjectActivity {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind       String
+  actorEmail String
+  summary    String
+  at         DateTime @default(now())
+
+  @@index([projectId])
+}
+
+/// Records reminder sends so the daily cron never double-notifies for the
+/// same due date. (Reminders cron is a follow-up phase.)
+model ReminderLog {
+  id        String   @id @default(cuid())
+  subtaskId String?
+  projectId String?
+  dueDate   DateTime
+  channel   String
+  sentAt    DateTime @default(now())
+
+  @@unique([subtaskId, dueDate, channel])
+}

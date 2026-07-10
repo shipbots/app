@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   X, Check, Plus, Trash2, FileText, Link as LinkIcon, ListChecks, StickyNote,
-  History, ChevronDown, AlertTriangle, Upload, User, MessageCircle, Send,
+  History, ChevronDown, AlertTriangle, Upload, User, MessageCircle, Send, Loader2,
 } from 'lucide-react';
 import type {
   Project, ProjectStatus, ProjectSubtask, ProjectActivity, ProjectActivityKind, ProjectDocument, ProjectComment,
@@ -32,12 +32,20 @@ interface Props {
   clientOptions: ClientOption[];
   agentOptions: string[];
   currentUserEmail: string | null;
+  /** True when file upload is available (DB configured + project persisted). */
+  filesEnabled?: boolean;
+  /** True when the projects DB is live (edits persist). Drives the Preview tag. */
+  persisted?: boolean;
   onClose: () => void;
   onSave: (p: Project) => void;
+  onDelete?: (id: string) => void;
+  /** Uploads a file to the project's document store, returns the created doc. */
+  onUploadFile?: (projectId: string, file: File) => Promise<ProjectDocument | null>;
 }
 
 export function ProjectDetailModal({
-  project, isNew = false, clientOptions, agentOptions, currentUserEmail, onClose, onSave,
+  project, isNew = false, clientOptions, agentOptions, currentUserEmail,
+  filesEnabled = false, persisted = false, onClose, onSave, onDelete, onUploadFile,
 }: Props) {
   const [draft, setDraft] = useState<Project>(project);
   // Ad-hoc prompt shown after moving to a "completed" status.
@@ -153,6 +161,31 @@ export function ProjectDetailModal({
     log('document_removed', `removed ${doc.kind} “${doc.name}”`);
   };
 
+  // ── File upload (Vercel Blob, via the parent's onUploadFile) ──
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const handleFilePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !onUploadFile) return;
+    setUploading(true);
+    setUploadError('');
+    try {
+      const doc = await onUploadFile(draft.id, file);
+      if (doc) {
+        setDraft(d => ({ ...d, documents: [...d.documents, doc] }));
+        log('document_added', `added file “${doc.name}”`);
+      }
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   // ── Ad-hoc flag ──
   const toggleAdhoc = (created: boolean) => {
     patch({ adhocCreated: created });
@@ -182,10 +215,25 @@ export function ProjectDetailModal({
             placeholder="Project name"
             className="flex-1 min-w-0 text-base font-semibold text-gray-900 bg-transparent focus:outline-none focus:bg-gray-50 rounded px-1.5 py-1"
           />
-          <span className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-100 rounded px-2 py-0.5">
-            {isNew ? 'New · preview' : 'Preview'}
-          </span>
+          {!persisted && (
+            <span className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-100 rounded px-2 py-0.5">
+              {isNew ? 'New · preview' : 'Preview'}
+            </span>
+          )}
+          {persisted && isNew && (
+            <span className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-wide text-[#015280] bg-[#e6f8ff] rounded px-2 py-0.5">New</span>
+          )}
           <StatusDropdown statuses={allStatuses} current={draft.status} onChange={changeStatus} onAddCustom={addCustomStatus} />
+          {onDelete && !isNew && (
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              title="Delete project"
+              className="flex-shrink-0 p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
           <button type="button" onClick={save} className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-white bg-[#015280] hover:bg-[#01416a] px-3 py-1.5 rounded">
             <Check className="w-3.5 h-3.5" /> Done
           </button>
@@ -294,10 +342,23 @@ export function ProjectDetailModal({
                 <button type="button" onClick={addLink} disabled={!linkUrl.trim()} className="inline-flex items-center gap-1 text-xs font-medium text-[#015280] border border-[#43c7ff] bg-[#e6f8ff] rounded px-2 py-1.5 disabled:opacity-50">
                   <Plus className="w-3.5 h-3.5" /> Link
                 </button>
-                <button type="button" disabled title="File upload will be wired to the backend" className="inline-flex items-center gap-1 text-xs font-medium text-gray-400 border border-gray-200 bg-gray-50 rounded px-2 py-1.5 cursor-not-allowed">
-                  <Upload className="w-3.5 h-3.5" /> File
+                <input ref={fileInputRef} type="file" className="hidden" onChange={handleFilePick} />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!filesEnabled || uploading}
+                  title={filesEnabled ? 'Upload a file' : (isNew ? 'Save the project first, then add files' : 'File upload needs the projects database')}
+                  className={`inline-flex items-center gap-1 text-xs font-medium rounded px-2 py-1.5 border ${
+                    filesEnabled && !uploading
+                      ? 'text-[#015280] border-[#43c7ff] bg-[#e6f8ff] hover:bg-[#d5f2ff]'
+                      : 'text-gray-400 border-gray-200 bg-gray-50 cursor-not-allowed'
+                  }`}
+                >
+                  {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                  File
                 </button>
               </div>
+              {uploadError && <p className="text-[11px] text-red-500 mt-1">{uploadError}</p>}
             </Section>
 
             {/* Subtasks */}
@@ -385,6 +446,21 @@ export function ProjectDetailModal({
           onCreate={() => setAdhocNotConfigured(true)}
           onClose={() => { setAdhocPrompt(false); setAdhocNotConfigured(false); }}
         />
+      )}
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4" onMouseDown={e => { if (e.target === e.currentTarget) setConfirmDelete(false); }}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-5">
+            <h3 className="text-base font-semibold text-gray-900 mb-1">Delete this project?</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              “{draft.name || 'Untitled project'}” and its subtasks, comments, documents, and activity will be permanently removed.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setConfirmDelete(false)} className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+              <button type="button" onClick={() => { setConfirmDelete(false); onDelete?.(draft.id); }} className="px-3 py-1.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded">Delete project</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

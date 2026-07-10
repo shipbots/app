@@ -52,8 +52,11 @@ export interface ProjectDocument {
   id: string;
   name: string;
   kind: 'file' | 'link';
-  /** For links, the URL. For files, the (eventual) stored file URL. */
+  /** For links, the URL. For files, the public Vercel Blob URL. */
   url?: string;
+  /** Vercel Blob pathname (files only) — round-tripped so the row keeps it
+   *  for future blob cleanup. */
+  blobPath?: string;
   addedByEmail: string;
   addedAt: string; // ISO datetime
 }

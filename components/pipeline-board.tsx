@@ -16,7 +16,7 @@ import { ClientSearchResults } from './client-search-results';
 import { ProjectsView } from './projects-view';
 import { ProjectDetailModal } from './project-detail-modal';
 import { newId } from './project-bits';
-import { MOCK_PROJECTS, DEFAULT_PROJECT_STATUSES, type Project } from '@/lib/projects';
+import { MOCK_PROJECTS, DEFAULT_PROJECT_STATUSES, type Project, type ProjectDocument } from '@/lib/projects';
 import { useClientSearchIndex } from '@/hooks/use-client-search-index';
 import { useSession } from 'next-auth/react';
 import { Search, Bell, RefreshCw, ChevronDown, ChevronRight, LayoutGrid, CalendarDays, CheckSquare, UserPlus, Users, Sparkles, FolderKanban, StickyNote as StickyNoteIcon } from 'lucide-react';
@@ -108,16 +108,64 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
   // Locally injected items (newly created clients before next server reload)
   const [localItems, setLocalItems] = useState<OnboardingItem[]>([]);
 
-  // ── Projects (SCAFFOLD / preview) ──
-  // Session-only state seeded from mock data — no backend yet. `projects`
-  // feeds both the Projects workspace and the home-page "My Projects" panel;
-  // `selectedProject` drives the detail modal. Edits are upserted here so the
-  // preview feels live, but nothing persists across a reload.
+  // ── Projects ──
+  // Seeded with mock data so the feature works before the DB is provisioned.
+  // On mount we ask /api/projects: if the backend is live it replaces the mock
+  // with real rows and saves persist; if not, we keep the mock and edits are
+  // session-only. `projects` feeds the Projects workspace, the home "My
+  // Projects" panel, and the client-view boxes; `selectedProject` drives the
+  // detail modal.
   const [projects, setProjects] = useState<Project[]>(MOCK_PROJECTS);
+  const [projectsConfigured, setProjectsConfigured] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [selectedProjectIsNew, setSelectedProjectIsNew] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/projects')
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`${r.status}`))))
+      .then((data: { configured?: boolean; projects?: Project[] }) => {
+        if (cancelled) return;
+        if (data.configured && Array.isArray(data.projects)) {
+          setProjects(data.projects);
+          setProjectsConfigured(true);
+        }
+      })
+      .catch(() => { /* keep the mock preview */ });
+    return () => { cancelled = true; };
+  }, []);
+
   const handleProjectSave = (p: Project) => {
-    setProjects(prev => (prev.some(x => x.id === p.id) ? prev.map(x => (x.id === p.id ? p : x)) : [p, ...prev]));
+    const existed = projects.some(x => x.id === p.id);
+    // Discard a brand-new project the user opened but never named.
+    if (!existed && !p.name.trim()) return;
+    setProjects(prev => (existed ? prev.map(x => (x.id === p.id ? p : x)) : [p, ...prev]));
+    if (!projectsConfigured) return; // mock mode — session only
+    fetch(existed ? `/api/projects/${p.id}` : '/api/projects', {
+      method: existed ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(p),
+    })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`${r.status}`))))
+      .then((saved: Project) => setProjects(prev => prev.map(x => (x.id === saved.id ? saved : x))))
+      .catch(err => console.error('[projects] save failed:', err));
+  };
+
+  const handleProjectDelete = (id: string) => {
+    setProjects(prev => prev.filter(x => x.id !== id));
+    setSelectedProject(null);
+    setSelectedProjectIsNew(false);
+    if (!projectsConfigured) return;
+    fetch(`/api/projects/${id}`, { method: 'DELETE' }).catch(err => console.error('[projects] delete failed:', err));
+  };
+
+  const handleProjectUploadFile = async (projectId: string, file: File): Promise<ProjectDocument | null> => {
+    if (!projectsConfigured) return null;
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`/api/projects/${projectId}/documents`, { method: 'POST', body: form });
+    if (!res.ok) throw new Error(`Upload failed (${res.status})`);
+    return res.json();
   };
   const openExistingProject = (p: Project) => { setSelectedProjectIsNew(false); setSelectedProject(p); };
   const openNewProject = () => {
@@ -756,8 +804,12 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
           clientOptions={projectClientOptions}
           agentOptions={projectAgentOptions}
           currentUserEmail={session?.user?.email ?? null}
+          filesEnabled={projectsConfigured && !selectedProjectIsNew}
+          persisted={projectsConfigured}
           onClose={() => { setSelectedProject(null); setSelectedProjectIsNew(false); }}
           onSave={handleProjectSave}
+          onDelete={handleProjectDelete}
+          onUploadFile={handleProjectUploadFile}
         />
       )}
     </div>
