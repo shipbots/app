@@ -118,9 +118,19 @@ async function listFiles(clientId: string, category: DocCategory, columnId: stri
 
   return parsedFiles.map(f => {
     const assetId = String(f.assetId ?? f.asset_id ?? '');
+    const rawName = String(f.name ?? 'Untitled');
+    // Derive fileType from the ORIGINAL Monday filename's extension.
+    // This matters because display aliases later overwrite `name`
+    // ("Wholesale Instructions", no extension) and Monday's own
+    // fileType field is usually the literal string "ASSET" — neither
+    // is usable for the preview modal's PDF/image detection.
+    const extFromName = rawName.includes('.')
+      ? (rawName.split('.').pop() || '').toLowerCase()
+      : '';
+    const extFromMonday = String(f.file_extension ?? '').toLowerCase().replace(/^\./, '');
     return {
       assetId,
-      name: String(f.name ?? 'Untitled'),
+      name: rawName,
       url: urlById[assetId] || '',
       // Monday's createdAt on a file column is a Unix timestamp (seconds).
       // Convert to ISO so the client's "sort newest first" string sort
@@ -131,7 +141,7 @@ async function listFiles(clientId: string, category: DocCategory, columnId: stri
         if (typeof raw === 'string' && raw) return raw;
         return '';
       })(),
-      fileType: String(f.fileType ?? f.file_extension ?? ''),
+      fileType: extFromName || extFromMonday,
       category,
     };
   }).filter(f => f.assetId);

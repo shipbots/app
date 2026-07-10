@@ -25,10 +25,36 @@ export interface PreviewableFile {
 const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'heic']);
 const PDF_EXTS = new Set(['pdf']);
 
-function extOf(name: string, fileType?: string): string {
-  const fromName = (name.split('.').pop() || '').toLowerCase().split('?')[0];
-  if (fromName) return fromName;
-  return (fileType || '').toLowerCase();
+// A real file extension: short and alphanumeric. Filters out garbage
+// like a whole alias name ("wholesale instructions") or Monday's
+// literal fileType value "ASSET".
+const EXT_SHAPE = /^[a-z0-9]{1,6}$/;
+
+// Detection order: explicit fileType (the API derives it from the
+// original Monday filename, surviving display-alias renames) → the
+// display name's suffix (only when it actually contains a dot) → the
+// URL's pathname. Renamed files ("Wholesale Instructions" for
+// invoice.pdf) used to fall through to "not previewable" because the
+// old code trusted the alias's last dot-segment unconditionally.
+function extOf(name: string, fileType?: string, url?: string): string {
+  const fromType = (fileType || '').toLowerCase().replace(/^\./, '');
+  if (EXT_SHAPE.test(fromType) && fromType !== 'asset') return fromType;
+
+  if (name.includes('.')) {
+    const fromName = (name.split('.').pop() || '').toLowerCase().split('?')[0].trim();
+    if (EXT_SHAPE.test(fromName)) return fromName;
+  }
+
+  if (url) {
+    try {
+      const path = new URL(url).pathname;
+      if (path.includes('.')) {
+        const fromUrl = (path.split('.').pop() || '').toLowerCase();
+        if (EXT_SHAPE.test(fromUrl)) return fromUrl;
+      }
+    } catch { /* malformed URL — no signal */ }
+  }
+  return '';
 }
 
 export function FilePreviewModal({ file, onClose }: { file: PreviewableFile | null; onClose: () => void }) {
@@ -40,7 +66,7 @@ export function FilePreviewModal({ file, onClose }: { file: PreviewableFile | nu
   }, [file, onClose]);
 
   if (!file) return null;
-  const ext = extOf(file.name, file.fileType);
+  const ext = extOf(file.name, file.fileType, file.url);
   const isImage = IMAGE_EXTS.has(ext);
   const isPdf = PDF_EXTS.has(ext);
   const canInline = isImage || isPdf;
