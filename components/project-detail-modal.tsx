@@ -12,13 +12,13 @@
  * ShipHero ad-hoc prompt; the integration itself is a follow-up.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   X, Check, Plus, Trash2, FileText, Link as LinkIcon, ListChecks, StickyNote,
-  History, ChevronDown, AlertTriangle, Upload, User,
+  History, ChevronDown, AlertTriangle, Upload, User, MessageCircle, Send,
 } from 'lucide-react';
 import type {
-  Project, ProjectStatus, ProjectSubtask, ProjectActivity, ProjectActivityKind, ProjectDocument,
+  Project, ProjectStatus, ProjectSubtask, ProjectActivity, ProjectActivityKind, ProjectDocument, ProjectComment,
 } from '@/lib/projects';
 import { DEFAULT_PROJECT_STATUSES, CUSTOM_STATUS_COLORS } from '@/lib/projects';
 import { firstNameFromEmail } from '@/lib/agent-name';
@@ -47,6 +47,22 @@ export function ProjectDetailModal({
   const [noteDirty, setNoteDirty] = useState(false);
 
   const actor = currentUserEmail || 'you@shipbots.com';
+
+  // Close on Esc. Capture phase + stopPropagation so this wins over the
+  // client detail panel's own (bubble-phase, document-level) Esc handler when
+  // the modal is opened on top of a client view. Esc closes the ad-hoc prompt
+  // first if it's showing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (adhocPrompt) { setAdhocPrompt(false); setAdhocNotConfigured(false); }
+      else onClose();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onClose, adhocPrompt]);
 
   // Append an audit entry (newest first). new Date() is fine in the browser.
   const log = (kind: ProjectActivityKind, summary: string) => {
@@ -143,6 +159,15 @@ export function ProjectDetailModal({
     log('adhoc_flag_changed', created ? 'marked ad-hoc as created' : 'marked ad-hoc as not created');
   };
 
+  // ── Comments ──
+  const addComment = (text: string) => {
+    const t = text.trim();
+    if (!t) return;
+    const c: ProjectComment = { id: newId('cm'), authorEmail: actor, text: t, at: new Date().toISOString() };
+    setDraft(d => ({ ...d, comments: [...(d.comments ?? []), c] }));
+    log('comment_added', 'added a comment');
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
@@ -202,7 +227,7 @@ export function ProjectDetailModal({
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
                 >
                   {[draft.ownerEmail, ...agentOptions.filter(a => a !== draft.ownerEmail)].map(a => (
-                    <option key={a} value={a}>{firstNameFromEmail(a)} · {a}</option>
+                    <option key={a} value={a}>{firstNameFromEmail(a)}</option>
                   ))}
                 </select>
               </Field>
@@ -236,14 +261,14 @@ export function ProjectDetailModal({
               </Field>
             </div>
 
-            {/* Notes */}
-            <Section icon={<StickyNote className="w-4 h-4" />} title="Notes">
+            {/* Project description */}
+            <Section icon={<StickyNote className="w-4 h-4" />} title="Project description">
               <textarea
                 value={draft.note}
                 onChange={e => { patch({ note: e.target.value }); setNoteDirty(true); }}
-                onBlur={() => { if (noteDirty) { log('note_edited', 'edited the notes'); setNoteDirty(false); } }}
+                onBlur={() => { if (noteDirty) { log('note_edited', 'edited the project description'); setNoteDirty(false); } }}
                 rows={4}
-                placeholder="Write the main notes for this project…"
+                placeholder="Describe the project — scope, goals, and context…"
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-[#43c7ff]"
               />
             </Section>
@@ -315,6 +340,13 @@ export function ProjectDetailModal({
               </ul>
               <AddSubtaskRow onAdd={addSubtask} />
             </Section>
+
+            {/* Comments — group-chat style progress thread */}
+            <CommentsSection
+              comments={draft.comments ?? []}
+              currentUserEmail={currentUserEmail}
+              onAdd={addComment}
+            />
           </div>
 
           {/* Activity / audit rail */}
@@ -394,6 +426,81 @@ function AddSubtaskRow({ onAdd }: { onAdd: (title: string) => void }) {
         className="flex-1 border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
       />
       <button type="button" onClick={submit} disabled={!title.trim()} className="text-xs font-medium text-[#015280] px-2 py-1.5 disabled:opacity-40">Add</button>
+    </div>
+  );
+}
+
+// Group-chat style comment thread. Own messages sit right in brand blue;
+// everyone else's sit left in white — with first name + timestamp on each.
+function CommentsSection({
+  comments, currentUserEmail, onAdd,
+}: {
+  comments: ProjectComment[];
+  currentUserEmail: string | null;
+  onAdd: (text: string) => void;
+}) {
+  const [text, setText] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const submit = () => { const t = text.trim(); if (!t) return; onAdd(t); setText(''); };
+
+  // Keep the newest message in view as the thread grows.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [comments.length]);
+
+  const me = (currentUserEmail ?? '').toLowerCase();
+
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 mb-2 text-sm font-semibold text-gray-800">
+        <span className="text-[#015280]"><MessageCircle className="w-4 h-4" /></span>
+        Comments ({comments.length})
+      </div>
+      <div ref={scrollRef} className="rounded-xl border border-gray-100 bg-gray-50/70 p-3 space-y-3 max-h-80 overflow-y-auto">
+        {comments.length === 0 ? (
+          <p className="text-xs text-gray-400 italic text-center py-6">No comments yet — start the conversation.</p>
+        ) : (
+          comments.map(c => {
+            const mine = !!me && c.authorEmail.toLowerCase() === me;
+            return (
+              <div key={c.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
+                <div className={`flex items-baseline gap-1.5 mb-0.5 px-1 ${mine ? 'flex-row-reverse' : ''}`}>
+                  <span className="text-[11px] font-semibold text-gray-700">{firstNameFromEmail(c.authorEmail)}</span>
+                  <span className="text-[10px] text-gray-400">{formatActivityTime(c.at)}</span>
+                </div>
+                <div
+                  className={`max-w-[78%] px-3 py-2 rounded-2xl text-sm leading-snug whitespace-pre-wrap break-words ${
+                    mine
+                      ? 'bg-[#015280] text-white rounded-br-sm'
+                      : 'bg-white text-gray-800 border border-gray-200 rounded-bl-sm'
+                  }`}
+                >
+                  {c.text}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+      <div className="flex items-center gap-1.5 mt-2">
+        <input
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
+          placeholder="Write a comment…"
+          className="flex-1 border border-gray-200 rounded-full px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#43c7ff]"
+        />
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!text.trim()}
+          className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-[#015280] text-white hover:bg-[#01416a] disabled:opacity-40 flex-shrink-0"
+          aria-label="Send comment"
+        >
+          <Send className="w-4 h-4" />
+        </button>
+      </div>
     </div>
   );
 }

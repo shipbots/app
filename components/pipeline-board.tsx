@@ -135,6 +135,7 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
       dueDate: null,
       subtasks: [],
       documents: [],
+      comments: [],
       adhocCreated: false,
       createdByEmail: email,
       createdAt: nowIso,
@@ -735,6 +736,8 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
           onItemUpdate={handleItemUpdate}
           onNavigate={newItem => setSelectedItem(newItem)}
           onClientActiveChanged={handleClientActiveChanged}
+          projects={projects}
+          onOpenProject={openExistingProject}
         />
       )}
 

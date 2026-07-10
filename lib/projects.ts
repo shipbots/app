@@ -58,6 +58,14 @@ export interface ProjectDocument {
   addedAt: string; // ISO datetime
 }
 
+/** A message in the project's comment thread (group-chat style). */
+export interface ProjectComment {
+  id: string;
+  authorEmail: string;
+  text: string;
+  at: string; // ISO datetime
+}
+
 // Every kind of change we want attributed in the audit trail.
 export type ProjectActivityKind =
   | 'created'
@@ -70,6 +78,7 @@ export type ProjectActivityKind =
   | 'document_added'
   | 'document_removed'
   | 'link_added'
+  | 'comment_added'
   | 'owner_changed'
   | 'due_date_changed'
   | 'adhoc_flag_changed'
@@ -99,6 +108,8 @@ export interface Project {
   dueDate: string | null; // ISO date
   subtasks: ProjectSubtask[];
   documents: ProjectDocument[];
+  /** Comment thread — group-chat style progress conversation. */
+  comments: ProjectComment[];
   /** Whether the ShipHero ad-hoc charge has been created (manual for now). */
   adhocCreated: boolean;
   createdByEmail: string;
@@ -169,6 +180,11 @@ export const MOCK_PROJECTS: Project[] = [
       { id: 'doc-1a', name: 'Packaging spec v2.pdf', kind: 'file', addedByEmail: 'andres@shipbots.com', addedAt: '2026-07-12T14:00:00Z' },
       { id: 'doc-1b', name: 'Client brand guidelines', kind: 'link', url: 'https://example.com/brand', addedByEmail: 'carolina@shipbots.com', addedAt: '2026-07-13T09:30:00Z' },
     ],
+    comments: [
+      { id: 'cm-1a', authorEmail: 'andres@shipbots.com',   text: 'Kicking this off — waiting on the client to send final artwork.', at: '2026-07-11T09:15:00Z' },
+      { id: 'cm-1b', authorEmail: 'carolina@shipbots.com', text: 'Confirmed the recycled box line is in stock at Gardena. Dimensions look good.', at: '2026-07-11T14:40:00Z' },
+      { id: 'cm-1c', authorEmail: 'andres@shipbots.com',   text: 'Perfect. Artwork just came in — moving this to Started.', at: '2026-07-15T16:22:00Z' },
+    ],
     adhocCreated: false,
     createdByEmail: 'andres@shipbots.com',
     createdAt: '2026-07-10T13:00:00Z',
@@ -194,6 +210,7 @@ export const MOCK_PROJECTS: Project[] = [
       { id: 'st-2b', title: 'Configure returns portal', done: false, assigneeEmail: 'gera@shipbots.com', dueDate: '2026-08-01' },
     ],
     documents: [],
+    comments: [],
     adhocCreated: false,
     createdByEmail: 'andres@shipbots.com',
     createdAt: '2026-07-09T11:00:00Z',
@@ -217,6 +234,10 @@ export const MOCK_PROJECTS: Project[] = [
     documents: [
       { id: 'doc-3a', name: 'Backer export.csv', kind: 'file', addedByEmail: 'carolina@shipbots.com', addedAt: '2026-07-14T15:00:00Z' },
     ],
+    comments: [
+      { id: 'cm-3a', authorEmail: 'carolina@shipbots.com', text: 'Backer export is in the docs. Andres, can you get bulk quotes this week?', at: '2026-07-14T15:10:00Z' },
+      { id: 'cm-3b', authorEmail: 'andres@shipbots.com',   text: 'On it — reaching out to the carriers now.', at: '2026-07-15T10:05:00Z' },
+    ],
     adhocCreated: false,
     createdByEmail: 'carolina@shipbots.com',
     createdAt: '2026-07-08T10:00:00Z',
@@ -239,6 +260,7 @@ export const MOCK_PROJECTS: Project[] = [
       { id: 'st-4b', title: 'Flag conflicts', done: false, assigneeEmail: 'gera@shipbots.com', dueDate: '2026-07-20' },
     ],
     documents: [],
+    comments: [],
     adhocCreated: true,
     createdByEmail: 'gera@shipbots.com',
     createdAt: '2026-07-07T09:00:00Z',

@@ -20,6 +20,8 @@ import type { BolRecord } from '@/lib/bol';
 import { PIPELINE_STAGES, INACTIVE_STATUSES, CLIENT_GROUP_EXITED } from '@/lib/constants';
 import { firstNameFromEmail } from '@/lib/agent-name';
 import { FilePreviewModal, type PreviewableFile } from './file-preview-modal';
+import { ClientProjectsBox } from './client-projects-box';
+import type { Project } from '@/lib/projects';
 import {
   X, FileText, ClipboardList, Video, Mail, ExternalLink,
   Maximize2, Minimize2, UserPlus, ChevronDown, MailWarning, Phone, Package, CheckSquare, RefreshCw, FolderOpen,
@@ -631,6 +633,10 @@ interface ClientDetailPanelProps {
    *  in-panel client switcher, in both Onboarding and Customer Service. */
   fullscreen?: boolean;
   onFullscreenChange?: (fullscreen: boolean) => void;
+  /** Projects (scaffold) + opener for the "Projects for this client" box in
+   *  the CS expanded view. Opening a project shows the modal over the panel. */
+  projects?: Project[];
+  onOpenProject?: (p: Project) => void;
 }
 
 type Tab = 'info' | 'onboarding' | 'meetings' | 'emails' | 'pos' | 'tasks' | 'docs' | 'bols';
@@ -662,7 +668,7 @@ function readPersistedNumber(key: string, fallback: number): number {
   }
 }
 
-export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onItemUpdate, onNavigate, appMode = 'onboarding', onClientActiveChanged, fullscreen: fullscreenProp, onFullscreenChange }: ClientDetailPanelProps) {
+export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onItemUpdate, onNavigate, appMode = 'onboarding', onClientActiveChanged, fullscreen: fullscreenProp, onFullscreenChange, projects = [], onOpenProject }: ClientDetailPanelProps) {
   const isCustomerService = appMode === 'customer-service';
   // CS expanded view layout sizes — drag the handles to resize, prefs
   // persist in localStorage so they stick across sessions.
@@ -1389,6 +1395,17 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
           >
             <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-gray-200 group-hover:bg-[#43c7ff] transition-colors" />
           </div>
+
+          {/* Projects for this client — sits above the metrics; clicking a
+              project opens its full popup over the client view. CS only. */}
+          {isCustomerService && onOpenProject && (
+            <ClientProjectsBox
+              projects={projects}
+              clientBoardItemId={item.clientBoardItemId}
+              clientName={displayName || item.name}
+              onOpenProject={onOpenProject}
+            />
+          )}
 
           <section className="bg-white rounded-2xl border border-gray-200/70 shadow-[0_1px_2px_rgba(20,24,40,.04),0_6px_16px_rgba(20,24,40,.04)] flex flex-col overflow-hidden flex-1 min-h-[160px]">
             <header className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 flex-shrink-0">
