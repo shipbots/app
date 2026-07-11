@@ -23,6 +23,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ClientInfo } from '@/lib/types';
+import { useNotificationSync, isContactEmailColumn } from './notification-sync';
 import {
   ChevronDown, ChevronUp,
   Mail, Phone, Copy, Check, User,
@@ -145,6 +146,7 @@ function InlineField({
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const sync = useNotificationSync();
 
   useEffect(() => { setDraft(value); }, [value]);
 
@@ -162,12 +164,14 @@ function InlineField({
       });
       if (!res.ok) throw new Error(`${res.status}`);
       onSaved?.(next);
+      // Contact email add/change/delete → offer to sync notifications.
+      if (isContactEmailColumn(columnId)) sync.onContactEmailChanged(value, next);
     } catch (err) {
       console.error('[InlineField] save failed:', err);
     } finally {
       setSaving(false);
     }
-  }, [draft, value, clientId, columnId, onSaved]);
+  }, [draft, value, clientId, columnId, onSaved, sync]);
 
   const onCopy = (e: React.MouseEvent) => {
     e.stopPropagation(); e.preventDefault();

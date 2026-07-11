@@ -12,6 +12,7 @@ import { ClientStickyNotesSummary } from './client-sticky-notes-summary';
 import { SectionDocuments } from './section-documents';
 import { ClientProjectsBox } from './client-projects-box';
 import { EmailNotificationsSection } from './email-notifications-section';
+import { useNotificationSync, isContactEmailColumn } from './notification-sync';
 import type { Project } from '@/lib/projects';
 import { useSession } from 'next-auth/react';
 
@@ -1007,6 +1008,7 @@ function EditField({
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState<'saved' | 'error' | null>(null);
   const [copied, setCopied] = useState(false);
+  const sync = useNotificationSync();
 
   // Sync state when the client changes (navigating between clients)
   useEffect(() => {
@@ -1040,6 +1042,9 @@ function EditField({
         console.error(`[EditField] save failed: ${columnId} status=${res.status}`, body);
         throw new Error(`${res.status}`);
       }
+      // Contact email add/change → offer to enroll it in notifications
+      // (savedValue is still the pre-save value here).
+      if (isContactEmailColumn(columnId)) sync.onContactEmailChanged(savedValue, value);
       setSavedValue(value);
       setFlash('saved');
       // Brief "Saved ✓" pause on the button before closing edit mode, so the
@@ -1054,7 +1059,7 @@ function EditField({
       setSaving(false);
       setTimeout(() => setFlash(null), 3000);
     }
-  }, [value, savedValue, columnId, clientId]);
+  }, [value, savedValue, columnId, clientId, sync]);
 
   // Only show amber highlight when the field is empty
   const isHighlighted = !!(highlight && !value);

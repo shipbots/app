@@ -15,6 +15,7 @@ import { NotesView } from './notes-view';
 import { ClientSearchResults } from './client-search-results';
 import { ProjectsView } from './projects-view';
 import { ProjectDetailModal } from './project-detail-modal';
+import { NotificationSyncProvider } from './notification-sync';
 import { newId } from './project-bits';
 import { MOCK_PROJECTS, DEFAULT_PROJECT_STATUSES, type Project, type ProjectDocument } from '@/lib/projects';
 import { useClientSearchIndex } from '@/hooks/use-client-search-index';
@@ -762,6 +763,7 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
       )}
 
       {selectedItem && (
+        <NotificationSyncProvider clientBoardItemId={selectedItem.clientBoardItemId}>
         <ClientDetailPanel
           key={selectedItem.id}
           item={selectedItem}
@@ -787,6 +789,7 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
           projects={projects}
           onOpenProject={openExistingProject}
         />
+        </NotificationSyncProvider>
       )}
 
       {showAddClient && (
