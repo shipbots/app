@@ -11,6 +11,7 @@ import {
 import { ClientStickyNotesSummary } from './client-sticky-notes-summary';
 import { SectionDocuments } from './section-documents';
 import { ClientProjectsBox } from './client-projects-box';
+import { EmailNotificationsSection } from './email-notifications-section';
 import type { Project } from '@/lib/projects';
 import { useSession } from 'next-auth/react';
 
@@ -2151,6 +2152,10 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
         />
       </Section>
       )}
+
+      {/* ── E-mail notifications ── Always visible (in the fullscreen view the
+          Contact Info section above is hidden, but notifications stay here). */}
+      {id && <EmailNotificationsSection clientBoardItemId={id} client={localClient} />}
 
       {/* ── Receiving ── */}
       <Section title="Receiving" attachmentCount={attachmentCounts.receiving}>

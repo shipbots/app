@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { NOTIFICATION_TYPES } from '@/lib/notifications';
 
 const MONDAY_API_URL = 'https://api.monday.com/v2';
 const ONBOARDING_BOARD_ID = '6004116565';
@@ -40,10 +41,21 @@ export async function POST(request: Request) {
     const clientName = name.trim();
 
     // ── Step 1: Create item on the Clients board ──────────────────────────────
+    // New clients default to Address Hold Notification = "Yes".
+    const addressHoldCol = NOTIFICATION_TYPES.find(t => t.key === 'addressHold')?.enabledColumnId;
+    const clientColumnValues = JSON.stringify(
+      addressHoldCol ? { [addressHoldCol]: { labels: ['Yes'] } } : {},
+    );
     console.log(`[create-client] Creating client on Clients board: "${clientName}"`);
     const clientResult = await mondayMutation(
-      `mutation ($boardId: ID!, $groupId: String!, $itemName: String!) {
-        create_item(board_id: $boardId, group_id: $groupId, item_name: $itemName) {
+      `mutation ($boardId: ID!, $groupId: String!, $itemName: String!, $columnValues: JSON!) {
+        create_item(
+          board_id: $boardId,
+          group_id: $groupId,
+          item_name: $itemName,
+          column_values: $columnValues,
+          create_labels_if_missing: true
+        ) {
           id
           name
         }
@@ -52,6 +64,7 @@ export async function POST(request: Request) {
         boardId: CLIENTS_BOARD_ID,
         groupId: CLIENTS_GROUP_ID,
         itemName: clientName,
+        columnValues: clientColumnValues,
       }
     );
 

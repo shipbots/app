@@ -198,6 +198,10 @@ export interface ClientInfo {
   /** Clients-board group id (e.g. group_mkq09z7j = 'Exited'). Drives the
    *  Active / Inactive toggle in the side panel. */
   groupId: string;
+  /** Current value of every column the E-mail notifications feature reads,
+   *  keyed by Monday column id (enabled Yes/No dropdowns + emails text cols).
+   *  See lib/notifications.ts for the registry. */
+  notificationColumns: Record<string, string>;
 }
 
 export interface FirefliesMeeting {

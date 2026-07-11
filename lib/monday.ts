@@ -1,5 +1,6 @@
 import { OnboardingItem, ChecklistStep, ClientInfo, MonFile, SubItem } from './types';
 import { ONBOARDING_BOARD_ID, CLIENTS_BOARD_ID, CHECKLIST_STEPS, ONBOARDING_COLUMN_IDS, CLIENT_COLUMN_IDS, getStepState } from './constants';
+import { notificationColumnIds } from './notifications';
 
 const MONDAY_API_URL = 'https://api.monday.com/v2';
 
@@ -517,6 +518,10 @@ export async function fetchClientInfo(itemId: string, onboardingItemId?: string)
     hubspotDealLink: '',
     hubspotDealId: '',
     groupId: item.group?.id ?? '',
+    // Current value of every E-mail-notification column (enabled + emails),
+    // keyed by column id. The full client query fetches all columns, so these
+    // are already in `cols`.
+    notificationColumns: Object.fromEntries(notificationColumnIds().map(cid => [cid, cols[cid] || ''])),
   };
 }
 
