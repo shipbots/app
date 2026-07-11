@@ -2158,10 +2158,6 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
       </Section>
       )}
 
-      {/* ── E-mail notifications ── Always visible (in the fullscreen view the
-          Contact Info section above is hidden, but notifications stay here). */}
-      {id && <EmailNotificationsSection clientBoardItemId={id} client={localClient} />}
-
       {/* ── Receiving ── */}
       <Section title="Receiving" attachmentCount={attachmentCounts.receiving}>
         <DateField
@@ -2257,6 +2253,11 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
           hint="Attach anything returns needs — RMAs, quality specs, damage handling. Also appears in the general Docs tab."
         />
       </Section>
+
+      {/* ── E-mail notifications ── Sits after Returns; collapsed by default,
+          with a Yes/No status on the collapsed header so an active
+          notification is visible without expanding. */}
+      {id && <EmailNotificationsSection clientBoardItemId={id} client={localClient} />}
 
       {/* ── ShipBots Support Portal Login ──
           Same design language as the contact cards: a subtle white card

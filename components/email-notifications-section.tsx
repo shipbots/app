@@ -37,6 +37,11 @@ interface ContactEmail {
   email: string;
 }
 
+/** "Address Hold Notification" → "Address Hold" for the compact status pill. */
+function shortLabel(label: string): string {
+  return label.replace(/\s*notifications?\??$/i, '').trim() || label;
+}
+
 export function EmailNotificationsSection({
   clientBoardItemId,
   client,
@@ -44,7 +49,15 @@ export function EmailNotificationsSection({
   clientBoardItemId: string;
   client: ClientInfo;
 }) {
-  const [open, setOpen] = useState(true);
+  // Collapsed by default when the client opens.
+  const [open, setOpen] = useState(false);
+  // Enabled state lifted here so the collapsed header can show each
+  // notification's Yes/No status without expanding.
+  const [enabledByKey, setEnabledByKey] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(
+      NOTIFICATION_TYPES.map(t => [t.key, isNotificationEnabled(client.notificationColumns?.[t.enabledColumnId])]),
+    ),
+  );
 
   const contactEmails = useMemo<ContactEmail[]>(() => {
     const raw = [
@@ -65,17 +78,40 @@ export function EmailNotificationsSection({
     return out;
   }, [client]);
 
+  const enabledTypes = NOTIFICATION_TYPES.filter(t => enabledByKey[t.key]);
+
   return (
     <div className="rounded-2xl bg-white border border-gray-200/70 shadow-[0_1px_2px_rgba(20,24,40,.04),0_6px_16px_rgba(20,24,40,.04)] overflow-hidden mb-2.5">
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-gray-50/70 transition-colors text-left"
-      >
-        <ChevronRight className={`w-4 h-4 text-gray-300 flex-shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
-        <Bell className="w-3.5 h-3.5 text-[#0071BC] flex-shrink-0" />
-        <span className="text-[13px] font-semibold text-gray-800 tracking-[-0.01em]">E-mail notifications</span>
-      </button>
+      <div className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-gray-50/70 transition-colors">
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          className="flex items-center gap-2.5 flex-1 min-w-0 text-left"
+        >
+          <ChevronRight className={`w-4 h-4 text-gray-300 flex-shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
+          <Bell className="w-3.5 h-3.5 text-[#0071BC] flex-shrink-0" />
+          <span className="text-[13px] font-semibold text-gray-800 tracking-[-0.01em] truncate">E-mail notifications</span>
+        </button>
+        {/* Collapsed-safe status — pinned to the right so an active
+            notification is visible without expanding. Green pill(s) = on;
+            a muted "No" when everything's off. */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {enabledTypes.length > 0 ? (
+            enabledTypes.map(t => (
+              <span
+                key={t.key}
+                title={`${t.label}: Yes`}
+                className="inline-flex items-center gap-1 text-[10px] font-semibold bg-green-100 text-green-700 rounded-full px-2 py-0.5 whitespace-nowrap"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                {shortLabel(t.label)}
+              </span>
+            ))
+          ) : (
+            <span className="text-[10px] font-semibold text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">No</span>
+          )}
+        </div>
+      </div>
 
       {open && (
         <div className="border-t border-gray-100 px-3 py-2.5 space-y-2.5">
@@ -87,7 +123,8 @@ export function EmailNotificationsSection({
               enabledColumnId={type.enabledColumnId}
               emailsColumnId={type.emailsColumnId}
               contactEmails={contactEmails}
-              initialEnabled={isNotificationEnabled(client.notificationColumns?.[type.enabledColumnId])}
+              enabled={!!enabledByKey[type.key]}
+              onEnabledChange={v => setEnabledByKey(m => ({ ...m, [type.key]: v }))}
               initialEmails={parseEmailList(client.notificationColumns?.[type.emailsColumnId])}
             />
           ))}
@@ -103,7 +140,8 @@ function NotificationRow({
   enabledColumnId,
   emailsColumnId,
   contactEmails,
-  initialEnabled,
+  enabled,
+  onEnabledChange,
   initialEmails,
 }: {
   clientBoardItemId: string;
@@ -111,10 +149,10 @@ function NotificationRow({
   enabledColumnId: string;
   emailsColumnId: string;
   contactEmails: ContactEmail[];
-  initialEnabled: boolean;
+  enabled: boolean;
+  onEnabledChange: (v: boolean) => void;
   initialEmails: string[];
 }) {
-  const [enabled, setEnabled] = useState(initialEnabled);
   const [emails, setEmails] = useState<string[]>(initialEmails);
   const [savingToggle, setSavingToggle] = useState(false);
   const [savingEmails, setSavingEmails] = useState(false);
@@ -159,7 +197,7 @@ function NotificationRow({
 
   const setEnabledYesNo = async (yes: boolean) => {
     if (yes === enabled) return;
-    setEnabled(yes); // optimistic
+    onEnabledChange(yes); // optimistic (lifted state)
     setSavingToggle(true);
     setError('');
     try {
@@ -171,7 +209,7 @@ function NotificationRow({
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
-      setEnabled(!yes); // revert
+      onEnabledChange(!yes); // revert
     } finally {
       setSavingToggle(false);
     }
