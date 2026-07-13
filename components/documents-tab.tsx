@@ -458,6 +458,8 @@ function DocuSignSection({
   onExtracted?: (updates: Partial<ClientInfo>) => void;
 }) {
   const [uploadState, setUploadState] = useState<DocuSignUploadState>('idle');
+  // Inline preview of the DocuSign PDF (same modal every other document uses).
+  const [previewFile, setPreviewFile] = useState<PreviewableFile | null>(null);
   const [error, setError]     = useState('');
   const [extracted, setExtracted] = useState<ExtractedBilling>({});
   const [populatedFields, setPopulatedFields] = useState<string[]>([]);
@@ -598,28 +600,34 @@ function DocuSignSection({
     setPopulatedFields([]);
   };
 
-  // Render the current DocuSign file (if any)
+  // Render the current DocuSign file (if any). Clicking opens it in the inline
+  // preview modal — the same one every other document uses — routed through the
+  // asset proxy by asset id (which re-resolves a fresh signed URL, so it never
+  // hits a stale/attachment link). Download is available from inside the preview.
   const renderExistingFile = () => {
     if (!docusignFile) return null;
     return (
-      <div className="flex items-center gap-3 px-3 py-2.5 bg-purple-50/60 border border-purple-100 rounded-lg">
+      <button
+        type="button"
+        onClick={() => setPreviewFile({
+          name: docusignFile.name,
+          url: docusignFile.url,
+          fileType: docusignFile.fileExtension,
+          assetId: docusignFile.assetId,
+        })}
+        className="w-full text-left flex items-center gap-3 px-3 py-2.5 bg-purple-50/60 border border-purple-100 rounded-lg hover:bg-purple-100/70 transition-colors"
+        title="Open DocuSign in preview"
+      >
         <ShieldCheck className="w-5 h-5 text-purple-500 flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-gray-800 truncate">{docusignFile.name}</p>
           <p className="text-[11px] text-gray-400 truncate mt-0.5">Signed agreement · Monday.com</p>
         </div>
-        {docusignFile.url && (
-          <a
-            href={docusignFile.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="p-1 rounded hover:bg-purple-100 text-purple-400 hover:text-purple-600 transition-colors flex-shrink-0"
-            title="Open DocuSign file"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-        )}
-      </div>
+        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-purple-600 bg-white border border-purple-200 rounded px-2 py-1 flex-shrink-0">
+          <Eye className="w-3.5 h-3.5" />
+          Preview
+        </span>
+      </button>
     );
   };
 
@@ -749,6 +757,10 @@ function DocuSignSection({
             </button>
           </div>
         </div>
+      )}
+
+      {previewFile && (
+        <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
       )}
     </div>
   );
