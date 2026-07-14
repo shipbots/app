@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   X, Check, Plus, Trash2, FileText, Link as LinkIcon, ListChecks, StickyNote,
-  History, ChevronDown, AlertTriangle, Upload, User, MessageCircle, Send, Loader2,
+  History, ChevronDown, AlertTriangle, Upload, User, MessageCircle, Send, Loader2, ClipboardPaste,
 } from 'lucide-react';
 import type {
   Project, ProjectStatus, ProjectSubtask, ProjectActivity, ProjectActivityKind, ProjectDocument, ProjectComment,
@@ -165,10 +165,8 @@ export function ProjectDetailModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
-  const handleFilePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file || !onUploadFile) return;
+  const uploadFile = async (file: File) => {
+    if (!onUploadFile) return;
     setUploading(true);
     setUploadError('');
     try {
@@ -183,6 +181,70 @@ export function ProjectDetailModal({
       setUploading(false);
     }
   };
+
+  const handleFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) void uploadFile(file);
+  };
+
+  // Turn a clipboard image blob into a nicely-named File and upload it.
+  const uploadClipboardImage = (blob: Blob) => {
+    const type = blob.type || 'image/png';
+    const ext = (type.split('/')[1] || 'png').split('+')[0];
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    void uploadFile(new File([blob], `pasted-image-${stamp}.${ext}`, { type }));
+  };
+
+  // Explicit "Paste image" button — reads the clipboard on demand (async
+  // Clipboard API) and uploads the first image. Falls back to a ⌘/Ctrl+V hint
+  // when the browser blocks or doesn't support programmatic reads.
+  const pasteImageFromClipboard = async () => {
+    if (!filesEnabled) return;
+    setUploadError('');
+    if (typeof navigator.clipboard?.read !== 'function') {
+      setUploadError('Press ⌘/Ctrl+V to paste an image here.');
+      return;
+    }
+    try {
+      const items = await navigator.clipboard.read();
+      for (const it of items) {
+        const imageType = it.types.find(t => t.startsWith('image/'));
+        if (imageType) {
+          uploadClipboardImage(await it.getType(imageType));
+          return;
+        }
+      }
+      setUploadError('No image on the clipboard — copy one first, then paste.');
+    } catch {
+      setUploadError('Couldn’t read the clipboard. Press ⌘/Ctrl+V to paste instead.');
+    }
+  };
+
+  // ⌘/Ctrl+V anywhere in the modal uploads a clipboard image. A ref keeps the
+  // window listener (added once while enabled) from capturing a stale closure.
+  const uploadClipboardImageRef = useRef(uploadClipboardImage);
+  uploadClipboardImageRef.current = uploadClipboardImage;
+  useEffect(() => {
+    if (!filesEnabled) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        if (it.kind === 'file' && it.type.startsWith('image/')) {
+          const blob = it.getAsFile();
+          if (blob) {
+            e.preventDefault();
+            uploadClipboardImageRef.current(blob);
+          }
+          return;
+        }
+      }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [filesEnabled]);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -336,7 +398,7 @@ export function ProjectDetailModal({
                 ))}
                 {draft.documents.length === 0 && <li className="text-xs text-gray-400 italic px-1">No documents or links yet.</li>}
               </ul>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <input value={linkName} onChange={e => setLinkName(e.target.value)} placeholder="Label (optional)" className="w-36 border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#43c7ff]" />
                 <input value={linkUrl} onChange={e => setLinkUrl(e.target.value)} placeholder="https://…" className="flex-1 border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#43c7ff]" />
                 <button type="button" onClick={addLink} disabled={!linkUrl.trim()} className="inline-flex items-center gap-1 text-xs font-medium text-[#015280] border border-[#43c7ff] bg-[#e6f8ff] rounded px-2 py-1.5 disabled:opacity-50">
@@ -357,7 +419,24 @@ export function ProjectDetailModal({
                   {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
                   File
                 </button>
+                <button
+                  type="button"
+                  onClick={() => void pasteImageFromClipboard()}
+                  disabled={!filesEnabled || uploading}
+                  title={filesEnabled ? 'Paste an image from your clipboard' : (isNew ? 'Save the project first, then paste an image' : 'Image paste needs the projects database')}
+                  className={`inline-flex items-center gap-1 text-xs font-medium rounded px-2 py-1.5 border ${
+                    filesEnabled && !uploading
+                      ? 'text-[#015280] border-[#43c7ff] bg-[#e6f8ff] hover:bg-[#d5f2ff]'
+                      : 'text-gray-400 border-gray-200 bg-gray-50 cursor-not-allowed'
+                  }`}
+                >
+                  <ClipboardPaste className="w-3.5 h-3.5" />
+                  Paste image
+                </button>
               </div>
+              {filesEnabled && (
+                <p className="text-[10px] text-gray-400 mt-1">Tip: paste a screenshot straight from your clipboard with ⌘/Ctrl+V.</p>
+              )}
               {uploadError && <p className="text-[11px] text-red-500 mt-1">{uploadError}</p>}
             </Section>
 
