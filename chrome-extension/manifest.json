@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ShipBots Customer Service",
   "short_name": "ShipBots CS",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Live client search + read-only info panel with contacts, billing, shipping, portals, sticky notes, and Mini Apps.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -11,11 +11,19 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "ShipBots Customer Service",
+    "default_title": "ShipBots Customer Service (Alt+S)",
     "default_icon": {
       "16": "icons/icon-16.png",
       "48": "icons/icon-48.png",
       "128": "icons/icon-128.png"
+    }
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+S"
+      },
+      "description": "Open ShipBots Customer Service"
     }
   },
   "permissions": ["tabs", "storage"],
