@@ -1091,6 +1091,8 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
           onKickoffDateSaved={(newValue) =>
             onItemUpdate?.(item.id, { kickoffDate: newValue || null })
           }
+          onChecklistChange={(checklist) => onItemUpdate?.(item.id, { checklist })}
+          onShippingDetailsSaved={(value) => onItemUpdate?.(item.id, { shippingDetails: value })}
         />
       )}
       <div className={activeTab !== 'info' ? 'hidden' : 'h-full overflow-hidden'}>
@@ -1632,6 +1634,8 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
               onKickoffDateSaved={(newValue) =>
                 onItemUpdate?.(item.id, { kickoffDate: newValue || null })
               }
+              onChecklistChange={(checklist) => onItemUpdate?.(item.id, { checklist })}
+              onShippingDetailsSaved={(value) => onItemUpdate?.(item.id, { shippingDetails: value })}
             />
           )}
           {/* Info tab — always mounted to preserve in-progress edits across tab switches */}

@@ -42,6 +42,13 @@ interface OnboardingTabProps {
   /** Called after the kickoff date saves successfully — lets the kanban /
    *  calendar views update without a full server reload. */
   onKickoffDateSaved?: (newValue: string) => void;
+  /** Called after any checklist step saves, with the full updated step list.
+   *  The parent writes this back onto the source OnboardingItem.checklist so the
+   *  change survives tab switches / reopen (this tab re-seeds from that prop on
+   *  remount) and keeps the kanban progress in sync. */
+  onChecklistChange?: (steps: ChecklistStep[]) => void;
+  /** Called after the shipping methods (text_mkw94440) save. */
+  onShippingDetailsSaved?: (value: string) => void;
 }
 
 // Per-step icons keyed by Monday column ID
@@ -576,6 +583,8 @@ export function OnboardingTab({
   tikTokShop,
   lotCodeExpiration,
   onKickoffDateSaved,
+  onChecklistChange,
+  onShippingDetailsSaved,
 }: OnboardingTabProps) {
   const [steps, setSteps] = useState<ChecklistStep[]>(initialSteps);
   const [shippingDetails, setShippingDetails] = useState(initialShippingDetails);
@@ -716,7 +725,13 @@ export function OnboardingTab({
   const progress = applicableCount > 0 ? Math.round((doneCount / applicableCount) * 100) : initialProgress;
 
   const handleSaved = (stepId: string, newValue: string | null) => {
-    setSteps(prev => prev.map(s => s.id === stepId ? { ...s, value: newValue } : s));
+    // stepsRef.current is always the latest local steps — build the full next
+    // list from it (so rapid multi-step saves don't clobber each other in the
+    // parent), update local state, and push it up so the source
+    // OnboardingItem.checklist stays current across tab switches / reopen.
+    const next = stepsRef.current.map(s => s.id === stepId ? { ...s, value: newValue } : s);
+    setSteps(next);
+    onChecklistChange?.(next);
   };
 
   const progressColor = progress === 100 ? '#00c875' : progress > 50 ? '#579bfc' : '#fdab3d';
@@ -848,7 +863,7 @@ export function OnboardingTab({
                 <ShippingMethodPicker
                   value={shippingDetails}
                   itemId={itemId}
-                  onSaved={setShippingDetails}
+                  onSaved={(v) => { setShippingDetails(v); onShippingDetailsSaved?.(v); }}
                 />
               ) : step.id === 'color_mm28ht8' && lotCodeExpiration?.toLowerCase() === 'yes' ? (
                 <SendLotCodeEmailButton
