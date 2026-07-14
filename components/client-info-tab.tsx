@@ -256,6 +256,8 @@ interface ClientInfoTabProps {
    *  own box in the right column, so this one is gated to !fullscreen. */
   projects?: Project[];
   onOpenProject?: (p: Project) => void;
+  /** Start a new project pre-filled with this client. */
+  onCreateProject?: (clientBoardItemId: string | null, clientName: string) => void;
 }
 
 // ─── Copyable + Editable field (for portal login credentials) ────────────────
@@ -1646,7 +1648,7 @@ function FileField({
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
-export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, hideHeader = false, hideContactInfo = false, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange, onDeliveredDateSaved, onEstimatedDeliveryDateSaved, customerService = false, projects = [], onOpenProject }: ClientInfoTabProps) {
+export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, hideHeader = false, hideContactInfo = false, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange, onDeliveredDateSaved, onEstimatedDeliveryDateSaved, customerService = false, projects = [], onOpenProject, onCreateProject }: ClientInfoTabProps) {
   // The "two-column-per-section" layout is the standard fullscreen treatment
   // when the panel is the only thing on screen. The CS expanded view sets
   // forceSingleColumn so the right half of the screen can host its own
@@ -1934,6 +1936,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
             clientBoardItemId={id || null}
             clientName={localClient.name}
             onOpenProject={onOpenProject}
+            onCreateProject={onCreateProject}
           />
         </div>
       )}

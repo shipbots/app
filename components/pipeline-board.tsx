@@ -169,15 +169,14 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     return res.json();
   };
   const openExistingProject = (p: Project) => { setSelectedProjectIsNew(false); setSelectedProject(p); };
-  const openNewProject = () => {
+  const makeBlankProject = (client?: { clientBoardItemId: string | null; clientName: string }): Project => {
     const email = session?.user?.email ?? '';
     const nowIso = new Date().toISOString();
-    setSelectedProjectIsNew(true);
-    setSelectedProject({
+    return {
       id: newId('proj'),
       name: '',
-      clientBoardItemId: null,
-      clientName: '',
+      clientBoardItemId: client?.clientBoardItemId ?? null,
+      clientName: client?.clientName ?? '',
       status: DEFAULT_PROJECT_STATUSES[0],
       ownerEmail: email,
       note: '',
@@ -189,8 +188,27 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
       createdByEmail: email,
       createdAt: nowIso,
       activity: [{ id: newId('act'), kind: 'created', actorEmail: email, at: nowIso, summary: 'created the project' }],
-    });
+    };
   };
+  const openNewProject = () => { setSelectedProjectIsNew(true); setSelectedProject(makeBlankProject()); };
+  const openNewProjectForClient = (clientBoardItemId: string | null, clientName: string) => {
+    setSelectedProjectIsNew(true);
+    setSelectedProject(makeBlankProject({ clientBoardItemId, clientName }));
+  };
+
+  // Extension "add project" deep-link (?newProjectClientId / ?newProjectClientName)
+  // → open a new project pre-filled with that client. Honored once on mount.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isCustomerService) return;
+    const sp = new URLSearchParams(window.location.search);
+    const npName = sp.get('newProjectClientName');
+    const npId = sp.get('newProjectClientId');
+    if (npName || npId) {
+      setViewMode('projects');
+      openNewProjectForClient(npId || null, npName || '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleClientCreated = (result: CreatedClientResult) => {
     const now = new Date().toISOString();
@@ -788,6 +806,7 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
           onClientActiveChanged={handleClientActiveChanged}
           projects={projects}
           onOpenProject={openExistingProject}
+          onCreateProject={openNewProjectForClient}
         />
         </NotificationSyncProvider>
       )}

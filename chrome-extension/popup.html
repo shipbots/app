@@ -53,6 +53,19 @@
           </div>
         </div>
         <div id="detail-notes-list" class="detail-notes-list"></div>
+        <!-- Related projects for this client (active only). Read-only list;
+             "+ New" deep-links into the dashboard's Projects view with the
+             client pre-filled so the rep can fill in the rest there. -->
+        <div class="detail-projects" aria-label="Client projects">
+          <div class="detail-projects-header">
+            <span class="detail-projects-title">Projects</span>
+            <div class="detail-projects-header-right">
+              <span class="detail-projects-badge">Preview</span>
+              <button id="detail-projects-add" class="detail-projects-add" type="button" title="Create a new project for this client">+ New</button>
+            </div>
+          </div>
+          <div id="detail-projects-list" class="detail-projects-list"></div>
+        </div>
       </aside>
     </div>
   </section>

@@ -637,6 +637,8 @@ interface ClientDetailPanelProps {
    *  the CS expanded view. Opening a project shows the modal over the panel. */
   projects?: Project[];
   onOpenProject?: (p: Project) => void;
+  /** Start a new project pre-filled with this client. */
+  onCreateProject?: (clientBoardItemId: string | null, clientName: string) => void;
 }
 
 type Tab = 'info' | 'onboarding' | 'meetings' | 'emails' | 'pos' | 'tasks' | 'docs' | 'bols';
@@ -668,7 +670,7 @@ function readPersistedNumber(key: string, fallback: number): number {
   }
 }
 
-export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onItemUpdate, onNavigate, appMode = 'onboarding', onClientActiveChanged, fullscreen: fullscreenProp, onFullscreenChange, projects = [], onOpenProject }: ClientDetailPanelProps) {
+export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onItemUpdate, onNavigate, appMode = 'onboarding', onClientActiveChanged, fullscreen: fullscreenProp, onFullscreenChange, projects = [], onOpenProject, onCreateProject }: ClientDetailPanelProps) {
   const isCustomerService = appMode === 'customer-service';
   // CS expanded view layout sizes — drag the handles to resize, prefs
   // persist in localStorage so they stick across sessions.
@@ -1117,6 +1119,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
             customerService={isCustomerService}
             projects={projects}
             onOpenProject={onOpenProject}
+            onCreateProject={onCreateProject}
             onboardingItemId={item.id}
             deliveredDate={item.deliveredDate}
             inventoryDelivered={item.inventoryDelivered}
@@ -1408,6 +1411,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
               clientBoardItemId={item.clientBoardItemId}
               clientName={displayName || item.name}
               onOpenProject={onOpenProject}
+              onCreateProject={onCreateProject}
             />
           )}
 
@@ -1652,6 +1656,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
                 customerService={isCustomerService}
                 projects={projects}
                 onOpenProject={onOpenProject}
+                onCreateProject={onCreateProject}
                 onboardingItemId={item.id}
                 deliveredDate={item.deliveredDate}
                 inventoryDelivered={item.inventoryDelivered}

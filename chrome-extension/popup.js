@@ -1292,6 +1292,110 @@ async function loadStickyNotesPane(clientId) {
   }
 }
 
+// ── Related projects (below the sticky notes) ───────────────────────────────
+// The dashboard's /api/projects returns every project; we filter client-side
+// to this client's ACTIVE ones (status.kind !== 'completed'). If the projects
+// database isn't provisioned yet the API returns { configured:false,
+// projects:[] } and the pane just shows the empty state — the "+ New"
+// deep-link still works.
+async function fetchAllProjects() {
+  const base = await getBaseUrl();
+  const res = await fetch(`${base}/api/projects`, {
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+  });
+  if (res.status === 401) {
+    const err = new Error('Not signed in');
+    err.code = 'unauthorized';
+    throw err;
+  }
+  if (!res.ok) throw new Error(`projects failed (${res.status})`);
+  const data = await res.json();
+  return Array.isArray(data.projects) ? data.projects : [];
+}
+
+// Active projects linked to this client — matched by board-item id when we
+// have it, else by (case-insensitive) client name, mirroring the dashboard's
+// ClientProjectsBox.
+function activeProjectsForClient(projects, clientId, clientName) {
+  const name = String(clientName ?? '').trim().toLowerCase();
+  return projects.filter(p => {
+    const matches =
+      (clientId && p.clientBoardItemId === clientId) ||
+      (name && String(p.clientName ?? '').trim().toLowerCase() === name);
+    const completed = p.status && p.status.kind === 'completed';
+    return matches && !completed;
+  });
+}
+
+function showProjectsStatus(message) {
+  const list = document.getElementById('detail-projects-list');
+  if (!list) return;
+  list.innerHTML = '';
+  const el = document.createElement('div');
+  el.className = 'detail-projects-empty';
+  el.textContent = message;
+  list.appendChild(el);
+}
+
+function renderClientProjects(projects, clientId, clientName) {
+  const list = document.getElementById('detail-projects-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  const mine = activeProjectsForClient(projects, clientId, clientName);
+  if (mine.length === 0) {
+    showProjectsStatus('No active projects for this client.');
+    return;
+  }
+
+  for (const p of mine) {
+    const card = document.createElement('div');
+    card.className = 'project-card';
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'project-card-name';
+    nameEl.textContent = p.name || '(untitled project)';
+    card.appendChild(nameEl);
+
+    const meta = document.createElement('div');
+    meta.className = 'project-card-meta';
+
+    const owner = document.createElement('span');
+    owner.className = 'project-card-owner';
+    owner.textContent = firstNameFromEmail(p.ownerEmail) || 'Unassigned';
+    meta.appendChild(owner);
+
+    if (p.status && p.status.label) {
+      const status = document.createElement('span');
+      status.className = 'project-card-status';
+      status.textContent = p.status.label;
+      const color = /^#[0-9a-f]{6}$/i.test(p.status.color || '') ? p.status.color : '#94a3b8';
+      status.style.color = color;
+      status.style.borderColor = `${color}66`;
+      status.style.background = `${color}1a`;
+      meta.appendChild(status);
+    }
+
+    card.appendChild(meta);
+    list.appendChild(card);
+  }
+}
+
+async function loadClientProjects(clientId, clientName) {
+  showProjectsStatus('Loading…');
+  try {
+    const projects = await fetchAllProjects();
+    renderClientProjects(projects, clientId, clientName);
+  } catch (err) {
+    if (err.code === 'unauthorized') {
+      showProjectsStatus('Sign in to the dashboard first');
+    } else {
+      showProjectsStatus('Failed to load projects');
+    }
+  }
+}
+
 async function showClientDetail(clientStub) {
   const searchView = document.getElementById('search-view');
   const detailView = document.getElementById('client-detail');
@@ -1327,14 +1431,28 @@ async function showClientDetail(clientStub) {
   // view (all sections + sticky notes), not the narrow side panel.
   openBtn.onclick = () => openPath(`/customer-service?clientId=${encodeURIComponent(clientStub.id)}&expanded=1`);
 
+  // "+ New" under the projects list deep-links into the dashboard's Projects
+  // view with this client pre-filled, so the rep lands on a blank project
+  // form that already knows the customer (see pipeline-board's mount effect).
+  const addProjectBtn = document.getElementById('detail-projects-add');
+  if (addProjectBtn) {
+    addProjectBtn.onclick = () => {
+      const params = new URLSearchParams({ view: 'projects' });
+      if (clientStub.id) params.set('newProjectClientId', clientStub.id);
+      if (clientStub.name) params.set('newProjectClientName', clientStub.name);
+      openPath(`/customer-service?${params.toString()}`);
+    };
+  }
+
   // Remember which client the sticky-note composer should post to, and make
   // sure it starts closed for each newly opened client.
   activeClientId = clientStub.id;
   resetNoteComposer();
 
-  // Kick off sticky notes in parallel with the full client info fetch so
-  // the right column populates as soon as Monday returns the column.
+  // Kick off sticky notes + related projects in parallel with the full client
+  // info fetch so the right column populates as soon as each source returns.
   void loadStickyNotesPane(clientStub.id);
+  void loadClientProjects(clientStub.id, clientStub.name);
 
   try {
     const client = await fetchClientFull(clientStub.id);

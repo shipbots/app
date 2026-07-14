@@ -11,7 +11,7 @@
  * when available, else by client name (mock projects aren't linked by id yet).
  */
 
-import { FolderKanban, ListChecks, ArrowRight } from 'lucide-react';
+import { FolderKanban, ListChecks, ArrowRight, Plus } from 'lucide-react';
 import type { Project } from '@/lib/projects';
 import { subtaskProgress } from '@/lib/projects';
 import { StatusPill, PersonChip, formatDueDate, useTodayISO, isOverdue } from './project-bits';
@@ -21,11 +21,14 @@ export function ClientProjectsBox({
   clientBoardItemId,
   clientName,
   onOpenProject,
+  onCreateProject,
 }: {
   projects: Project[];
   clientBoardItemId: string | null;
   clientName: string;
   onOpenProject: (p: Project) => void;
+  /** Start a new project pre-filled with this client. */
+  onCreateProject?: (clientBoardItemId: string | null, clientName: string) => void;
 }) {
   const today = useTodayISO();
   const name = (clientName ?? '').toLowerCase();
@@ -41,13 +44,36 @@ export function ClientProjectsBox({
         <FolderKanban className="w-4 h-4 text-[#0071BC]" />
         <h2 className="text-sm font-semibold text-gray-900">Projects</h2>
         <span className="text-xs text-gray-400 font-medium">{mine.length}</span>
-        <span className="ml-auto text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">
-          Preview
-        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {onCreateProject && (
+            <button
+              type="button"
+              onClick={() => onCreateProject(clientBoardItemId, clientName)}
+              title="Create a new project for this client"
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#015280] bg-[#e6f8ff] hover:bg-[#d5f2ff] border border-[#43c7ff] rounded-full px-2 py-0.5"
+            >
+              <Plus className="w-3 h-3" /> New
+            </button>
+          )}
+          <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">
+            Preview
+          </span>
+        </div>
       </header>
 
       {mine.length === 0 ? (
-        <div className="px-4 py-8 text-center text-sm text-gray-400">No projects for this client yet.</div>
+        <div className="px-4 py-8 text-center">
+          <p className="text-sm text-gray-400">No projects for this client yet.</p>
+          {onCreateProject && (
+            <button
+              type="button"
+              onClick={() => onCreateProject(clientBoardItemId, clientName)}
+              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-white bg-[#015280] hover:bg-[#01416a] rounded-lg px-3 py-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" /> New project
+            </button>
+          )}
+        </div>
       ) : (
         <ul className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
           {mine.map(p => {
