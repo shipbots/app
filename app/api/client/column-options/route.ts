@@ -97,6 +97,19 @@ export async function GET() {
       } catch { /* skip columns with malformed settings */ }
     }
 
+    // Always offer these warehouse options even before they exist as Monday
+    // labels. Selecting + saving one creates the real label
+    // (updateClientField uses create_labels_if_missing), after which Monday
+    // returns it here anyway — the dedupe below keeps it from doubling up.
+    const WAREHOUSE_COL = 'dropdown_mktxaege';
+    const EXTRA_WAREHOUSES = ['Gardena B', 'Gardena C'];
+    const currentWarehouses = options[WAREHOUSE_COL] ?? [];
+    const seenWarehouses = new Set(currentWarehouses.map(w => w.toLowerCase()));
+    options[WAREHOUSE_COL] = [
+      ...currentWarehouses,
+      ...EXTRA_WAREHOUSES.filter(w => !seenWarehouses.has(w.toLowerCase())),
+    ];
+
     // No cache header — options change rarely but must stay fresh.
     // Let the browser re-fetch every time rather than caching a stale/empty response.
     return NextResponse.json(options);
