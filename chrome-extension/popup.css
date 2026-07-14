@@ -224,6 +224,14 @@ body.detail-open {
   color: #015280;
   font-weight: 600;
 }
+.search-result-meta .agent {
+  color: #4b5563;
+  font-weight: 600;
+}
+.search-result-meta .agent::before {
+  content: "\1F464  ";
+  font-weight: 400;
+}
 .search-result-meta .matched {
   color: #111827;
   font-weight: 600;

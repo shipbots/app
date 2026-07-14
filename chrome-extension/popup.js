@@ -226,8 +226,21 @@ function renderResults(results, container, activeIdx) {
     // and tag it ("contact 2") so the user sees why this row appeared.
     // Otherwise fall back to the standard primary-email · warehouse line.
     const isContactMatch = !!field.contact && !field.isName;
+    // Assigned agent's first name — shown next to the warehouse so a rep who's
+    // only after "who owns this client?" sees it right in the results.
+    const agentName = firstNameFromEmail((client.agentEmail || '').split(',')[0].trim());
     const meta = document.createElement('div');
     meta.className = 'search-result-meta';
+    const addSepSpan = (className, text) => {
+      const sep = document.createElement('span');
+      sep.textContent = '·';
+      sep.style.color = '#9ca3af';
+      meta.appendChild(sep);
+      const el = document.createElement('span');
+      el.className = className;
+      el.textContent = text;
+      meta.appendChild(el);
+    };
     if (isContactMatch) {
       const matchedSpan = document.createElement('span');
       matchedSpan.className = 'matched';
@@ -237,21 +250,14 @@ function renderResults(results, container, activeIdx) {
       tag.className = 'matched-tag';
       tag.textContent = field.contact === 1 ? 'primary' : `contact ${field.contact}`;
       meta.appendChild(tag);
-      if (client.warehouse) {
-        const sep = document.createElement('span');
-        sep.textContent = '·';
-        sep.style.color = '#9ca3af';
-        meta.appendChild(sep);
-        const wh = document.createElement('span');
-        wh.className = 'warehouse';
-        wh.textContent = client.warehouse;
-        meta.appendChild(wh);
-      }
+      if (client.warehouse) addSepSpan('warehouse', client.warehouse);
+      if (agentName) addSepSpan('agent', agentName);
     } else {
       const metaParts = [];
-      if (client.contactEmail) metaParts.push(client.contactEmail);
-      else if (client.contactName) metaParts.push(client.contactName);
+      if (client.contactEmail) metaParts.push(escapeHtml(client.contactEmail));
+      else if (client.contactName) metaParts.push(escapeHtml(client.contactName));
       if (client.warehouse) metaParts.push(`<span class="warehouse">${escapeHtml(client.warehouse)}</span>`);
+      if (agentName) metaParts.push(`<span class="agent">${escapeHtml(agentName)}</span>`);
       if (metaParts.length > 0) meta.innerHTML = metaParts.join(' · ');
     }
     if (meta.childNodes.length > 0 || meta.innerHTML) li.appendChild(meta);

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ShipBots Customer Service",
   "short_name": "ShipBots CS",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Live client search + read-only info panel with contacts, billing, shipping, portals, sticky notes, and Mini Apps.",
   "icons": {
     "16": "icons/icon-16.png",

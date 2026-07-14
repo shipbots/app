@@ -38,6 +38,8 @@ export interface ClientIndexEntry {
   portal: string;
   /** Warehouse Location dropdown label. */
   warehouse: string;
+  /** Assigned account-manager email (Clients board dropdown_mkxx7xv). */
+  agentEmail: string;
   /** Clients-board group id (group_mkq09z7j == 'Exited' == inactive). */
   groupId: string;
 }
