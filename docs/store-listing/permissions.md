@@ -8,12 +8,6 @@ reject boilerplate.
 
 ---
 
-## `tabs`
-
-```
-Opens the ShipBots Dashboard in a new tab when a user clicks a client result in the popup or the "Open in dashboard" button. Not used to read tab content or observe browsing.
-```
-
 ## `storage`
 
 ```
