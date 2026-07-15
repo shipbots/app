@@ -1542,10 +1542,15 @@ async function showProjectsView() {
   if (detailView) detailView.hidden = true;
   if (searchView) searchView.hidden = true;
   projectsView.hidden = false;
+
+  // Focus the Back button before widening — same reasoning as showClientDetail:
+  // avoids the whole-popup focus ring and lets the width transition animate.
+  const projectsBackBtn = document.getElementById('projects-back');
+  (projectsBackBtn || projectsView).focus({ preventScroll: true });
+
   // Widen the popup so each project fits comfortably on a single line.
   document.body.classList.remove('detail-open');
   document.body.classList.add('projects-open');
-  projectsView.focus({ preventScroll: true });
 
   const list = document.getElementById('projects-view-list');
   if (list) list.innerHTML = '';
@@ -1572,17 +1577,21 @@ async function showClientDetail(clientStub) {
 
   searchView.hidden = true;
   detailView.hidden = false;
-  // Resize the popup so the sticky-notes column has room. CSS handles the
-  // actual width via the body class; Chrome respects the change live.
-  document.body.classList.add('detail-open');
 
-  // The user reached here by clicking a search result, which now sits inside
-  // the just-hidden search view. Its focus falls back to <body>, and macOS
-  // Chrome paints a native focus ring around the WHOLE popup when <body> is
-  // focused — a ring CSS `outline:none` can't suppress. Park focus on the
-  // (outline-suppressed, tabindex="-1") detail section so it stays on a real,
-  // visible element and no whole-popup ring is drawn.
-  detailView.focus({ preventScroll: true });
+  // Park focus on a real control BEFORE widening. Two reasons:
+  //  1. If focus fell to <body>, macOS Chrome paints a native ring around the
+  //     WHOLE popup. Focusing the large detail SECTION draws that same ring
+  //     around the panel — so we focus the small, outline-suppressed Back
+  //     button instead (no visible ring).
+  //  2. Calling focus() forces a synchronous layout. Doing it AFTER the width
+  //     change collapses the widen transition to an instant jump; doing it
+  //     first (while the popup is still narrow) lets the transition animate.
+  const detailBackBtn = document.getElementById('detail-back');
+  (detailBackBtn || detailView).focus({ preventScroll: true });
+
+  // Widen the popup (animated via the body width transition) so the
+  // sticky-notes column has room next to the detail sections.
+  document.body.classList.add('detail-open');
 
   // Header placeholders fill from search-index right away so the user sees
   // something while the full fetch runs.

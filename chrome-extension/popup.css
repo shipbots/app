@@ -16,6 +16,14 @@ html, body, header, main, section, aside, footer, nav, div {
   outline: none !important;
   box-shadow: none;
 }
+/* The big view sections get .focus() on open (to keep focus off <body>, which
+   macOS rings). Guarantee they never render any ring themselves — focus is
+   parked on their small Back button, but this is belt-and-suspenders. */
+#client-detail:focus,
+#projects-view:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
