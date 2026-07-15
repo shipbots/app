@@ -31,6 +31,7 @@ import {
   isCountryValue,
   type StateMatchOutcome,
 } from '@/lib/country-state-lookup';
+import { splitAddress, looksLikeCombinedAddress } from '@/lib/address-split';
 import {
   Upload, FileSpreadsheet, Loader2, Check, AlertTriangle, ChevronLeft, Download, Sparkles, Info, Hash, Plus, Trash2, Package, Eye,
 } from 'lucide-react';
@@ -46,6 +47,12 @@ const REQUIRED_COLS = [
   'Product Sku (Required)',
   'Quantity',
 ] as const;
+
+// Required columns that the combined-address splitter fills directly (so they
+// don't need their own source-column mapping when the split is active).
+const ADDRESS_DERIVED_COLS = new Set<string>([
+  'Address (Required)', 'City (Required)', 'State / Province', 'Zip (Required)', 'Country Code (Required)',
+]);
 
 // Sentinel for the Order Number mapping when the user wants to auto-generate
 // numbers from a prefix instead of mapping a source column. Kept as a string
@@ -383,6 +390,12 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
   // picker (mappingEdits[col] === FIXED_VALUE_VAL). Applied to
   // every output row and overrides any source-column mapping.
   const [fixedValues, setFixedValues] = useState<Record<string, string>>({});
+  // Source column(s) that hold a COMBINED mailing address (whole address in
+  // one cell, or street + "City, ST ZIP, Country" across two). When non-empty
+  // the generator parses these into Address / Address 2 / City / State / Zip /
+  // Country instead of using the plain 1:1 column mapping for those fields.
+  // Auto-detected after AI mapping; the user can adjust or clear it.
+  const [addressCombinedCols, setAddressCombinedCols] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
@@ -411,6 +424,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     setDefaultQuantity('1');
     setAutoGenPrefix('');
     setFixedValues({});
+    setAddressCombinedCols([]);
   };
 
   // Step 1: parse the file. Stops at 'header-confirm' so the user can
@@ -492,6 +506,26 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       const out = (await res.json()) as MapResult;
       setResult(out);
       setMappingEdits({ ...out.columnMapping });
+
+      // ── Combined-address detection ───────────────────────────────────
+      // If the Address column is mapped but City is NOT, the whole address
+      // is probably packed into one cell (or split across Address +
+      // Address 2). Sniff the values; when they parse cleanly, switch on the
+      // splitter so the generator breaks them into discrete columns.
+      const addrCol = out.columnMapping['Address (Required)'] || '';
+      const addr2Col = out.columnMapping['Address 2'] || '';
+      const cityCol = out.columnMapping['City (Required)'] || '';
+      let combinedCols: string[] = [];
+      if (addrCol && !cityCol) {
+        if (looksLikeCombinedAddress(dataRows.map(r => String(r[addrCol] ?? '')))) {
+          combinedCols = [addrCol];
+        } else if (addr2Col && looksLikeCombinedAddress(
+          dataRows.map(r => `${String(r[addrCol] ?? '')}, ${String(r[addr2Col] ?? '')}`),
+        )) {
+          combinedCols = [addrCol, addr2Col];
+        }
+      }
+      setAddressCombinedCols(combinedCols);
 
       // Build the comprehensive country-value map: scan EVERY row of the
       // dataset for unique country values, then prefill each with the
@@ -677,6 +711,20 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
         if (!src || src === AUTO_GEN_ORDER_VAL) { out[col] = ''; continue; }
         const raw = row[src];
         out[col] = raw === undefined || raw === null ? '' : String(raw).trim();
+      }
+      // Combined-address split: when the whole address sits in one (or two)
+      // source cells, parse it into the discrete ShipHero columns, overwriting
+      // the raw string the generic loop copied into Address. State/country come
+      // back as 2-letter codes; applyStateFix and the AE zip filler below still
+      // run on the parsed values.
+      if (addressCombinedCols.length > 0) {
+        const parts = splitAddress(addressCombinedCols.map(c => String(row[c] ?? '')));
+        out['Address (Required)'] = parts.address;
+        out['Address 2'] = parts.address2;
+        out['City (Required)'] = parts.city;
+        out['State / Province'] = parts.state;
+        out['Zip (Required)'] = parts.zip;
+        out['Country Code (Required)'] = parts.country;
       }
       if (countryCol) {
         const raw = String(row[countryCol] ?? '').trim();
@@ -1037,6 +1085,9 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
         if (skuStrategy === 'product-mapping') return !productMapComplete;
         if (skuStrategy === 'global-products') return !globalProductsValid;
       }
+      // Combined-address split fills the address fields from the address
+      // column(s), so they don't need their own mapping.
+      if (addressCombinedCols.length > 0 && ADDRESS_DERIVED_COLS.has(col)) return false;
       const v = mappingEdits[col];
       if (!v) return true;
       if (col === 'Order Number (Required)' && v === AUTO_GEN_ORDER_VAL && !autoGenPrefix.trim()) {
@@ -1044,7 +1095,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       }
       return false;
     });
-  }, [mappingEdits, autoGenPrefix, skuStrategy, productMapComplete, globalProductsValid]);
+  }, [mappingEdits, autoGenPrefix, skuStrategy, productMapComplete, globalProductsValid, addressCombinedCols]);
 
   const orderIsAutoGen = mappingEdits['Order Number (Required)'] === AUTO_GEN_ORDER_VAL;
   const skuOk =
@@ -1256,6 +1307,8 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
               setDefaultQuantity={setDefaultQuantity}
               fixedValues={fixedValues}
               setFixedValues={setFixedValues}
+              addressCombinedCols={addressCombinedCols}
+              setAddressCombinedCols={setAddressCombinedCols}
               projectedOutputRows={projectedOutputRows}
               previewRows={previewRows}
               missingRequired={missingRequired}
@@ -1294,6 +1347,7 @@ function ReviewPanel({
   columnExpandMulti, setColumnExpandMulti,
   defaultQuantity, setDefaultQuantity,
   fixedValues, setFixedValues,
+  addressCombinedCols, setAddressCombinedCols,
   projectedOutputRows, previewRows,
   missingRequired,
   preflightIssues, aiIssues, aiRunning, aiError, aiLastRunAt, onRunAiDoubleCheck,
@@ -1336,6 +1390,8 @@ function ReviewPanel({
   setDefaultQuantity: (s: string) => void;
   fixedValues: Record<string, string>;
   setFixedValues: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  addressCombinedCols: string[];
+  setAddressCombinedCols: React.Dispatch<React.SetStateAction<string[]>>;
   projectedOutputRows: number;
   previewRows: Record<string, string>[];
   missingRequired: readonly string[];
@@ -1621,6 +1677,14 @@ function ReviewPanel({
           />
         )}
       </div>
+
+      {/* Address split — combined address → discrete columns */}
+      <AddressSplitPanel
+        sourceHeaders={sourceHeaders}
+        sourceRows={sourceRows}
+        combinedCols={addressCombinedCols}
+        setCombinedCols={setAddressCombinedCols}
+      />
 
       {/* State spell-check & extraction */}
       {stateCorrections.length > 0 && (
@@ -2505,6 +2569,145 @@ function GlobalProductsPanel({
         <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
           Add at least one product with a SKU and name before downloading.
         </p>
+      )}
+    </div>
+  );
+}
+
+// ── AddressSplitPanel ───────────────────────────────────────────────────────
+// When a source column holds a WHOLE mailing address (or street + "City, ST
+// ZIP, Country" across two columns), the formatter splits it into ShipHero's
+// Address / Address 2 / City / State / Zip / Country columns. This panel
+// confirms the split to the user, previews the first few rows, and lets them
+// point at a different column, add a second one, or turn it off.
+function AddressSplitPanel({
+  sourceHeaders, sourceRows, combinedCols, setCombinedCols,
+}: {
+  sourceHeaders: string[];
+  sourceRows: Record<string, unknown>[];
+  combinedCols: string[];
+  setCombinedCols: React.Dispatch<React.SetStateAction<string[]>>;
+}) {
+  const enabled = combinedCols.length > 0;
+  const primary = combinedCols[0] ?? '';
+  const secondary = combinedCols[1] ?? '';
+
+  const previews = useMemo(() => {
+    if (!enabled) return [] as Array<{ raw: string; parts: ReturnType<typeof splitAddress> }>;
+    const rows: Array<{ raw: string; parts: ReturnType<typeof splitAddress> }> = [];
+    for (const row of sourceRows) {
+      const cells = combinedCols.map(c => String(row[c] ?? ''));
+      const raw = cells.filter(Boolean).join(', ');
+      if (!raw) continue;
+      rows.push({ raw, parts: splitAddress(cells) });
+      if (rows.length >= 3) break;
+    }
+    return rows;
+  }, [enabled, combinedCols, sourceRows]);
+
+  const selectCls =
+    'border border-gray-300 rounded px-1.5 py-0.5 text-[11px] max-w-[160px] focus:outline-none focus:ring-1 focus:ring-[#43c7ff]';
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4">
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <p className="text-sm font-semibold text-gray-900">Address</p>
+        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+          {enabled ? 'Combined → split' : 'Separate columns'}
+        </span>
+      </div>
+
+      {enabled ? (
+        <>
+          <div className="flex items-start gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 mb-3">
+            <Check className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+            <p className="text-[12px] text-emerald-800 leading-snug">
+              Separated the combined address in{' '}
+              <span className="font-semibold">{combinedCols.map(c => `“${c}”`).join(' + ')}</span>{' '}
+              into <span className="font-semibold">Address, City, State, Zip, and Country</span>.
+              US &amp; Canada states and all countries use their 2-letter codes.
+            </p>
+          </div>
+
+          {previews.length > 0 && (
+            <div className="overflow-x-auto mb-3">
+              <table className="w-full text-[11px] border-collapse">
+                <thead>
+                  <tr className="text-left text-gray-500">
+                    <th className="font-medium py-1 pr-3">From cell</th>
+                    <th className="font-medium py-1 pr-3">Address</th>
+                    <th className="font-medium py-1 pr-3">City</th>
+                    <th className="font-medium py-1 pr-3">State</th>
+                    <th className="font-medium py-1 pr-3">Zip</th>
+                    <th className="font-medium py-1">Country</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {previews.map((p, i) => (
+                    <tr key={i} className="border-t border-gray-100 align-top">
+                      <td className="py-1 pr-3 text-gray-500 max-w-[220px] truncate" title={p.raw}>{p.raw}</td>
+                      <td className="py-1 pr-3 text-gray-900">{p.parts.address || '—'}{p.parts.address2 ? ` · ${p.parts.address2}` : ''}</td>
+                      <td className="py-1 pr-3 text-gray-900">{p.parts.city || '—'}</td>
+                      <td className="py-1 pr-3 font-mono text-gray-900">{p.parts.state || '—'}</td>
+                      <td className="py-1 pr-3 font-mono text-gray-900">{p.parts.zip || '—'}</td>
+                      <td className="py-1 font-mono text-gray-900">{p.parts.country || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-[11px]">
+            <label className="flex items-center gap-1 text-gray-600">
+              Address column
+              <select
+                value={primary}
+                onChange={e => setCombinedCols(e.target.value ? [e.target.value, ...(secondary ? [secondary] : [])] : [])}
+                className={selectCls}
+              >
+                {sourceHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+              </select>
+            </label>
+            <label className="flex items-center gap-1 text-gray-600">
+              + second column
+              <select
+                value={secondary}
+                onChange={e => setCombinedCols(e.target.value ? [primary, e.target.value] : [primary])}
+                className={selectCls}
+              >
+                <option value="">(none)</option>
+                {sourceHeaders.filter(h => h !== primary).map(h => <option key={h} value={h}>{h}</option>)}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => setCombinedCols([])}
+              className="sm:ml-auto text-gray-500 hover:text-gray-700 underline"
+            >
+              These are already separate columns
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <p className="text-[12px] text-gray-600 flex-1">
+            Address, City, State, Zip, and Country come from their own columns. If a full
+            address is packed into one column (or split across two), point me at it and I&apos;ll
+            break it out — with 2-letter state &amp; country codes.
+          </p>
+          <label className="flex items-center gap-1 text-[11px] text-gray-600 flex-shrink-0">
+            Combined in
+            <select
+              value=""
+              onChange={e => { if (e.target.value) setCombinedCols([e.target.value]); }}
+              className={selectCls}
+            >
+              <option value="">Pick a column…</option>
+              {sourceHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+            </select>
+          </label>
+        </div>
       )}
     </div>
   );
