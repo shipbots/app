@@ -10,7 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import type { Project } from '@/lib/projects';
-import { DEFAULT_PROJECT_STATUSES } from '@/lib/projects';
+import { DEFAULT_PROJECT_STATUSES, MOCK_PROJECTS } from '@/lib/projects';
 import {
   isDbConfigured,
   ensureDefaultStatuses,
@@ -27,8 +27,12 @@ export async function GET() {
   if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   if (!isDbConfigured()) {
-    // Not provisioned yet — tell the client to use its mock preview.
-    return NextResponse.json({ configured: false, projects: [], statuses: DEFAULT_PROJECT_STATUSES });
+    // Not provisioned yet — serve the mock preview so every surface shows the
+    // same demo projects. The dashboard ignores these rows while
+    // `configured:false` (it keeps its own identical MOCK_PROJECTS and treats
+    // edits as session-only), but the Chrome extension has no local mock, so it
+    // relies on this payload to populate its per-client projects list.
+    return NextResponse.json({ configured: false, projects: MOCK_PROJECTS, statuses: DEFAULT_PROJECT_STATUSES });
   }
 
   try {
