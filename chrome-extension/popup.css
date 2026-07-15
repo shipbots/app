@@ -406,7 +406,10 @@ body.projects-open {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.detail-open {
+/* Scoped to the Edit button by ID: the body's widen class is also named
+   `detail-open`, so a bare `.detail-open` rule would paint the whole popup
+   background cyan (that was the "blue ring" around the client panel). */
+#detail-open {
   background: #43c7ff;
   color: #015280;
   border: none;
@@ -419,7 +422,7 @@ body.projects-open {
   white-space: nowrap;
   transition: opacity .12s;
 }
-.detail-open:hover { opacity: .85; }
+#detail-open:hover { opacity: .85; }
 
 .detail-status {
   padding: 10px 14px;
