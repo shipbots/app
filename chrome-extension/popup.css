@@ -21,7 +21,7 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 a:focus-visible {
-  outline: 2px solid rgba(67, 199, 255, .6) !important;
+  outline: 2px solid rgba(100, 116, 139, .5) !important;
   outline-offset: 1px;
 }
 body {
@@ -154,8 +154,8 @@ body.projects-open {
   outline: none;
 }
 .search-form input:focus {
-  border-color: #43c7ff;
-  box-shadow: 0 0 0 2px rgba(67,199,255,.25);
+  border-color: #9ca3af;
+  box-shadow: 0 0 0 2px rgba(148,163,184,.22);
 }
 .search-form button {
   padding: 0 12px;
@@ -200,7 +200,7 @@ body.projects-open {
 .search-results li:last-child { border-bottom: none; }
 .search-results li:hover,
 .search-results li.active {
-  background: #f0fbff;
+  background: #f5f6f8;
 }
 .search-result-name {
   display: flex;
@@ -275,7 +275,7 @@ body.projects-open {
   cursor: pointer;
   transition: all .12s;
 }
-.action-btn:hover { border-color: #43c7ff; background: #f0fbff; }
+.action-btn:hover { border-color: #cbd5e1; background: #f5f6f8; }
 .action-icon { font-size: 18px; line-height: 1; }
 .action-label { display: block; font-size: 13px; font-weight: 600; color: #111827; }
 .action-desc { display: block; font-size: 11px; color: #6b7280; margin-top: 1px; }
@@ -326,10 +326,10 @@ body.projects-open {
   justify-content: center;
 }
 .tile:hover {
-  border-color: #43c7ff;
-  background: #f0fbff;
+  border-color: #cbd5e1;
+  background: #f5f6f8;
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(67,199,255,.18);
+  box-shadow: 0 2px 6px rgba(20,24,40,.10);
 }
 .tile-icon {
   font-size: 22px;
@@ -743,7 +743,11 @@ body.projects-open {
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
+  cursor: pointer;
+  transition: background .12s;
 }
+/* Neutral gray hover — no blue contour. */
+.pv-row:hover { background: #f5f6f8; }
 .pv-row-name {
   flex: 1 1 auto;
   min-width: 60px;
@@ -892,7 +896,7 @@ body.projects-open {
 }
 .detail-section-header:hover { background: #f9fafb; }
 .detail-section-header[aria-expanded="true"] {
-  background: #f0fbff;
+  background: #f9fafb;
   border-bottom: 1px solid #e5e7eb;
 }
 .detail-section-title {
@@ -1012,7 +1016,7 @@ body.projects-open {
   padding: 8px 10px;
   margin-top: 4px;
 }
-.detail-contact.primary { border-color: #43c7ff; background: #f0fbff; }
+.detail-contact.primary { border-color: #cbd5e1; background: #f3f4f6; }
 .detail-contact-label {
   font-size: 9px;
   font-weight: 700;

@@ -1455,6 +1455,13 @@ function showProjectsViewStatus(message, isError) {
 function projectRowEl(p) {
   const row = document.createElement('div');
   row.className = 'pv-row';
+  const openProject = () => {
+    void openPath(`/customer-service?view=projects&projectId=${encodeURIComponent(p.id)}`);
+  };
+  // The whole row is a click target with a blue hover highlight; the explicit
+  // "Open" button is the same action, just more discoverable.
+  row.title = 'Open this project in the dashboard';
+  row.addEventListener('click', openProject);
 
   const name = document.createElement('span');
   name.className = 'pv-row-name';
@@ -1488,10 +1495,7 @@ function projectRowEl(p) {
   btn.type = 'button';
   btn.className = 'pv-row-btn';
   btn.textContent = 'Open';
-  btn.title = 'Open this project in the dashboard';
-  btn.addEventListener('click', () => {
-    void openPath(`/customer-service?view=projects&projectId=${encodeURIComponent(p.id)}`);
-  });
+  btn.addEventListener('click', e => { e.stopPropagation(); openProject(); });
   row.appendChild(btn);
 
   return row;
