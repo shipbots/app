@@ -47,7 +47,7 @@ body {
 .detail-notes-list,
 .note-card,
 .project-card,
-.pv-card {
+.pv-row {
   -webkit-user-select: text;
   user-select: text;
 }
@@ -55,6 +55,11 @@ body {
    room next to the detail sections. */
 body.detail-open {
   width: 760px;
+}
+/* Projects list view is wider than the 380px search view so each project's
+   status, client, responsible, and Open button fit on one line. */
+body.projects-open {
+  width: 640px;
 }
 
 .header {
@@ -707,7 +712,7 @@ body.detail-open {
   padding: 10px 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   background: #f9fafb;
 }
 .projects-view-empty {
@@ -717,28 +722,39 @@ body.detail-open {
   font-style: italic;
   padding: 28px 12px;
 }
-.pv-card {
+/* Thin group headers separating "My projects" from "Other projects". */
+.pv-group-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #9ca3af;
+  padding: 8px 2px 2px;
+}
+.pv-group-label:first-child { padding-top: 0; }
+
+/* One consolidated line per project: name flexes and truncates; status,
+   client, responsible, and the Open button ride along the right. */
+.pv-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
   background: #fff;
   border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  border-radius: 8px;
 }
-.pv-card-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-}
-.pv-card-name {
-  font-size: 13px;
+.pv-row-name {
+  flex: 1 1 auto;
+  min-width: 60px;
+  font-size: 12px;
   font-weight: 600;
   color: #111827;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.pv-card-status {
+.pv-row-status {
   flex-shrink: 0;
   font-size: 9px;
   font-weight: 700;
@@ -748,34 +764,40 @@ body.detail-open {
   border: 1px solid transparent;
   white-space: nowrap;
 }
-.pv-card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
+.pv-row-client {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 170px;
   font-size: 11px;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pv-row-owner {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
   color: #374151;
+  white-space: nowrap;
 }
-.pv-card-meta .pv-label {
-  color: #9ca3af;
-  font-weight: 700;
-  text-transform: uppercase;
-  font-size: 9px;
-  letter-spacing: .04em;
-  margin-right: 4px;
+.pv-row-owner::before {
+  content: "\1F464  ";
+  font-weight: 400;
 }
-.pv-card-btn {
-  align-self: flex-start;
+.pv-row-btn {
+  flex-shrink: 0;
   border: 1px solid #43c7ff;
   background: #f0fbff;
   color: #015280;
   font-size: 11px;
-  font-weight: 600;
-  padding: 5px 12px;
+  font-weight: 700;
+  padding: 4px 14px;
   border-radius: 8px;
   cursor: pointer;
   transition: background .12s;
 }
-.pv-card-btn:hover { background: #e0f6ff; }
+.pv-row-btn:hover { background: #e0f6ff; }
 
 /* Pills row at the top of the detail (summary chips) */
 .detail-pills {

@@ -1403,8 +1403,43 @@ async function loadClientProjects(clientId, clientName) {
 function backFromProjects() {
   document.getElementById('projects-view').hidden = true;
   document.getElementById('search-view').hidden = false;
+  document.body.classList.remove('projects-open');
   const input = document.getElementById('search-input');
   if (input) input.focus();
+}
+
+// The signed-in user's email, so the projects they're responsible for can be
+// surfaced first. Read once from the NextAuth session endpoint (the same
+// session cookie every other request rides on) and cached for the popup's life.
+let currentUserEmail = null;
+let currentUserEmailFetched = false;
+
+async function fetchCurrentUserEmail() {
+  if (currentUserEmailFetched) return currentUserEmail;
+  try {
+    const base = await getBaseUrl();
+    const res = await fetch(`${base}/api/auth/session`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      currentUserEmail = data && data.user && data.user.email
+        ? String(data.user.email).toLowerCase()
+        : null;
+    }
+  } catch {
+    currentUserEmail = null;
+  }
+  currentUserEmailFetched = true;
+  return currentUserEmail;
+}
+
+function appendProjectsGroupLabel(list, text) {
+  const el = document.createElement('div');
+  el.className = 'pv-group-label';
+  el.textContent = text;
+  list.appendChild(el);
 }
 
 function showProjectsViewStatus(message, isError) {
@@ -1415,7 +1450,54 @@ function showProjectsViewStatus(message, isError) {
   statusEl.classList.toggle('error', !!isError);
 }
 
-function renderAllActiveProjects(projects) {
+// One consolidated single-line row per project: name (flexes + truncates),
+// status pill, client, responsible, and an "Open" button pinned to the right.
+function projectRowEl(p) {
+  const row = document.createElement('div');
+  row.className = 'pv-row';
+
+  const name = document.createElement('span');
+  name.className = 'pv-row-name';
+  name.textContent = p.name || '(untitled project)';
+  name.title = p.name || '';
+  row.appendChild(name);
+
+  if (p.status && p.status.label) {
+    const status = document.createElement('span');
+    status.className = 'pv-row-status';
+    status.textContent = p.status.label;
+    const color = /^#[0-9a-f]{6}$/i.test(p.status.color || '') ? p.status.color : '#94a3b8';
+    status.style.color = color;
+    status.style.borderColor = `${color}66`;
+    status.style.background = `${color}1a`;
+    row.appendChild(status);
+  }
+
+  const client = document.createElement('span');
+  client.className = 'pv-row-client';
+  client.textContent = p.clientName || '—';
+  client.title = p.clientName || '';
+  row.appendChild(client);
+
+  const owner = document.createElement('span');
+  owner.className = 'pv-row-owner';
+  owner.textContent = firstNameFromEmail(p.ownerEmail) || 'Unassigned';
+  row.appendChild(owner);
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'pv-row-btn';
+  btn.textContent = 'Open';
+  btn.title = 'Open this project in the dashboard';
+  btn.addEventListener('click', () => {
+    void openPath(`/customer-service?view=projects&projectId=${encodeURIComponent(p.id)}`);
+  });
+  row.appendChild(btn);
+
+  return row;
+}
+
+function renderAllActiveProjects(projects, myEmail) {
   const list = document.getElementById('projects-view-list');
   const metaEl = document.getElementById('projects-view-meta');
   if (!list) return;
@@ -1434,62 +1516,18 @@ function renderAllActiveProjects(projects) {
     return;
   }
 
-  for (const p of active) {
-    const card = document.createElement('div');
-    card.className = 'pv-card';
+  // Projects the signed-in user is responsible for (the owner) come first.
+  const me = String(myEmail || '').toLowerCase();
+  const mine = me ? active.filter(p => String(p.ownerEmail || '').toLowerCase() === me) : [];
+  const others = active.filter(p => !mine.includes(p));
 
-    // Top row: project name + status pill.
-    const top = document.createElement('div');
-    top.className = 'pv-card-top';
-    const name = document.createElement('span');
-    name.className = 'pv-card-name';
-    name.textContent = p.name || '(untitled project)';
-    top.appendChild(name);
-    if (p.status && p.status.label) {
-      const status = document.createElement('span');
-      status.className = 'pv-card-status';
-      status.textContent = p.status.label;
-      const color = /^#[0-9a-f]{6}$/i.test(p.status.color || '') ? p.status.color : '#94a3b8';
-      status.style.color = color;
-      status.style.borderColor = `${color}66`;
-      status.style.background = `${color}1a`;
-      top.appendChild(status);
-    }
-    card.appendChild(top);
-
-    // Meta row: client + responsible person.
-    const meta = document.createElement('div');
-    meta.className = 'pv-card-meta';
-
-    const clientWrap = document.createElement('span');
-    const clientLabel = document.createElement('span');
-    clientLabel.className = 'pv-label';
-    clientLabel.textContent = 'Client';
-    clientWrap.appendChild(clientLabel);
-    clientWrap.appendChild(document.createTextNode(p.clientName || '—'));
-    meta.appendChild(clientWrap);
-
-    const ownerWrap = document.createElement('span');
-    const ownerLabel = document.createElement('span');
-    ownerLabel.className = 'pv-label';
-    ownerLabel.textContent = 'Responsible';
-    ownerWrap.appendChild(ownerLabel);
-    ownerWrap.appendChild(document.createTextNode(firstNameFromEmail(p.ownerEmail) || 'Unassigned'));
-    meta.appendChild(ownerWrap);
-
-    card.appendChild(meta);
-
-    // View more details → open the project in the dashboard (comments, etc.).
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'pv-card-btn';
-    btn.textContent = 'View more details →';
-    btn.addEventListener('click', () => {
-      void openPath(`/customer-service?view=projects&projectId=${encodeURIComponent(p.id)}`);
-    });
-    card.appendChild(btn);
-
-    list.appendChild(card);
+  if (mine.length) {
+    if (others.length) appendProjectsGroupLabel(list, 'My projects');
+    mine.forEach(p => list.appendChild(projectRowEl(p)));
+  }
+  if (others.length) {
+    if (mine.length) appendProjectsGroupLabel(list, 'Other projects');
+    others.forEach(p => list.appendChild(projectRowEl(p)));
   }
 }
 
@@ -1500,18 +1538,18 @@ async function showProjectsView() {
   if (detailView) detailView.hidden = true;
   if (searchView) searchView.hidden = true;
   projectsView.hidden = false;
-  // This view stays at the default popup width — reset the wide detail layout
-  // in case the user came here straight from a client detail.
+  // Widen the popup so each project fits comfortably on a single line.
   document.body.classList.remove('detail-open');
+  document.body.classList.add('projects-open');
   projectsView.focus({ preventScroll: true });
 
   const list = document.getElementById('projects-view-list');
   if (list) list.innerHTML = '';
   showProjectsViewStatus('Loading projects…', false);
   try {
-    const projects = await fetchAllProjects();
+    const [projects, myEmail] = await Promise.all([fetchAllProjects(), fetchCurrentUserEmail()]);
     showProjectsViewStatus('', false);
-    renderAllActiveProjects(projects);
+    renderAllActiveProjects(projects, myEmail);
   } catch (err) {
     if (err.code === 'unauthorized') {
       showProjectsViewStatus('Sign in to the dashboard first, then reopen this popup.', true);
