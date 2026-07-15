@@ -70,6 +70,23 @@
     </div>
   </section>
 
+  <!-- Projects view: opened from the "Projects" quick-launch button. Lists
+       every ACTIVE project across all clients with its status, client, and
+       responsible person. "View more details" deep-links into the dashboard's
+       Projects view with that project open (comments, subtasks, etc.). -->
+  <section id="projects-view" class="projects-view" tabindex="-1" hidden>
+    <div class="detail-header">
+      <button id="projects-back" class="detail-back" type="button" aria-label="Back to search">←</button>
+      <div class="detail-title">
+        <p class="detail-name">Active Projects</p>
+        <p id="projects-view-meta" class="detail-meta"></p>
+      </div>
+      <span class="detail-projects-badge">Preview</span>
+    </div>
+    <div id="projects-view-status" class="detail-status" hidden></div>
+    <div id="projects-view-list" class="projects-view-list"></div>
+  </section>
+
   <main id="search-view" class="body">
     <p class="hint">Search a client to open their full info panel:</p>
     <form id="search-form" class="search-form">
@@ -99,6 +116,13 @@
         <span>
           <span class="action-label">Tasks</span>
           <span class="action-desc">Open work across all clients</span>
+        </span>
+      </button>
+      <button id="open-projects" class="action-btn">
+        <span class="action-icon" aria-hidden="true">🗂️</span>
+        <span>
+          <span class="action-label">Projects</span>
+          <span class="action-desc">Active projects across all clients</span>
         </span>
       </button>
     </div>

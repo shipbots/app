@@ -46,7 +46,8 @@ body {
 .detail-contact-line,
 .detail-notes-list,
 .note-card,
-.project-card {
+.project-card,
+.pv-card {
   -webkit-user-select: text;
   user-select: text;
 }
@@ -688,6 +689,93 @@ body.detail-open {
   border-radius: 999px;
   border: 1px solid transparent;
 }
+
+/* ── Projects list view (all active projects across clients) ────────────────
+   A full-popup screen reached from the "Projects" quick-launch button. Reuses
+   the detail-header chrome; each card shows status, client, responsible, and a
+   "View more details" deep-link into the dashboard. */
+.projects-view {
+  display: flex;
+  flex-direction: column;
+  max-height: 580px;
+  overflow: hidden;
+}
+.projects-view[hidden] { display: none; }
+.projects-view-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #f9fafb;
+}
+.projects-view-empty {
+  text-align: center;
+  font-size: 12px;
+  color: #9ca3af;
+  font-style: italic;
+  padding: 28px 12px;
+}
+.pv-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pv-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pv-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  overflow-wrap: anywhere;
+}
+.pv-card-status {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.pv-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 11px;
+  color: #374151;
+}
+.pv-card-meta .pv-label {
+  color: #9ca3af;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: .04em;
+  margin-right: 4px;
+}
+.pv-card-btn {
+  align-self: flex-start;
+  border: 1px solid #43c7ff;
+  background: #f0fbff;
+  color: #015280;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .12s;
+}
+.pv-card-btn:hover { background: #e0f6ff; }
 
 /* Pills row at the top of the detail (summary chips) */
 .detail-pills {

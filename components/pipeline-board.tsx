@@ -120,6 +120,9 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
   const [projectsConfigured, setProjectsConfigured] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [selectedProjectIsNew, setSelectedProjectIsNew] = useState(false);
+  // A ?projectId deep-link (from the extension's "View more details") we still
+  // need to open — held until `projects` has loaded the matching row.
+  const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -196,19 +199,38 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     setSelectedProject(makeBlankProject({ clientBoardItemId, clientName }));
   };
 
-  // Extension "add project" deep-link (?newProjectClientId / ?newProjectClientName)
-  // → open a new project pre-filled with that client. Honored once on mount.
+  // Extension deep-links, honored once on mount:
+  //  • ?newProjectClientId / ?newProjectClientName → open a blank project
+  //    pre-filled with that client.
+  //  • ?projectId → open that existing project's detail modal (resolved once
+  //    `projects` has loaded — see the effect below).
   useEffect(() => {
     if (typeof window === 'undefined' || !isCustomerService) return;
     const sp = new URLSearchParams(window.location.search);
     const npName = sp.get('newProjectClientName');
     const npId = sp.get('newProjectClientId');
+    const openId = sp.get('projectId');
     if (npName || npId) {
       setViewMode('projects');
       openNewProjectForClient(npId || null, npName || '');
+    } else if (openId) {
+      setViewMode('projects');
+      setPendingProjectId(openId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Resolve a pending ?projectId once the matching project is in `projects`
+  // (which may arrive asynchronously from /api/projects).
+  useEffect(() => {
+    if (!pendingProjectId) return;
+    const match = projects.find(p => p.id === pendingProjectId);
+    if (match) {
+      openExistingProject(match);
+      setPendingProjectId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingProjectId, projects]);
 
   const handleClientCreated = (result: CreatedClientResult) => {
     const now = new Date().toISOString();

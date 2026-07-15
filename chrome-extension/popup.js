@@ -1396,6 +1396,131 @@ async function loadClientProjects(clientId, clientName) {
   }
 }
 
+// ── Projects view (full-popup list of every active project) ─────────────────
+// Opened from the "Projects" quick-launch button. Shows one card per active
+// project (status, client, responsible) with a "View more details" button that
+// deep-links into the dashboard's Projects view with that project open.
+function backFromProjects() {
+  document.getElementById('projects-view').hidden = true;
+  document.getElementById('search-view').hidden = false;
+  const input = document.getElementById('search-input');
+  if (input) input.focus();
+}
+
+function showProjectsViewStatus(message, isError) {
+  const statusEl = document.getElementById('projects-view-status');
+  if (!statusEl) return;
+  statusEl.hidden = !message;
+  statusEl.textContent = message || '';
+  statusEl.classList.toggle('error', !!isError);
+}
+
+function renderAllActiveProjects(projects) {
+  const list = document.getElementById('projects-view-list');
+  const metaEl = document.getElementById('projects-view-meta');
+  if (!list) return;
+  list.innerHTML = '';
+
+  const active = (Array.isArray(projects) ? projects : []).filter(
+    p => !(p.status && p.status.kind === 'completed'),
+  );
+  if (metaEl) metaEl.textContent = active.length ? `${active.length} active` : '';
+
+  if (active.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'projects-view-empty';
+    empty.textContent = 'No active projects right now.';
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const p of active) {
+    const card = document.createElement('div');
+    card.className = 'pv-card';
+
+    // Top row: project name + status pill.
+    const top = document.createElement('div');
+    top.className = 'pv-card-top';
+    const name = document.createElement('span');
+    name.className = 'pv-card-name';
+    name.textContent = p.name || '(untitled project)';
+    top.appendChild(name);
+    if (p.status && p.status.label) {
+      const status = document.createElement('span');
+      status.className = 'pv-card-status';
+      status.textContent = p.status.label;
+      const color = /^#[0-9a-f]{6}$/i.test(p.status.color || '') ? p.status.color : '#94a3b8';
+      status.style.color = color;
+      status.style.borderColor = `${color}66`;
+      status.style.background = `${color}1a`;
+      top.appendChild(status);
+    }
+    card.appendChild(top);
+
+    // Meta row: client + responsible person.
+    const meta = document.createElement('div');
+    meta.className = 'pv-card-meta';
+
+    const clientWrap = document.createElement('span');
+    const clientLabel = document.createElement('span');
+    clientLabel.className = 'pv-label';
+    clientLabel.textContent = 'Client';
+    clientWrap.appendChild(clientLabel);
+    clientWrap.appendChild(document.createTextNode(p.clientName || '—'));
+    meta.appendChild(clientWrap);
+
+    const ownerWrap = document.createElement('span');
+    const ownerLabel = document.createElement('span');
+    ownerLabel.className = 'pv-label';
+    ownerLabel.textContent = 'Responsible';
+    ownerWrap.appendChild(ownerLabel);
+    ownerWrap.appendChild(document.createTextNode(firstNameFromEmail(p.ownerEmail) || 'Unassigned'));
+    meta.appendChild(ownerWrap);
+
+    card.appendChild(meta);
+
+    // View more details → open the project in the dashboard (comments, etc.).
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pv-card-btn';
+    btn.textContent = 'View more details →';
+    btn.addEventListener('click', () => {
+      void openPath(`/customer-service?view=projects&projectId=${encodeURIComponent(p.id)}`);
+    });
+    card.appendChild(btn);
+
+    list.appendChild(card);
+  }
+}
+
+async function showProjectsView() {
+  const searchView = document.getElementById('search-view');
+  const detailView = document.getElementById('client-detail');
+  const projectsView = document.getElementById('projects-view');
+  if (detailView) detailView.hidden = true;
+  if (searchView) searchView.hidden = true;
+  projectsView.hidden = false;
+  // This view stays at the default popup width — reset the wide detail layout
+  // in case the user came here straight from a client detail.
+  document.body.classList.remove('detail-open');
+  projectsView.focus({ preventScroll: true });
+
+  const list = document.getElementById('projects-view-list');
+  if (list) list.innerHTML = '';
+  showProjectsViewStatus('Loading projects…', false);
+  try {
+    const projects = await fetchAllProjects();
+    showProjectsViewStatus('', false);
+    renderAllActiveProjects(projects);
+  } catch (err) {
+    if (err.code === 'unauthorized') {
+      showProjectsViewStatus('Sign in to the dashboard first, then reopen this popup.', true);
+    } else {
+      showProjectsViewStatus(`Couldn't load projects (${err.message || 'network error'}).`, true);
+    }
+  }
+}
+
 async function showClientDetail(clientStub) {
   const searchView = document.getElementById('search-view');
   const detailView = document.getElementById('client-detail');
@@ -1749,6 +1874,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ── Quick-launch buttons
   document.getElementById('open-calendar').addEventListener('click', () => openPath('/customer-service?view=calendar'));
   document.getElementById('open-tasks').addEventListener('click', () => openPath('/customer-service?view=tasks'));
+  // Projects opens an in-popup list of every active project (no new tab).
+  document.getElementById('open-projects').addEventListener('click', () => { void showProjectsView(); });
+  document.getElementById('projects-back').addEventListener('click', backFromProjects);
 
   // ── Mini Apps tiles. Each .tile carries data-app pointing at a
   // MINI_APPS registry entry. External tiles open their URL directly,
