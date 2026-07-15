@@ -343,6 +343,10 @@ function ShippingMethodPicker({
 }
 
 // ─── Send Pallet Email Button ──────────────────────────────────────────────
+// Opens a pre-filled draft in the user's default mail client (mailto:) so they
+// review and hit send themselves, then optimistically marks the checklist step
+// Done in Monday (undoable via the status dropdown). Replaces the old Gmail-API
+// auto-send, which needed a separate Gmail connection.
 function SendPalletEmailButton({
   shipHeroName,
   itemId,
@@ -354,11 +358,11 @@ function SendPalletEmailButton({
   onSent: () => void;
   alreadyDone?: boolean;
 }) {
-  const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'error' | 'no_gmail'>('idle');
+  const [done, setDone] = useState(false);
   const clientName = shipHeroName.trim() || '⚠️ MISSING NAME';
   const nameReady = !!shipHeroName.trim();
 
-  if (alreadyDone) {
+  if (alreadyDone || done) {
     return (
       <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full border border-gray-200 bg-gray-50 text-gray-400 cursor-default whitespace-nowrap">
         <Check className="w-2.5 h-2.5" />Email Sent
@@ -366,7 +370,7 @@ function SendPalletEmailButton({
     );
   }
 
-  // Block send if name is still missing
+  // Block if the ShipHero name is still missing.
   if (!nameReady) {
     return (
       <span
@@ -378,82 +382,38 @@ function SendPalletEmailButton({
     );
   }
 
-  const send = async () => {
-    setState('sending');
-    try {
-      const res = await fetch('/api/gmail/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: 'support@shiphero.com',
-          subject: `Child Account ${clientName} - Shipping Plans`,
-          body: `Hi Shiphero,\n\nWe have a new child account: ${clientName}. Can you please help me turning on the pallet option when creating shipping plan in the client portal?\n\nThank you,\nAndres`,
-        }),
-      });
-      const data = await res.json();
-      if (res.status === 401 || data.error === 'gmail_not_connected') {
-        setState('no_gmail');
-        return;
-      }
-      if (!res.ok) throw new Error(data.error || 'Failed');
-
-      // Mark step as Done in Monday.com
-      await fetch(`/api/onboarding/${itemId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ columnId: 'color_mkys5ys0', value: 'Done' }),
-      });
-
-      setState('sent');
-      onSent();
-      setTimeout(() => setState('idle'), 3000);
-    } catch {
-      setState('error');
-      setTimeout(() => setState('idle'), 3000);
-    }
+  const openDraft = () => {
+    const subject = `Child Account ${clientName} - Shipping Plans`;
+    const body = `Hi Shiphero,\n\nWe have a new child account: ${clientName}. Can you please help me turning on the pallet option when creating shipping plan in the client portal?\n\nThank you,\nAndres`;
+    // Open a pre-filled draft in the user's mail client; they review + send.
+    window.location.href = `mailto:support@shiphero.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    // Optimistically mark the step Done (locally + in Monday). The send happens
+    // in their mail app, so flip it now; they can undo via the status dropdown.
+    setDone(true);
+    onSent();
+    fetch(`/api/onboarding/${itemId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ columnId: 'color_mkys5ys0', value: 'Done' }),
+    }).catch(() => {});
   };
-
-  if (state === 'no_gmail') {
-    return (
-      <a
-        href="/api/gmail/auth"
-        className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-amber-50 border border-amber-300 text-amber-700 hover:bg-amber-100 transition-colors whitespace-nowrap"
-      >
-        Connect Gmail
-      </a>
-    );
-  }
-
-  const idleStyle = state !== 'sent' && state !== 'error' ? { background: 'var(--brand-cyan-light)', borderColor: 'var(--brand-cyan)' } : undefined;
 
   return (
     <button
       type="button"
-      onClick={send}
-      disabled={state === 'sending' || state === 'sent'}
-      className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full border transition-colors whitespace-nowrap ${
-        state === 'sent'
-          ? 'bg-green-50 border-green-300 text-green-700'
-          : state === 'error'
-          ? 'bg-red-50 border-red-300 text-red-600'
-          : 'text-[#015280]'
-      }`}
-      style={idleStyle}
+      onClick={openDraft}
+      title="Opens a pre-filled draft in your email app — review it, then send"
+      className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full border transition-colors whitespace-nowrap text-[#015280]"
+      style={{ background: 'var(--brand-cyan-light)', borderColor: 'var(--brand-cyan)' }}
     >
-      {state === 'sending' ? (
-        <><Loader2 className="w-2.5 h-2.5 animate-spin" />Sending…</>
-      ) : state === 'sent' ? (
-        <><Check className="w-2.5 h-2.5" />Sent!</>
-      ) : state === 'error' ? (
-        <>Failed</>
-      ) : (
-        <><Send className="w-2.5 h-2.5" />Send Email</>
-      )}
+      <Send className="w-2.5 h-2.5" />Send Email
     </button>
   );
 }
 
 // ─── Send Lot Code Email Button ────────────────────────────────────────────
+// Lot-code / expiration-tracking counterpart of SendPalletEmailButton — same
+// mailto-draft flow, different column + copy.
 function SendLotCodeEmailButton({
   shipHeroName,
   itemId,
@@ -465,11 +425,11 @@ function SendLotCodeEmailButton({
   onSent: () => void;
   alreadyDone?: boolean;
 }) {
-  const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'error' | 'no_gmail'>('idle');
+  const [done, setDone] = useState(false);
   const clientName = shipHeroName.trim() || '⚠️ MISSING NAME';
   const nameReady = !!shipHeroName.trim();
 
-  if (alreadyDone) {
+  if (alreadyDone || done) {
     return (
       <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full border border-gray-200 bg-gray-50 text-gray-400 cursor-default whitespace-nowrap">
         <Check className="w-2.5 h-2.5" />Email Sent
@@ -488,77 +448,31 @@ function SendLotCodeEmailButton({
     );
   }
 
-  const send = async () => {
-    setState('sending');
-    try {
-      const res = await fetch('/api/gmail/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: 'support@shiphero.com',
-          subject: `Child Account: ${clientName} - Lot Code Expiration Tracking`,
-          body: `Hi Shiphero,\n\nCan you please help me enabling lot code / expiration dates tracking for child account ${clientName}?\n\nPlease let me know if anything else is needed.\n\nThank you,\n\nAndres`,
-        }),
-      });
-      const data = await res.json();
-      if (res.status === 401 || data.error === 'gmail_not_connected') {
-        setState('no_gmail');
-        return;
-      }
-      if (!res.ok) throw new Error(data.error || 'Failed');
-
-      // Mark step as Done in Monday.com
-      await fetch(`/api/onboarding/${itemId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ columnId: 'color_mm28ht8', value: 'Done' }),
-      });
-
-      setState('sent');
-      onSent();
-      setTimeout(() => setState('idle'), 3000);
-    } catch {
-      setState('error');
-      setTimeout(() => setState('idle'), 3000);
-    }
+  const openDraft = () => {
+    const subject = `Child Account: ${clientName} - Lot Code Expiration Tracking`;
+    const body = `Hi Shiphero,\n\nCan you please help me enabling lot code / expiration dates tracking for child account ${clientName}?\n\nPlease let me know if anything else is needed.\n\nThank you,\n\nAndres`;
+    // Open a pre-filled draft in the user's mail client; they review + send.
+    window.location.href = `mailto:support@shiphero.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    // Optimistically mark the step Done (locally + in Monday); undoable via the
+    // status dropdown.
+    setDone(true);
+    onSent();
+    fetch(`/api/onboarding/${itemId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ columnId: 'color_mm28ht8', value: 'Done' }),
+    }).catch(() => {});
   };
-
-  if (state === 'no_gmail') {
-    return (
-      <a
-        href="/api/gmail/auth"
-        className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-amber-50 border border-amber-300 text-amber-700 hover:bg-amber-100 transition-colors whitespace-nowrap"
-      >
-        Connect Gmail
-      </a>
-    );
-  }
-
-  const idleStyle2 = state !== 'sent' && state !== 'error' ? { background: 'var(--brand-cyan-light)', borderColor: 'var(--brand-cyan)' } : undefined;
 
   return (
     <button
       type="button"
-      onClick={send}
-      disabled={state === 'sending' || state === 'sent'}
-      className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full border transition-colors whitespace-nowrap ${
-        state === 'sent'
-          ? 'bg-green-50 border-green-300 text-green-700'
-          : state === 'error'
-          ? 'bg-red-50 border-red-300 text-red-600'
-          : 'text-[#015280]'
-      }`}
-      style={idleStyle2}
+      onClick={openDraft}
+      title="Opens a pre-filled draft in your email app — review it, then send"
+      className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full border transition-colors whitespace-nowrap text-[#015280]"
+      style={{ background: 'var(--brand-cyan-light)', borderColor: 'var(--brand-cyan)' }}
     >
-      {state === 'sending' ? (
-        <><Loader2 className="w-2.5 h-2.5 animate-spin" />Sending…</>
-      ) : state === 'sent' ? (
-        <><Check className="w-2.5 h-2.5" />Sent!</>
-      ) : state === 'error' ? (
-        <>Failed</>
-      ) : (
-        <><Send className="w-2.5 h-2.5" />Send Email</>
-      )}
+      <Send className="w-2.5 h-2.5" />Send Email
     </button>
   );
 }
