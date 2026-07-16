@@ -32,6 +32,25 @@ async function patchColumn(clientId: string, columnId: string, value: string): P
   if (!res.ok) throw new Error(`Save failed (${res.status})`);
 }
 
+/**
+ * Best-effort: mirror newly-added notification e-mails to the Google Sheet
+ * (ShipHero name + e-mails). Fire-and-forget — the Monday.com save is the source
+ * of truth; the sheet is an additive side log, so failures never surface in the
+ * UI. No-ops server-side when the sheet webhook isn't configured.
+ */
+async function logNotificationToSheet(shipHeroName: string, emails: string): Promise<void> {
+  if (!emails.trim()) return;
+  try {
+    await fetch('/api/notifications/sheet-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shipHeroName, emails }),
+    });
+  } catch {
+    /* best-effort — ignore */
+  }
+}
+
 interface ContactEmail {
   label: string;
   email: string;
@@ -119,6 +138,7 @@ export function EmailNotificationsSection({
             <NotificationRow
               key={type.key}
               clientBoardItemId={clientBoardItemId}
+              shipHeroName={client.shipHeroName || ''}
               label={type.label}
               enabledColumnId={type.enabledColumnId}
               emailsColumnId={type.emailsColumnId}
@@ -136,6 +156,7 @@ export function EmailNotificationsSection({
 
 function NotificationRow({
   clientBoardItemId,
+  shipHeroName,
   label,
   enabledColumnId,
   emailsColumnId,
@@ -145,6 +166,7 @@ function NotificationRow({
   initialEmails,
 }: {
   clientBoardItemId: string;
+  shipHeroName: string;
   label: string;
   enabledColumnId: string;
   emailsColumnId: string;
@@ -168,11 +190,16 @@ function NotificationRow({
   const isChecked = (email: string) => emails.some(e => emailsEqual(e, email));
 
   const saveEmails = async (next: string[]) => {
+    // Which e-mails are NEW in this save (vs the current list) — only these are
+    // mirrored to the Google Sheet, so removals don't create rows.
+    const added = next.filter(e => !emails.some(p => emailsEqual(p, e)));
     setEmails(next); // optimistic
     setSavingEmails(true);
     setError('');
     try {
       await patchColumn(clientBoardItemId, emailsColumnId, joinEmailList(next));
+      // Monday saved — mirror the newly added e-mails to the Google Sheet.
+      if (added.length > 0) void logNotificationToSheet(shipHeroName, joinEmailList(added));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
     } finally {
