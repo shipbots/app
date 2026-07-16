@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useRef, useCallback, createContext, useContext } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback, createContext, useContext } from 'react';
 import { OnboardingItem, CalendarEvent } from '@/lib/types';
 import { ClientCard } from './client-card';
 
@@ -9,7 +9,7 @@ import { ClientCard } from './client-card';
 // to strip the onboarding-only chrome from the cards: progress %, checklist,
 // the "summary email to the team" icon, and the days-inactive alert.
 const CustomerServiceCardContext = createContext(false);
-import { ChevronLeft, ChevronRight, Phone, Package } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Phone, Package, AlertTriangle } from 'lucide-react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -50,6 +50,20 @@ function isValidDateStr(s: string | null | undefined): boolean {
   return !Number.isNaN(d.getTime());
 }
 
+// A delivery event whose expected date is in the past AND whose inventory
+// hasn't been received yet (no Delivered Date). Used to flag stragglers in the
+// onboarding calendar.
+function isOverdueDelivery(event: CalendarEvent, today: Date): boolean {
+  if (event.type !== 'delivery' || event.delivered) return false;
+  if (isValidDateStr(event.item.deliveredDate)) return false; // already delivered
+  return parseLocalDate(event.date).getTime() < today.getTime();
+}
+
+function shortDate(iso: string): string {
+  const d = parseLocalDate(iso);
+  return `${MONTHS[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
+}
+
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -58,18 +72,27 @@ const DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 // ─── Event type badge ─────────────────────────────────────────────────────────
 
-function EventBadge({ event }: { event: CalendarEvent }) {
+function EventBadge({ event, overdue = false }: { event: CalendarEvent; overdue?: boolean }) {
   const isCall = event.type === 'kickoff';
   const isDelivered = event.type === 'delivery' && event.delivered;
-  const label = isCall ? 'Onboarding Call' : isDelivered ? 'Delivered' : 'Expected Delivery';
+  const label = isCall
+    ? 'Onboarding Call'
+    : isDelivered
+      ? 'Delivered'
+      : overdue
+        ? 'Past-due Delivery'
+        : 'Expected Delivery';
   const cls = isCall
     ? 'bg-orange-100 text-orange-700'
     : isDelivered
       ? 'bg-emerald-100 text-emerald-700'
-      : 'text-[#015280] bg-[#e6f8ff]';
+      : overdue
+        ? 'bg-red-100 text-red-700'
+        : 'text-[#015280] bg-[#e6f8ff]';
+  const Icon = isCall ? Phone : overdue ? AlertTriangle : Package;
   return (
     <div className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-t-md w-full ${cls}`}>
-      {isCall ? <Phone className="w-2.5 h-2.5 flex-shrink-0" /> : <Package className="w-2.5 h-2.5 flex-shrink-0" />}
+      <Icon className="w-2.5 h-2.5 flex-shrink-0" />
       <span>{label}</span>
       {event.time && (
         <span className="ml-auto font-normal opacity-80">{formatTime(event.time)}</span>
@@ -80,7 +103,7 @@ function EventBadge({ event }: { event: CalendarEvent }) {
 
 // ─── Full event card (badge + kanban card) ────────────────────────────────────
 
-function CalendarEventCard({ event, agentEmail, onSelect, onDragStart, onDragEnd }: {
+function CalendarEventCard({ event, agentEmail, onSelect, onDragStart, onDragEnd, overdue = false }: {
   event: CalendarEvent;
   agentEmail: string | null;
   onSelect: () => void;
@@ -88,14 +111,18 @@ function CalendarEventCard({ event, agentEmail, onSelect, onDragStart, onDragEnd
    *  are actually draggable; kickoffs aren't movable from here. */
   onDragStart?: (event: CalendarEvent) => void;
   onDragEnd?: () => void;
+  /** Past-due, not-yet-delivered expected delivery. */
+  overdue?: boolean;
 }) {
   const customerService = useContext(CustomerServiceCardContext);
+  // Past-due flagging is an onboarding concern only.
+  const flagOverdue = overdue && !customerService;
   // Only ESTIMATED delivery events reschedule the Est. Delivery Date on drop.
   // Actual "Delivered" events are a record of fact, so they aren't draggable.
   const draggable = event.type === 'delivery' && !event.delivered && Boolean(event.item.clientBoardItemId);
   return (
     <div
-      className={`mb-2 rounded-lg overflow-hidden shadow-sm ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
+      className={`mb-2 rounded-lg overflow-hidden shadow-sm ${draggable ? 'cursor-grab active:cursor-grabbing' : ''} ${flagOverdue ? 'ring-1 ring-red-300' : ''}`}
       draggable={draggable}
       onDragStart={e => {
         if (!draggable) return;
@@ -106,7 +133,7 @@ function CalendarEventCard({ event, agentEmail, onSelect, onDragStart, onDragEnd
       }}
       onDragEnd={() => onDragEnd?.()}
     >
-      <EventBadge event={event} />
+      <EventBadge event={event} overdue={flagOverdue} />
       <ClientCard item={event.item} agentEmail={agentEmail} onClick={onSelect} customerService={customerService} />
     </div>
   );
@@ -193,6 +220,7 @@ function WeekView({ days, events, agentEmailMap, onSelectItem, onDragStart, onDr
                       onSelect={() => onSelectItem(event.item)}
                       onDragStart={onDragStart}
                       onDragEnd={onDragEnd}
+                      overdue={isOverdueDelivery(event, today)}
                     />
                   ))
                 )}
@@ -285,6 +313,7 @@ function MonthView({ days, currentMonth, events, agentEmailMap, onSelectItem, on
                   onSelect={() => onSelectItem(event.item)}
                   onDragStart={onDragStart}
                   onDragEnd={onDragEnd}
+                  overdue={isOverdueDelivery(event, today)}
                 />
               ))}
             </div>
@@ -333,7 +362,9 @@ export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate,
   const events = useMemo<CalendarEvent[]>(() => {
     const result: CalendarEvent[] = [];
     for (const item of items) {
-      if (item.kickoffDate) {
+      // Onboarding calls are an onboarding-only concern — Customer Service
+      // doesn't track them, so they never appear on the CS calendar.
+      if (item.kickoffDate && !isCustomerService) {
         result.push({
           id: `${item.id}-kickoff`,
           type: 'kickoff',
@@ -419,6 +450,18 @@ export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate,
   const draggingRef = useRef<DraggedEvent | null>(null);
   const [dragOverISO, setDragOverISO] = useState<string | null>(null);
 
+  // Past-due-deliveries dropdown (onboarding only). Closes on outside click.
+  const [showOverdue, setShowOverdue] = useState(false);
+  const overdueRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showOverdue) return;
+    const onDown = (e: MouseEvent) => {
+      if (overdueRef.current && !overdueRef.current.contains(e.target as Node)) setShowOverdue(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [showOverdue]);
+
   const handleDragStart = useCallback((event: CalendarEvent) => {
     if (event.type !== 'delivery') return;
     draggingRef.current = { item: event.item, originalDate: event.date };
@@ -477,6 +520,15 @@ export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate,
   const expectedCount = events.filter(e => e.type === 'delivery' && !e.delivered).length;
   const deliveredCount = events.filter(e => e.type === 'delivery' && e.delivered).length;
 
+  // Onboarding: expected deliveries whose date has passed with no Delivered
+  // Date yet — surfaced as a clickable "past-due" list so the team can chase
+  // whoever's inventory is late.
+  const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
+  const overdueDeliveries = useMemo(
+    () => (isCustomerService ? [] : events.filter(e => isOverdueDelivery(e, today))),
+    [events, today, isCustomerService],
+  );
+
   return (
     <CustomerServiceCardContext.Provider value={appMode === 'customer-service'}>
     <div className="flex-1 flex flex-col overflow-hidden bg-gray-50">
@@ -510,10 +562,13 @@ export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate,
         <div className="flex items-center gap-5">
           {/* Legend / counts */}
           <div className="flex items-center gap-4 text-xs text-gray-500">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-orange-400 flex-shrink-0" />
-              {callCount} Onboarding Call{callCount !== 1 ? 's' : ''}
-            </span>
+            {/* Onboarding calls — hidden in Customer Service */}
+            {!isCustomerService && (
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-orange-400 flex-shrink-0" />
+                {callCount} Onboarding Call{callCount !== 1 ? 's' : ''}
+              </span>
+            )}
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-[#43c7ff] flex-shrink-0" />
               {expectedCount} Expected Deliver{expectedCount !== 1 ? 'ies' : 'y'}
@@ -523,6 +578,38 @@ export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate,
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 flex-shrink-0" />
                 {deliveredCount} Delivered
               </span>
+            )}
+            {/* Past-due deliveries — clickable list (onboarding only) */}
+            {!isCustomerService && overdueDeliveries.length > 0 && (
+              <div className="relative" ref={overdueRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowOverdue(o => !o)}
+                  title="Clients whose expected delivery date has passed with no Delivered Date yet"
+                  className="flex items-center gap-1.5 font-semibold text-red-600 hover:text-red-700 underline decoration-red-300 underline-offset-2"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                  {overdueDeliveries.length} past-due
+                </button>
+                {showOverdue && (
+                  <div className="absolute right-0 top-full mt-1.5 w-72 bg-white rounded-lg shadow-xl border border-gray-200 z-30 max-h-80 overflow-y-auto">
+                    <div className="px-3 py-2 border-b border-gray-100 text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                      Past-due deliveries — not received
+                    </div>
+                    {overdueDeliveries.map(e => (
+                      <button
+                        key={e.id}
+                        type="button"
+                        onClick={() => { onSelectItem(e.item); setShowOverdue(false); }}
+                        className="w-full text-left px-3 py-2 hover:bg-red-50 border-b border-gray-50 last:border-b-0 flex items-center justify-between gap-2"
+                      >
+                        <span className="text-[13px] text-gray-900 truncate">{e.item.name}</span>
+                        <span className="text-[11px] font-medium text-red-600 flex-shrink-0">Exp {shortDate(e.date)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
