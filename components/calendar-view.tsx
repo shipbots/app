@@ -571,12 +571,13 @@ export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate,
             )}
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-[#43c7ff] flex-shrink-0" />
-              {expectedCount} Expected Deliver{expectedCount !== 1 ? 'ies' : 'y'}
+              {/* Customer Service shows the color key only — no counts. */}
+              {isCustomerService ? 'Expected Deliveries' : `${expectedCount} Expected Deliver${expectedCount !== 1 ? 'ies' : 'y'}`}
             </span>
             {deliveredCount > 0 && (
               <span className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 flex-shrink-0" />
-                {deliveredCount} Delivered
+                {isCustomerService ? 'Delivered' : `${deliveredCount} Delivered`}
               </span>
             )}
             {/* Past-due deliveries — clickable list (onboarding only) */}
