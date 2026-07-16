@@ -79,17 +79,21 @@ function doPost(e) {
   }
 }
 
-// Delete rows whose ShipHero name (col A) matches and whose e-mail cell (col B)
-// contains one of the removed e-mails. If a row lists several e-mails, only the
-// removed one is stripped; the row is deleted when none remain.
+// Delete rows whose e-mail cell (col B) contains one of the removed e-mails and
+// whose ShipHero name (col A) matches — OR is blank. Matching blank-name rows
+// lets us clean up legacy rows that were written before a ShipHero Name was
+// required; a *different* client's named row is never touched. If a row lists
+// several e-mails, only the removed one is stripped; the row is deleted when none
+// remain.
 function removeRows_(sheet, name, emailsToRemove) {
-  if (!name || emailsToRemove.length === 0) return 0;
-  const wantName = name.trim().toLowerCase();                       // case-insensitive name match
+  if (emailsToRemove.length === 0) return 0;
+  const wantName = String(name || '').trim().toLowerCase();         // case-insensitive name match
   const remove = emailsToRemove.map(function (x) { return x.toLowerCase(); });
   const values = sheet.getDataRange().getValues();
   let count = 0;
   for (let r = values.length - 1; r >= 0; r--) { // bottom-up so indices stay valid
-    if (String(values[r][0] || '').trim().toLowerCase() !== wantName) continue;
+    const rowName = String(values[r][0] || '').trim().toLowerCase();
+    if (rowName !== wantName && rowName !== '') continue; // this client's rows, or nameless legacy rows
     const cell = String(values[r][1] || '').split(',').map(function (s) { return s.trim(); }).filter(String);
     const kept = cell.filter(function (em) { return remove.indexOf(em.toLowerCase()) === -1; });
     if (kept.length === cell.length) continue; // nothing to remove in this row
@@ -130,3 +134,23 @@ function json_(obj) {
 - After it authorizes once (granting access to the spreadsheet), the POST from
   the app can write rows. If a POST ever returns an auth error, re-run the
   authorization step above.
+- **A removed e-mail isn't leaving the sheet (`removed:0`)** — the row's name
+  cell (col A) doesn't match the ShipHero name the app sends. Almost always the
+  row was written *before* ShipHero Name was required, so its name cell is blank.
+  The `removeRows_` above already handles this (it also matches blank-name rows) —
+  make sure the deployed version is current: **Deploy → Manage deployments → ✏️
+  Edit → Version: New version → Deploy** (same `/exec` URL, so no env-var change).
+  If a stray row has a *non-blank but wrong* name (e.g. the client was renamed
+  after the row was written), delete that row by hand once.
+- **Verify a deploy from the terminal** without touching the UI — POST an add
+  then a remove and read the JSON (note: no `-X POST`, so curl switches to GET on
+  Apps Script's 302 the same way the app's `fetch` does):
+  ```bash
+  URL="…/exec"
+  curl -sSL -H "Content-Type: application/json" \
+    -d '{"action":"add","shipHeroName":"ZZ-TEST","emails":"zz@example.com"}' "$URL"
+  curl -sSL -H "Content-Type: application/json" \
+    -d '{"action":"remove","shipHeroName":"ZZ-TEST","emails":"zz@example.com"}' "$URL"
+  ```
+  A working deploy returns `{"ok":true,"action":"add","added":1}` then
+  `{"ok":true,"action":"remove","removed":1}`.
