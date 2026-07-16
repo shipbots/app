@@ -75,9 +75,33 @@ function doPost(e) {
   }
 }
 
+// Opening the /exec URL in a browser hits this (a health check). The dashboard
+// uses doPost; seeing this JSON means the deployment is live and reachable.
+function doGet() {
+  return json_({ ok: true, service: 'shipbots-notification-logger', hint: 'POST only' });
+}
+
 function json_(obj) {
   return ContentService
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }
 ```
+
+---
+
+## Troubleshooting
+
+- **Browser shows `Script function not found: doGet`** — normal for the original
+  POST-only script; it means the URL is live. Add the `doGet` above and it'll
+  show `{"ok":true,...}` instead.
+- **`Access blocked: Authorization Error` / `The OAuth client is not fully
+  created yet` / `Error 401: invalid_client`** — a Google-side propagation delay
+  when the deployment's OAuth client is first created. It's transient: **wait
+  ~5–10 minutes, then retry** *Deploy → Manage deployments → Edit → Deploy*, or
+  re-run authorization (**Run** the `doPost`/`doGet` function once in the editor
+  and click **Review permissions → Allow**). The URL/setup are fine; Google just
+  needs a few minutes.
+- After it authorizes once (granting access to the spreadsheet), the POST from
+  the app can write rows. If a POST ever returns an auth error, re-run the
+  authorization step above.
