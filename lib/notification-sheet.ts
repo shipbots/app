@@ -16,23 +16,26 @@ export function isNotificationSheetConfigured(): boolean {
   return !!process.env.NOTIFICATION_SHEET_WEBHOOK_URL;
 }
 
-export interface NotificationRowInput {
+export interface NotificationSheetInput {
+  /** 'add' appends a row per e-mail; 'remove' deletes the matching rows. */
+  action: 'add' | 'remove';
   /** ShipHero (QB display) name of the client. */
   shipHeroName: string;
-  /** Comma-separated e-mail addresses that were added to the notification. */
+  /** Comma-separated e-mail addresses that were added / removed. */
   emails: string;
 }
 
 /**
- * Append one row to the configured Google Sheet. Resolves `{ appended: false }`
- * when the webhook isn't configured; throws only on a real HTTP failure so the
- * caller can log it (the Monday save has already succeeded regardless).
+ * Mirror an add/remove to the configured Google Sheet so it reflects the
+ * current notification recipients. Resolves `{ sent: false }` when the webhook
+ * isn't configured; throws only on a real HTTP failure so the caller can log it
+ * (the Monday save has already succeeded regardless).
  */
-export async function appendNotificationRow(
-  input: NotificationRowInput,
-): Promise<{ appended: boolean }> {
+export async function sendNotificationSheet(
+  input: NotificationSheetInput,
+): Promise<{ sent: boolean }> {
   const url = process.env.NOTIFICATION_SHEET_WEBHOOK_URL;
-  if (!url) return { appended: false };
+  if (!url) return { sent: false };
   const secret = process.env.NOTIFICATION_SHEET_WEBHOOK_SECRET ?? '';
 
   const res = await fetch(url, {
@@ -40,6 +43,7 @@ export async function appendNotificationRow(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       secret,
+      action: input.action,
       shipHeroName: input.shipHeroName ?? '',
       emails: input.emails ?? '',
       at: new Date().toISOString(),
@@ -53,5 +57,5 @@ export async function appendNotificationRow(
     const body = await res.text().catch(() => '');
     throw new Error(`notification sheet webhook ${res.status}: ${body.slice(0, 200)}`);
   }
-  return { appended: true };
+  return { sent: true };
 }

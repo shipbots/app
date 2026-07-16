@@ -1,10 +1,11 @@
 # Address-Hold Notification → Google Sheet
 
-When notification e-mails are **added** to a client (the "Address Hold
-Notification E-mail(s)" flow), the app also appends a row to a Google Sheet with
-the client's **ShipHero name** and the **e-mails that were added**. The Monday.com
-column write is unchanged — this is purely additive and silently no-ops until the
-webhook below is configured.
+When notification e-mails are **added or removed** for a client (the "Address
+Hold Notification E-mail(s)" flow), the app mirrors the change to a Google
+Sheet — appending a **ShipHero name + e-mail** row on add, and deleting the
+matching row on remove (also when the notification is switched off, which clears
+all its e-mails). The Monday.com column write is unchanged, and the sheet
+integration silently no-ops until the webhook below is configured.
 
 Target sheet:
 `https://docs.google.com/spreadsheets/d/1OvvO90JQgJ2r4DHSA6hI9aWpX9w-EULUQVO3l2dpSOE/edit`
@@ -45,7 +46,8 @@ Redeploy. Done — add an e-mail to a client's notifications and a row appears.
 
 ```javascript
 // ShipBots — Address Hold Notification logger.
-// Appends { ShipHero name, e-mails } rows sent by the dashboard.
+// Adds / removes { ShipHero name, e-mail } rows so the sheet mirrors the
+// current notification recipients.
 
 const SHEET_NAME = '';        // '' = first tab. Or set a specific tab name.
 const SHARED_SECRET = '';     // must match NOTIFICATION_SHEET_WEBHOOK_SECRET (or '' to disable)
@@ -53,26 +55,48 @@ const SHARED_SECRET = '';     // must match NOTIFICATION_SHEET_WEBHOOK_SECRET (o
 function doPost(e) {
   try {
     const data = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-
-    if (SHARED_SECRET && data.secret !== SHARED_SECRET) {
-      return json_({ ok: false, error: 'unauthorized' });
-    }
+    if (SHARED_SECRET && data.secret !== SHARED_SECRET) return json_({ ok: false, error: 'unauthorized' });
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = (SHEET_NAME && ss.getSheetByName(SHEET_NAME)) || ss.getSheets()[0];
 
-    // Columns appended: ShipHero name, e-mails, and the timestamp.
-    // Reorder / drop fields here to match your sheet's columns if needed.
-    sheet.appendRow([
-      data.shipHeroName || '',
-      data.emails || '',
-      data.at || new Date().toISOString(),
-    ]);
+    const name = String(data.shipHeroName || '').trim();
+    const emails = String(data.emails || '')
+      .split(',').map(function (s) { return s.trim(); }).filter(String);
+    const action = data.action || 'add';
 
-    return json_({ ok: true });
+    if (action === 'remove') {
+      return json_({ ok: true, action: 'remove', removed: removeRows_(sheet, name, emails) });
+    }
+
+    // add — one row per e-mail so a later 'remove' can match it exactly.
+    // Columns: ShipHero name, e-mail, timestamp. Reorder to match your sheet.
+    const at = data.at || new Date().toISOString();
+    emails.forEach(function (email) { sheet.appendRow([name, email, at]); });
+    return json_({ ok: true, action: 'add', added: emails.length });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
   }
+}
+
+// Delete rows whose ShipHero name (col A) matches and whose e-mail cell (col B)
+// contains one of the removed e-mails. If a row lists several e-mails, only the
+// removed one is stripped; the row is deleted when none remain.
+function removeRows_(sheet, name, emailsToRemove) {
+  if (!name || emailsToRemove.length === 0) return 0;
+  const remove = emailsToRemove.map(function (x) { return x.toLowerCase(); });
+  const values = sheet.getDataRange().getValues();
+  let count = 0;
+  for (let r = values.length - 1; r >= 0; r--) { // bottom-up so indices stay valid
+    if (String(values[r][0] || '').trim() !== name) continue;
+    const cell = String(values[r][1] || '').split(',').map(function (s) { return s.trim(); }).filter(String);
+    const kept = cell.filter(function (em) { return remove.indexOf(em.toLowerCase()) === -1; });
+    if (kept.length === cell.length) continue; // nothing to remove in this row
+    count++;
+    if (kept.length === 0) sheet.deleteRow(r + 1);
+    else sheet.getRange(r + 1, 2).setValue(kept.join(', '));
+  }
+  return count;
 }
 
 // Opening the /exec URL in a browser hits this (a health check). The dashboard

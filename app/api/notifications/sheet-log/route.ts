@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { appendNotificationRow, isNotificationSheetConfigured } from '@/lib/notification-sheet';
+import { sendNotificationSheet, isNotificationSheetConfigured } from '@/lib/notification-sheet';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,25 +24,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, configured: false, appended: false });
   }
 
-  let body: { shipHeroName?: unknown; emails?: unknown };
+  let body: { action?: unknown; shipHeroName?: unknown; emails?: unknown };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
+  const action = body.action === 'remove' ? 'remove' : 'add';
   const shipHeroName = typeof body.shipHeroName === 'string' ? body.shipHeroName.trim() : '';
   const emails = typeof body.emails === 'string' ? body.emails.trim() : '';
-  // Nothing to log — a removal or an empty save.
+  // Nothing to do — no e-mails named for this add/remove.
   if (!emails) {
-    return NextResponse.json({ ok: true, configured: true, appended: false });
+    return NextResponse.json({ ok: true, configured: true, sent: false });
   }
 
   try {
-    await appendNotificationRow({ shipHeroName, emails });
-    return NextResponse.json({ ok: true, configured: true, appended: true });
+    await sendNotificationSheet({ action, shipHeroName, emails });
+    return NextResponse.json({ ok: true, configured: true, sent: true, action });
   } catch (err) {
-    console.error('[notifications/sheet-log] append failed:', err);
-    return NextResponse.json({ error: 'Sheet append failed' }, { status: 502 });
+    console.error(`[notifications/sheet-log] ${action} failed:`, err);
+    return NextResponse.json({ error: 'Sheet update failed' }, { status: 502 });
   }
 }
