@@ -50,6 +50,7 @@ export async function fetchOnboardingItems(): Promise<OnboardingItem[]> {
               url
               created_at
               updated_at
+              group { id }
               subitems { id column_values { id text type } }
               column_values(ids: ${JSON.stringify(columnIds)}) {
                 id
@@ -72,6 +73,7 @@ export async function fetchOnboardingItems(): Promise<OnboardingItem[]> {
                 url
                 created_at
                 updated_at
+                group { id }
                 subitems { id column_values { id text type } }
                 column_values(ids: ${JSON.stringify(columnIds)}) {
                   id
@@ -92,7 +94,7 @@ export async function fetchOnboardingItems(): Promise<OnboardingItem[]> {
     type LinkedItem = { id: string; name: string };
     type ColumnValue = { id: string; text: string | null; value: string | null; linked_items?: Array<LinkedItem> };
     type SubitemCV = { id: string; text: string | null; type: string };
-    type PageItem = { id: string; name: string; url: string; created_at: string; updated_at: string; subitems?: { id: string; column_values: SubitemCV[] }[]; column_values: ColumnValue[] };
+    type PageItem = { id: string; name: string; url: string; created_at: string; updated_at: string; group?: { id: string }; subitems?: { id: string; column_values: SubitemCV[] }[]; column_values: ColumnValue[] };
     const page: { cursor: string | null; items: PageItem[] } = cursor
       ? data.next_items_page
       : data.boards[0].items_page;
@@ -155,6 +157,7 @@ export async function fetchOnboardingItems(): Promise<OnboardingItem[]> {
         url: item.url,
         createdAt: item.created_at,
         updatedAt: item.updated_at,
+        groupId: item.group?.id ?? '',
         status: cols['estado'] || 'N/A',
         inventoryDelivered: cols['status_2'] || '',
         kickoffDate: cols['date3'] || null,

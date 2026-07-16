@@ -27,6 +27,12 @@ export const PIPELINE_STAGES = [
   { status: 'ZAP ERROR',                      color: '#ff5ac4', bgColor: '#fff0f9' },
 ] as const;
 
+// The "Inventory never arrived" column isn't an onboarding-status label — it's
+// a Monday board GROUP (board section). Items living in this group are surfaced
+// in the matching kanban column regardless of their onboarding status.
+export const INVENTORY_NEVER_ARRIVED_STATUS = 'Inventory never arrived';
+export const INVENTORY_NEVER_ARRIVED_GROUP_ID = 'group_mks0npxe';
+
 // Deactivated / legacy statuses — items with these labels are hidden from the kanban
 export const INACTIVE_STATUSES = [
   'Done/Pending Items',

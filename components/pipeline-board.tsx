@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { OnboardingItem, Alert, SubItem } from '@/lib/types';
-import { PIPELINE_STAGES } from '@/lib/constants';
+import { PIPELINE_STAGES, INVENTORY_NEVER_ARRIVED_STATUS, INVENTORY_NEVER_ARRIVED_GROUP_ID } from '@/lib/constants';
 import { ClientCard } from './client-card';
 import { ClientDetailPanel } from './client-detail-panel';
 import { AlertsPanel } from './alerts-panel';
@@ -262,6 +262,7 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
       url: result.url,
       createdAt: now,
       updatedAt: now,
+      groupId: '',
       status: 'Not Started',
       inventoryDelivered: '',
       kickoffDate: null,
@@ -395,7 +396,14 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     const groups: Record<string, OnboardingItem[]> = {};
     for (const stage of PIPELINE_STAGES) groups[stage.status] = [];
     for (const item of overriddenAllItems) {
-      if (groups[item.status]) groups[item.status].push(item);
+      // "Inventory never arrived" is a Monday GROUP, not a status — items in it
+      // land in that column regardless of their onboarding status. Everything
+      // else groups by status as usual.
+      if (item.groupId === INVENTORY_NEVER_ARRIVED_GROUP_ID) {
+        groups[INVENTORY_NEVER_ARRIVED_STATUS].push(item);
+      } else if (groups[item.status]) {
+        groups[item.status].push(item);
+      }
     }
     return groups;
   }, [overriddenAllItems]);
@@ -422,6 +430,9 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     setDragOverStatus(null);
   };
   const handleDragOver = (e: React.DragEvent, status: string) => {
+    // The group-based "Inventory never arrived" column isn't a status drop
+    // target — skipping preventDefault makes the browser refuse drops there.
+    if (status === INVENTORY_NEVER_ARRIVED_STATUS) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setDragOverStatus(status);
@@ -436,7 +447,9 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     e.preventDefault();
     setDragOverStatus(null);
     const item = draggingItemRef.current;
-    if (!item || item.status === newStatus) return;
+    // Never write "Inventory never arrived" into the status column — it's a
+    // group, not a status label (belt-and-suspenders alongside handleDragOver).
+    if (!item || item.status === newStatus || newStatus === INVENTORY_NEVER_ARRIVED_STATUS) return;
     draggingItemRef.current = null;
 
     // Optimistic update
@@ -742,6 +755,9 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
               const stageItems = groupedItems[stage.status] || [];
               const isCollapsed = collapsedColumns.has(stage.status);
               const isDragTarget = dragOverStatus === stage.status;
+              // Group-based column — its cards aren't draggable (dragging one
+              // out would silently rewrite its onboarding status).
+              const isGroupColumn = stage.status === INVENTORY_NEVER_ARRIVED_STATUS;
 
               return (
                 <div
@@ -784,10 +800,10 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
                       {stageItems.map(item => (
                         <div
                           key={item.id}
-                          draggable
-                          onDragStart={() => handleDragStart(item)}
-                          onDragEnd={handleDragEnd}
-                          className="cursor-grab active:cursor-grabbing active:opacity-50 transition-opacity"
+                          draggable={!isGroupColumn}
+                          onDragStart={isGroupColumn ? undefined : () => handleDragStart(item)}
+                          onDragEnd={isGroupColumn ? undefined : handleDragEnd}
+                          className={isGroupColumn ? '' : 'cursor-grab active:cursor-grabbing active:opacity-50 transition-opacity'}
                         >
                           <ClientCard
                             item={item}

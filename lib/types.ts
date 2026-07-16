@@ -4,6 +4,9 @@ export interface OnboardingItem {
   url: string;
   createdAt: string;
   updatedAt: string;
+  /** Monday board group id (board section) — e.g. the "Inventory never arrived"
+   *  group is surfaced as its own kanban column regardless of onboarding status. */
+  groupId: string;
   status: string;
   inventoryDelivered: string;
   kickoffDate: string | null;
