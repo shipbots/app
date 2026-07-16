@@ -406,8 +406,8 @@ const DETAIL_SECTIONS = [
     fields: [
       { key: 'portalDropdown',  label: 'Platform' },
       { key: 'portalEmail',     label: 'Email', type: 'email' },
-      { key: 'portalLogin',     label: 'Username' },
-      { key: 'portalPassword',  label: 'Password' },
+      { key: 'portalLogin',     label: 'Username', copy: true },
+      { key: 'portalPassword',  label: 'Password', copy: true },
     ],
   },
   {
@@ -626,6 +626,33 @@ function renderField(client, field) {
   return document.createTextNode(String(v));
 }
 
+// Small inline "copy to clipboard" button placed right next to a value so it's
+// obvious the value (email, phone, portal username/password) can be copied.
+const COPY_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>';
+const CHECK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>';
+
+function copyIconButton(text) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'detail-copy-btn';
+  btn.title = 'Copy to clipboard';
+  btn.setAttribute('aria-label', 'Copy to clipboard');
+  btn.innerHTML = COPY_SVG;
+  btn.addEventListener('click', async e => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(String(text ?? ''));
+      btn.classList.add('copied');
+      btn.innerHTML = CHECK_SVG;
+      setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = COPY_SVG; }, 1200);
+    } catch (err) {
+      console.error('[copy] failed', err);
+    }
+  });
+  return btn;
+}
+
 function buildSection(section, client) {
   const wrap = document.createElement('div');
   wrap.className = 'detail-section';
@@ -663,6 +690,10 @@ function buildSection(section, client) {
       dt.textContent = field.label;
       const dd = document.createElement('dd');
       dd.appendChild(renderField(client, field));
+      // Emails, phones, and portal credentials get a one-click copy button.
+      if (field.type === 'email' || field.type === 'phone' || field.copy) {
+        dd.appendChild(copyIconButton(String(client[field.key] ?? '')));
+      }
       body.appendChild(dt);
       body.appendChild(dd);
       any = true;
@@ -720,6 +751,7 @@ function buildContactsBody(body, client) {
       a.href = `mailto:${slot.email}`;
       a.textContent = slot.email;
       ln.appendChild(a);
+      ln.appendChild(copyIconButton(slot.email));
       card.appendChild(ln);
     }
     if (slot.phone) {
@@ -729,6 +761,7 @@ function buildContactsBody(body, client) {
       a.href = `tel:${slot.phone.replace(/[^\d+]/g, '')}`;
       a.textContent = slot.phone;
       ln.appendChild(a);
+      ln.appendChild(copyIconButton(slot.phone));
       card.appendChild(ln);
     }
     if (slot.extra) {

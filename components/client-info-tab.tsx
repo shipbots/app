@@ -1174,29 +1174,35 @@ function EditField({
       {icon && <span className="text-gray-400 mt-0.5 flex-shrink-0">{icon}</span>}
       <div className="flex-1 min-w-0">
         <p className="text-[11px] leading-none mb-0.5 text-gray-400">{label}</p>
-        {/<[a-z][\s\S]*>/i.test(value) ? (
-          <div
-            className="text-sm text-gray-900 [&_ul]:list-disc [&_ul]:ml-4 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:ml-4 [&_ol]:my-1 [&_li]:mb-0.5 [&_strong]:font-semibold [&_p]:mb-1"
-            dangerouslySetInnerHTML={{ __html: value }}
-          />
-        ) : (
-          <p className="text-sm whitespace-pre-wrap break-words text-gray-900">{value}</p>
-        )}
+        {/* Value + an ALWAYS-visible copy button sitting right next to it, so
+            it's obvious the value can be copied (rather than a faint icon far
+            off at the row's edge). The pencil/edit affordance stays on the
+            right, hover-only. */}
+        <div className="flex items-center gap-1.5 min-w-0">
+          {/<[a-z][\s\S]*>/i.test(value) ? (
+            <div
+              className="text-sm text-gray-900 min-w-0 [&_ul]:list-disc [&_ul]:ml-4 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:ml-4 [&_ol]:my-1 [&_li]:mb-0.5 [&_strong]:font-semibold [&_p]:mb-1"
+              dangerouslySetInnerHTML={{ __html: value }}
+            />
+          ) : (
+            <p className="text-sm whitespace-pre-wrap break-words text-gray-900 min-w-0">{value}</p>
+          )}
+          {copyable && value && (
+            <button
+              type="button"
+              onClick={handleCopy}
+              title={`Copy ${label}`}
+              className="flex-shrink-0 p-0.5 rounded text-[#43c7ff] hover:text-[#015280] hover:bg-[#d0f2ff] transition-colors"
+            >
+              {copied
+                ? <Check className="w-3.5 h-3.5 text-green-500" />
+                : <Copy className="w-3.5 h-3.5" />
+              }
+            </button>
+          )}
+        </div>
       </div>
       <div className="flex items-center gap-0.5 flex-shrink-0 mt-4 opacity-0 group-hover:opacity-100 transition-opacity">
-        {copyable && value && (
-          <button
-            type="button"
-            onClick={handleCopy}
-            title={`Copy ${label}`}
-            className="p-0.5 rounded hover:bg-[#d0f2ff] text-gray-300 hover:text-[#43c7ff] transition-colors"
-          >
-            {copied
-              ? <Check className="w-3.5 h-3.5 text-green-500" />
-              : <Copy className="w-3.5 h-3.5" />
-            }
-          </button>
-        )}
         {saving && <div className="w-3.5 h-3.5 rounded-full border-2 border-[#43c7ff] border-t-transparent animate-spin" />}
         {flash === 'saved' && <Check className="w-3.5 h-3.5 text-green-500" />}
         {flash === 'error' && <span className="text-xs text-red-500">!</span>}

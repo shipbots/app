@@ -1053,6 +1053,27 @@ body.projects-open {
 .detail-contact-line a { color: #015280; text-decoration: none; }
 .detail-contact-line a:hover { text-decoration: underline; }
 
+/* One-click copy button shown right next to copyable values (emails, phones,
+   portal username/password) so it's obvious they can be copied. */
+.detail-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin-left: 6px;
+  padding: 2px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #43c7ff;
+  cursor: pointer;
+  line-height: 0;
+  flex-shrink: 0;
+  transition: background .12s, color .12s;
+}
+.detail-copy-btn:hover { background: #e0f6ff; color: #015280; }
+.detail-copy-btn.copied { color: #059669; }
+
 /* Documents section — aggregated view of every uploaded file across
    the Receiving / Packing / Returns / General columns. Read-only in
    the extension; renaming and uploading live in the dashboard. */
