@@ -1087,6 +1087,11 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
           shippingDetails={item.shippingDetails}
           clientBoardItemId={item.clientBoardItemId ?? undefined}
           contactEmail={clientInfo?.contactEmail}
+          contacts={[
+            { name: clientInfo?.contactName ?? '', email: clientInfo?.contactEmail ?? '' },
+            { name: clientInfo?.contact2Name ?? '', email: clientInfo?.contact2Email ?? '' },
+            { name: clientInfo?.contact3Name ?? '', email: clientInfo?.contact3Email ?? '' },
+          ]}
           clientName={item.name}
           tikTokShop={clientInfo?.tikTokShop}
           lotCodeExpiration={clientInfo?.lotCodeExpiration}
@@ -1632,6 +1637,11 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
               shippingDetails={item.shippingDetails}
               clientBoardItemId={item.clientBoardItemId ?? undefined}
               contactEmail={clientInfo?.contactEmail}
+              contacts={[
+                { name: clientInfo?.contactName ?? '', email: clientInfo?.contactEmail ?? '' },
+                { name: clientInfo?.contact2Name ?? '', email: clientInfo?.contact2Email ?? '' },
+                { name: clientInfo?.contact3Name ?? '', email: clientInfo?.contact3Email ?? '' },
+              ]}
               clientName={item.name}
               tikTokShop={clientInfo?.tikTokShop}
               lotCodeExpiration={clientInfo?.lotCodeExpiration}

@@ -33,6 +33,9 @@ interface OnboardingTabProps {
   clientBoardItemId?: string;
   /** Primary contact email — pre-filled in the Send button of the summary modal */
   contactEmail?: string;
+  /** All client contacts (main contact first) — powers the billing-reminder
+   *  email: To = main contact, CC = the rest. */
+  contacts?: Array<{ name: string; email: string }>;
   /** Client name — shown in the summary modal header */
   clientName?: string;
   /** TikTok Shop? field from client board — drives N/A or applicable state */
@@ -477,6 +480,60 @@ function SendLotCodeEmailButton({
   );
 }
 
+// ─── Send Billing Reminder Email Button ─────────────────────────────────────
+// On the "Retrieved payment information" step. Opens a pre-filled draft to the
+// client's MAIN contact (CC'ing the rest) nudging them to finish their billing
+// profile at shipbots.com/ach. Unlike the ShipHero emails, this is a reminder
+// to the client rather than a completed task, so it does NOT flip the step
+// status — the rep can resend it as often as needed.
+function SendBillingEmailButton({
+  contacts = [],
+}: {
+  contacts?: Array<{ name: string; email: string }>;
+}) {
+  const withEmail = contacts.filter(c => c.email.trim());
+  const main = withEmail[0];
+  const ccList = withEmail.slice(1).map(c => c.email.trim());
+
+  if (!main) {
+    return (
+      <span
+        title="No contact email on file — add a contact in Client Info first"
+        className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full border border-amber-300 bg-amber-50 text-amber-700 cursor-not-allowed whitespace-nowrap"
+      >
+        No contact email
+      </span>
+    );
+  }
+
+  const openDraft = () => {
+    const firstName = main.name.trim().split(/\s+/)[0] || 'there';
+    const subject = 'Incomplete Billing Profile';
+    const body =
+      `Hi ${firstName},\n\n` +
+      'This is just a reminder that your billing profile had not been completed yet. ' +
+      'Whenever you have a chance, please click on the link below and complete your banking information:\n\n' +
+      'www.shipbots.com/ach\n\n' +
+      'Should you have any questions, please do not hesitate to contact me.\n\n' +
+      'Thank you,';
+    const cc = ccList.length ? `&cc=${ccList.join(',')}` : '';
+    window.location.href =
+      `mailto:${main.email.trim()}?subject=${encodeURIComponent(subject)}${cc}&body=${encodeURIComponent(body)}`;
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={openDraft}
+      title={`Opens a pre-filled reminder to ${main.email.trim()}${ccList.length ? ` (CC ${ccList.length})` : ''} — review it, then send`}
+      className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full border transition-colors whitespace-nowrap text-[#015280]"
+      style={{ background: 'var(--brand-cyan-light)', borderColor: 'var(--brand-cyan)' }}
+    >
+      <Send className="w-2.5 h-2.5" />Send Reminder
+    </button>
+  );
+}
+
 export function OnboardingTab({
   steps: initialSteps,
   progress: initialProgress,
@@ -493,6 +550,7 @@ export function OnboardingTab({
   shippingDetails: initialShippingDetails = '',
   clientBoardItemId,
   contactEmail,
+  contacts,
   clientName,
   tikTokShop,
   lotCodeExpiration,
@@ -786,6 +844,8 @@ export function OnboardingTab({
                   onSent={() => handleSaved('color_mm28ht8', 'Done')}
                   alreadyDone={step.value?.toLowerCase() === 'done'}
                 />
+              ) : step.id === 'dropdown_mm47xxjv' && step.value?.toLowerCase() !== 'yes' ? (
+                <SendBillingEmailButton contacts={contacts} />
               ) : undefined
             }
           />
