@@ -124,7 +124,7 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
   const { index: clientIndex, status: clientIndexStatus } = useClientSearchIndex();
   const [showAlerts, setShowAlerts] = useState(false);
   // Collapse terminal/noise columns by default
-  const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(new Set(['Completed', 'Abandoned', 'N/A', 'ZAP ERROR']));
+  const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(new Set(['Completed', 'Abandoned', 'N/A', 'ZAP ERROR', 'Inventory never arrived']));
   const [refreshing, setRefreshing] = useState(false);
   const [agentEmailMap, setAgentEmailMap] = useState<Record<string, string>>({});
   const [showAddClient, setShowAddClient] = useState(false);

@@ -18,6 +18,10 @@ export const PIPELINE_STAGES = [
   { status: 'In Progress',                    color: '#fdab3d', bgColor: '#fff8ed' },
   { status: 'Onboarded, Awaiting Inventory',  color: '#579bfc', bgColor: '#edf4ff' },
   { status: 'Completed',                      color: '#00c875', bgColor: '#e6faf0' },
+  // Terminal exception state — the Monday "estado" label already exists. Placed
+  // right after Completed and collapsed by default (see pipeline-board's
+  // collapsedColumns) so it doesn't disturb the active flow.
+  { status: 'Inventory never arrived',        color: '#9c4221', bgColor: '#f6ece7' },
   { status: 'Abandoned',                      color: '#bb3354', bgColor: '#faeef1' },
   { status: 'N/A',                            color: '#c4c4c4', bgColor: '#f5f5f5' },
   { status: 'ZAP ERROR',                      color: '#ff5ac4', bgColor: '#fff0f9' },
