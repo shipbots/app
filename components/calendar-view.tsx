@@ -43,6 +43,13 @@ function parseLocalDate(dateStr: string): Date {
   return new Date(y, m - 1, d);
 }
 
+// True only for a non-empty, parseable "YYYY-MM-DD" value.
+function isValidDateStr(s: string | null | undefined): boolean {
+  if (!s || !s.trim()) return false;
+  const d = parseLocalDate(s.trim());
+  return !Number.isNaN(d.getTime());
+}
+
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -53,12 +60,17 @@ const DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function EventBadge({ event }: { event: CalendarEvent }) {
   const isCall = event.type === 'kickoff';
+  const isDelivered = event.type === 'delivery' && event.delivered;
+  const label = isCall ? 'Onboarding Call' : isDelivered ? 'Delivered' : 'Expected Delivery';
+  const cls = isCall
+    ? 'bg-orange-100 text-orange-700'
+    : isDelivered
+      ? 'bg-emerald-100 text-emerald-700'
+      : 'text-[#015280] bg-[#e6f8ff]';
   return (
-    <div className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-t-md w-full ${
-      isCall ? 'bg-orange-100 text-orange-700' : 'text-[#015280] bg-[#e6f8ff]'
-    }`}>
+    <div className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-t-md w-full ${cls}`}>
       {isCall ? <Phone className="w-2.5 h-2.5 flex-shrink-0" /> : <Package className="w-2.5 h-2.5 flex-shrink-0" />}
-      <span>{isCall ? 'Onboarding Call' : 'Expected Delivery'}</span>
+      <span>{label}</span>
       {event.time && (
         <span className="ml-auto font-normal opacity-80">{formatTime(event.time)}</span>
       )}
@@ -78,7 +90,9 @@ function CalendarEventCard({ event, agentEmail, onSelect, onDragStart, onDragEnd
   onDragEnd?: () => void;
 }) {
   const customerService = useContext(CustomerServiceCardContext);
-  const draggable = event.type === 'delivery' && Boolean(event.item.clientBoardItemId);
+  // Only ESTIMATED delivery events reschedule the Est. Delivery Date on drop.
+  // Actual "Delivered" events are a record of fact, so they aren't draggable.
+  const draggable = event.type === 'delivery' && !event.delivered && Boolean(event.item.clientBoardItemId);
   return (
     <div
       className={`mb-2 rounded-lg overflow-hidden shadow-sm ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
@@ -313,6 +327,8 @@ export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate,
     return d;
   });
 
+  const isCustomerService = appMode === 'customer-service';
+
   // Build sorted event list from all items
   const events = useMemo<CalendarEvent[]>(() => {
     const result: CalendarEvent[] = [];
@@ -326,9 +342,21 @@ export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate,
           item,
         });
       }
-      // "Expected Delivery" = the Initial Inventory Est. Delivery Date from
-      // the Clients board (date_mktrzhyk), NOT the received-on date__1.
-      if (item.estimatedDeliveryDate) {
+      // Delivery. In Customer Service, once the inventory has actually been
+      // received we plot the real Delivered Date (item.deliveredDate) and drop
+      // the estimate — only one of the two ever shows for a client. When the
+      // Delivered Date is empty we fall back to the Initial Inventory Est.
+      // Delivery Date (date_mktrzhyk). Onboarding always shows the estimate.
+      if (isCustomerService && isValidDateStr(item.deliveredDate)) {
+        result.push({
+          id: `${item.id}-delivered`,
+          type: 'delivery',
+          date: item.deliveredDate as string,
+          time: item.deliveredTime ?? null,
+          item,
+          delivered: true,
+        });
+      } else if (item.estimatedDeliveryDate) {
         result.push({
           id: `${item.id}-delivery`,
           type: 'delivery',
@@ -342,7 +370,7 @@ export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate,
       const d = a.date.localeCompare(b.date);
       return d !== 0 ? d : (a.time || '').localeCompare(b.time || '');
     });
-  }, [items]);
+  }, [items, isCustomerService]);
 
   const navigate = (dir: -1 | 1) => {
     const d = new Date(currentDate);
@@ -446,7 +474,8 @@ export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate,
   }, [calMode, currentDate, weekDays]);
 
   const callCount = events.filter(e => e.type === 'kickoff').length;
-  const deliveryCount = events.filter(e => e.type === 'delivery').length;
+  const expectedCount = events.filter(e => e.type === 'delivery' && !e.delivered).length;
+  const deliveredCount = events.filter(e => e.type === 'delivery' && e.delivered).length;
 
   return (
     <CustomerServiceCardContext.Provider value={appMode === 'customer-service'}>
@@ -487,8 +516,14 @@ export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate,
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-[#43c7ff] flex-shrink-0" />
-              {deliveryCount} Expected Deliver{deliveryCount !== 1 ? 'ies' : 'y'}
+              {expectedCount} Expected Deliver{expectedCount !== 1 ? 'ies' : 'y'}
             </span>
+            {deliveredCount > 0 && (
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 flex-shrink-0" />
+                {deliveredCount} Delivered
+              </span>
+            )}
           </div>
 
           {/* Month / Week toggle */}

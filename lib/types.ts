@@ -75,6 +75,10 @@ export interface CalendarEvent {
   date: string;          // "YYYY-MM-DD"
   time: string | null;   // "HH:MM:SS" or null
   item: OnboardingItem;
+  /** For delivery events: true when this plots the ACTUAL delivered date
+   *  (item.deliveredDate) instead of the estimated delivery. Customer
+   *  Service swaps to this once inventory has been received. */
+  delivered?: boolean;
 }
 
 export interface ChecklistStep {
