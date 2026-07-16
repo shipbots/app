@@ -84,11 +84,12 @@ function doPost(e) {
 // removed one is stripped; the row is deleted when none remain.
 function removeRows_(sheet, name, emailsToRemove) {
   if (!name || emailsToRemove.length === 0) return 0;
+  const wantName = name.trim().toLowerCase();                       // case-insensitive name match
   const remove = emailsToRemove.map(function (x) { return x.toLowerCase(); });
   const values = sheet.getDataRange().getValues();
   let count = 0;
   for (let r = values.length - 1; r >= 0; r--) { // bottom-up so indices stay valid
-    if (String(values[r][0] || '').trim() !== name) continue;
+    if (String(values[r][0] || '').trim().toLowerCase() !== wantName) continue;
     const cell = String(values[r][1] || '').split(',').map(function (s) { return s.trim(); }).filter(String);
     const kept = cell.filter(function (em) { return remove.indexOf(em.toLowerCase()) === -1; });
     if (kept.length === cell.length) continue; // nothing to remove in this row
