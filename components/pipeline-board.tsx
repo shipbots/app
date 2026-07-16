@@ -85,6 +85,28 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Mirror the open client into the URL (?clientId=&expanded=) so the top
+  // section nav can carry it across surfaces (CS ↔ Onboarding) and a refresh
+  // reopens the same client. replaceState keeps it a shallow update — no
+  // navigation, no refetch.
+  const clientUrlSynced = useRef(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    // Skip the first run so we don't wipe a ?clientId deep-link before the
+    // open-on-mount effect above has consumed it.
+    if (!clientUrlSynced.current) { clientUrlSynced.current = true; return; }
+    const sp = new URLSearchParams(window.location.search);
+    if (selectedItem) {
+      sp.set('clientId', selectedItem.id);
+      if (detailFullscreen) sp.set('expanded', '1'); else sp.delete('expanded');
+    } else {
+      sp.delete('clientId');
+      sp.delete('expanded');
+    }
+    const qs = sp.toString();
+    window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
+  }, [selectedItem, detailFullscreen]);
   const [allTasks, setAllTasks] = useState<SubItem[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [tasksFetched, setTasksFetched] = useState(false);

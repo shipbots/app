@@ -4,10 +4,11 @@ import { useState, useMemo, useRef, useCallback, createContext, useContext } fro
 import { OnboardingItem, CalendarEvent } from '@/lib/types';
 import { ClientCard } from './client-card';
 
-// True when onboarding progress (% + checklist bar) should be hidden on the
-// event cards — i.e. in the Customer Service surface. Read by CalendarEventCard
-// so we don't have to thread the flag through WeekView / MonthView.
-const HideCardProgressContext = createContext(false);
+// True when the calendar is mounted in the Customer Service surface. Read by
+// CalendarEventCard (so we don't thread the flag through WeekView / MonthView)
+// to strip the onboarding-only chrome from the cards: progress %, checklist,
+// the "summary email to the team" icon, and the days-inactive alert.
+const CustomerServiceCardContext = createContext(false);
 import { ChevronLeft, ChevronRight, Phone, Package } from 'lucide-react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -76,7 +77,7 @@ function CalendarEventCard({ event, agentEmail, onSelect, onDragStart, onDragEnd
   onDragStart?: (event: CalendarEvent) => void;
   onDragEnd?: () => void;
 }) {
-  const hideProgress = useContext(HideCardProgressContext);
+  const customerService = useContext(CustomerServiceCardContext);
   const draggable = event.type === 'delivery' && Boolean(event.item.clientBoardItemId);
   return (
     <div
@@ -92,7 +93,7 @@ function CalendarEventCard({ event, agentEmail, onSelect, onDragStart, onDragEnd
       onDragEnd={() => onDragEnd?.()}
     >
       <EventBadge event={event} />
-      <ClientCard item={event.item} agentEmail={agentEmail} onClick={onSelect} hideProgress={hideProgress} />
+      <ClientCard item={event.item} agentEmail={agentEmail} onClick={onSelect} customerService={customerService} />
     </div>
   );
 }
@@ -448,7 +449,7 @@ export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate,
   const deliveryCount = events.filter(e => e.type === 'delivery').length;
 
   return (
-    <HideCardProgressContext.Provider value={appMode === 'customer-service'}>
+    <CustomerServiceCardContext.Provider value={appMode === 'customer-service'}>
     <div className="flex-1 flex flex-col overflow-hidden bg-gray-50">
 
       {/* ── Sub-header ── */}
@@ -542,6 +543,6 @@ export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate,
         />
       )}
     </div>
-    </HideCardProgressContext.Provider>
+    </CustomerServiceCardContext.Provider>
   );
 }

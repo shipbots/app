@@ -59,6 +59,23 @@ export function SectionNav({ userEmail, userName, userImage, isAdmin = false }: 
 
   const visibleSections = SECTIONS.filter(s => !s.adminOnly || isAdmin);
 
+  // When a client is open, the board mirrors it into ?clientId=&expanded= .
+  // Carry that across when the rep switches sections so they land on the SAME
+  // client in the other surface (e.g. CS → Onboarding opens that client's
+  // onboarding view) instead of searching again. A full navigation guarantees
+  // the destination board re-runs its open-on-mount effect.
+  const carryClientAcross = (e: React.MouseEvent, href: string) => {
+    if (typeof window === 'undefined') return;
+    if (window.location.pathname.startsWith(href)) return; // already here
+    const sp = new URLSearchParams(window.location.search);
+    const clientId = sp.get('clientId');
+    if (!clientId) return; // no client open — let <Link> navigate normally
+    e.preventDefault();
+    const params = new URLSearchParams({ clientId });
+    if (sp.get('expanded') === '1') params.set('expanded', '1');
+    window.location.href = `${href}?${params.toString()}`;
+  };
+
   return (
     <nav
       className="flex-shrink-0 flex items-center justify-between px-4 border-b border-white/10 z-50"
@@ -86,6 +103,7 @@ export function SectionNav({ userEmail, userName, userImage, isAdmin = false }: 
               <Link
                 key={section.href}
                 href={section.href}
+                onClick={e => carryClientAcross(e, section.href)}
                 className={[
                   'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors select-none',
                   active

@@ -8,9 +8,11 @@ interface ClientCardProps {
   item: OnboardingItem;
   agentEmail: string | null;
   onClick: () => void;
-  /** Hide the onboarding progress % and checklist bar. Used in the Customer
-   *  Service surface, where onboarding progress isn't relevant. */
-  hideProgress?: boolean;
+  /** Customer Service surface: hide the onboarding-only chrome — progress %,
+   *  checklist bar, the "summary email to the team" warning icon, and the
+   *  days-inactive alert (incl. the red stale border). CS reps still see the
+   *  pending-tasks badge, the assigned agent, and the expected delivery. */
+  customerService?: boolean;
 }
 
 const AGENT_PALETTE = [
@@ -41,7 +43,7 @@ function isFutureDateTime(date: string | null, time: string | null): boolean {
   return dayEnd.getTime() > now;
 }
 
-export function ClientCard({ item, agentEmail, onClick, hideProgress = false }: ClientCardProps) {
+export function ClientCard({ item, agentEmail, onClick, customerService = false }: ClientCardProps) {
   const daysSinceUpdate = Math.floor(
     (Date.now() - new Date(item.updatedAt).getTime()) / (1000 * 60 * 60 * 24)
   );
@@ -64,7 +66,7 @@ export function ClientCard({ item, agentEmail, onClick, hideProgress = false }: 
       type="button"
       onClick={onClick}
       className={`w-full text-left bg-white rounded-lg border p-3 cursor-pointer hover:shadow-md transition-shadow ${
-        isStale ? 'border-l-4 border-l-red-400' : 'border-gray-200'
+        isStale && !customerService ? 'border-l-4 border-l-red-400' : 'border-gray-200'
       }`}
     >
       <div className="flex items-start justify-between mb-2">
@@ -79,8 +81,8 @@ export function ClientCard({ item, agentEmail, onClick, hideProgress = false }: 
               ✓ {item.subitemCount}
             </span>
           )}
-          {/* Email summary pending indicator */}
-          {emailPending && (
+          {/* Email summary pending indicator — onboarding-only chrome */}
+          {emailPending && !customerService && (
             <span title="Onboarding summary email not yet sent">
               <MailWarning className="w-4 h-4 text-orange-400" />
             </span>
@@ -103,7 +105,7 @@ export function ClientCard({ item, agentEmail, onClick, hideProgress = false }: 
             </span>
           )}
           {/* Progress — onboarding-only; hidden in Customer Service */}
-          {!hideProgress && (
+          {!customerService && (
             <span className="text-xs font-bold rounded-full w-8 h-8 flex items-center justify-center" style={{ background: 'var(--brand-cyan)', color: 'var(--brand-navy)' }}>
               {item.progress}%
             </span>
@@ -111,7 +113,7 @@ export function ClientCard({ item, agentEmail, onClick, hideProgress = false }: 
         </div>
       </div>
 
-      {!hideProgress && <ChecklistBar steps={item.checklist} compact />}
+      {!customerService && <ChecklistBar steps={item.checklist} compact />}
 
       <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
         <div className="flex items-center gap-1">
@@ -150,8 +152,8 @@ export function ClientCard({ item, agentEmail, onClick, hideProgress = false }: 
               {formatShortDate(item.deliveredDate)}
             </span>
           )}
-          {/* Fallback: stale indicator */}
-          {!showKickoff && !item.deliveredDate && isStale && (
+          {/* Fallback: stale indicator — onboarding-only; hidden in CS */}
+          {!showKickoff && !item.deliveredDate && isStale && !customerService && (
             <span className="text-red-500">{daysSinceUpdate}d inactive</span>
           )}
         </div>
