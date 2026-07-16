@@ -992,6 +992,7 @@ function EditField({
   placeholder,
   highlight,
   copyable = false,
+  onSaved,
 }: {
   label: string;
   value: string;
@@ -1003,6 +1004,9 @@ function EditField({
   highlight?: boolean;
   /** Show a copy-to-clipboard button on hover when the field has a value */
   copyable?: boolean;
+  /** Called with the new value after a successful save — lets the parent update
+   *  local state live (e.g. so the ShipHero Name unlocks notifications). */
+  onSaved?: (value: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(initialValue);
@@ -1048,6 +1052,7 @@ function EditField({
       // (savedValue is still the pre-save value here).
       if (isContactEmailColumn(columnId)) sync.onContactEmailChanged(savedValue, value);
       setSavedValue(value);
+      onSaved?.(value);
       setFlash('saved');
       // Brief "Saved ✓" pause on the button before closing edit mode, so the
       // user actually sees the confirmation.
@@ -1992,7 +1997,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
 
           {/* ── Primary column (always visible) ── */}
           <div>
-            <EditField label="🚢 ShipHero Name" value={localClient.shipHeroName} columnId="text_mkw9n26z" clientId={id} highlight />
+            <EditField label="🚢 ShipHero Name" value={localClient.shipHeroName} columnId="text_mkw9n26z" clientId={id} highlight onSaved={v => setLocalClient(prev => ({ ...prev, shipHeroName: v }))} />
             <EditField label="🆔 ShipHero Customer Account ID" value={localClient.shipHeroId} columnId="text_mktmf2yw" clientId={id} highlight />
             <SelectField label="💳 Payment on File?" value={localClient.paymentOnFile} columnId="dropdown_mm47xxjv" clientId={id} options={colOptions['dropdown_mm47xxjv'] ?? ['Yes', 'No']} valueType="dropdown" highlight />
             <SelectField label="⭐ AppDot / Portal" value={localClient.portalDropdown} columnId="dropdown_mktrbeyg" clientId={id} options={colOptions['dropdown_mktrbeyg'] ?? []} valueType="dropdown" highlight />

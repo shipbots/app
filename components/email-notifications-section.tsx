@@ -12,7 +12,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Bell, ChevronRight, X, Plus, Loader2, User } from 'lucide-react';
+import { Bell, ChevronRight, X, Plus, Loader2, User, AlertTriangle } from 'lucide-react';
 import type { ClientInfo } from '@/lib/types';
 import {
   NOTIFICATION_TYPES,
@@ -230,8 +230,16 @@ function NotificationRow({
     void saveEmails([...emails, e]);
   };
 
+  const nameReady = shipHeroName.trim().length > 0;
+
   const setEnabledYesNo = async (yes: boolean) => {
     if (yes === enabled) return;
+    // Notifications can't be turned ON without a ShipHero Name — that's the key
+    // logged to the Google Sheet, so an empty name would create nameless rows.
+    if (yes && !nameReady) {
+      setError('Add a ShipHero Name (in Client Info) before turning on notifications.');
+      return;
+    }
     onEnabledChange(yes); // optimistic (lifted state)
     setSavingToggle(true);
     setError('');
@@ -258,11 +266,21 @@ function NotificationRow({
         <p className="text-[13px] font-medium text-gray-800 min-w-0">{label}?</p>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {savingToggle && <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />}
-          <YesNoToggle value={enabled} onChange={setEnabledYesNo} disabled={savingToggle} />
+          <YesNoToggle value={enabled} onChange={setEnabledYesNo} disabled={savingToggle || (!nameReady && !enabled)} />
         </div>
       </div>
 
-      {enabled && (
+      {/* No ShipHero Name → notifications can't be turned on and no recipients
+          can be added (the name is the key logged to the Google Sheet). Shown
+          even if it was auto-enabled, so nameless rows can never be created. */}
+      {!nameReady && (
+        <p className="mt-2 text-[11px] text-amber-600 flex items-center gap-1.5">
+          <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+          A ShipHero Name (in Client Info) is required to use notifications.
+        </p>
+      )}
+
+      {enabled && nameReady && (
         <div className="mt-3 pt-3 border-t border-gray-100">
           <div className="flex items-center gap-1.5 mb-2">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Add email to notify</p>
