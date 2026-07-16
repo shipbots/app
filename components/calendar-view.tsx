@@ -373,12 +373,12 @@ export function CalendarView({ items, agentEmailMap, onSelectItem, onItemUpdate,
           item,
         });
       }
-      // Delivery. In Customer Service, once the inventory has actually been
-      // received we plot the real Delivered Date (item.deliveredDate) and drop
-      // the estimate — only one of the two ever shows for a client. When the
-      // Delivered Date is empty we fall back to the Initial Inventory Est.
-      // Delivery Date (date_mktrzhyk). Onboarding always shows the estimate.
-      if (isCustomerService && isValidDateStr(item.deliveredDate)) {
+      // Delivery. Once the inventory has actually been received we plot the
+      // real Delivered Date (item.deliveredDate) and drop the estimate — only
+      // one of the two ever shows for a client. When the Delivered Date is
+      // empty we fall back to the Initial Inventory Est. Delivery Date
+      // (date_mktrzhyk). Applies to both surfaces.
+      if (isValidDateStr(item.deliveredDate)) {
         result.push({
           id: `${item.id}-delivered`,
           type: 'delivery',
