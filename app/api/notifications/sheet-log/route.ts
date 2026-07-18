@@ -31,11 +31,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const action = body.action === 'remove' ? 'remove' : 'add';
+  const action =
+    body.action === 'remove' ? 'remove' : body.action === 'sync' ? 'sync' : 'add';
   const shipHeroName = typeof body.shipHeroName === 'string' ? body.shipHeroName.trim() : '';
   const emails = typeof body.emails === 'string' ? body.emails.trim() : '';
-  // Nothing to do — no e-mails named for this add/remove.
-  if (!emails) {
+  // A 'sync' carries the client's FULL current list — an empty list is meaningful
+  // (it clears the client's row), so only the client key is required. For a delta
+  // add/remove, an empty list is a no-op.
+  if (action === 'sync' ? !shipHeroName : !emails) {
     return NextResponse.json({ ok: true, configured: true, sent: false });
   }
 

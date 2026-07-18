@@ -3,7 +3,8 @@
  *
  * The Monday.com column write stays the PRIMARY process and is unchanged — this
  * is a purely additive side-effect. We POST to a Google Apps Script Web App
- * bound to the user's sheet; the script appends a row. Configured via env:
+ * bound to the user's sheet; the script keeps ONE consolidated row per client
+ * (ShipHero name + comma-separated e-mails). Configured via env:
  *
  *   NOTIFICATION_SHEET_WEBHOOK_URL     — the Apps Script "/exec" deployment URL
  *   NOTIFICATION_SHEET_WEBHOOK_SECRET  — optional shared secret the script checks
@@ -17,11 +18,19 @@ export function isNotificationSheetConfigured(): boolean {
 }
 
 export interface NotificationSheetInput {
-  /** 'add' appends a row per e-mail; 'remove' deletes the matching rows. */
-  action: 'add' | 'remove';
-  /** ShipHero (QB display) name of the client. */
+  /**
+   * 'sync' replaces the client's row with the full current recipient list (one
+   * consolidated, comma-separated row per client) — what the app sends on every
+   * change. 'add'/'remove' are legacy delta operations kept for compatibility.
+   */
+  action: 'add' | 'remove' | 'sync';
+  /** ShipHero (QB display) name of the client — the row key. */
   shipHeroName: string;
-  /** Comma-separated e-mail addresses that were added / removed. */
+  /**
+   * Comma-separated e-mail addresses. For 'sync' this is the client's FULL
+   * current recipient list (empty clears the client's row); for 'add'/'remove'
+   * it's the delta.
+   */
   emails: string;
 }
 

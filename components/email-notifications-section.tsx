@@ -33,23 +33,20 @@ async function patchColumn(clientId: string, columnId: string, value: string): P
 }
 
 /**
- * Best-effort: mirror a notification-email change to the Google Sheet so it
- * reflects the current recipients — 'add' appends a row per e-mail, 'remove'
- * deletes the matching rows. Fire-and-forget: Monday.com is the source of truth;
- * the sheet is a side mirror, so failures never surface in the UI. No-ops
+ * Best-effort: mirror this client's CURRENT recipient list to the Google Sheet
+ * as one consolidated, comma-separated row ('sync'). Sending the full list every
+ * time means removing an e-mail leaves only the ones still checked, and an empty
+ * list clears the client's row. Fire-and-forget: Monday.com is the source of
+ * truth; the sheet is a side mirror, so failures never surface in the UI. No-ops
  * server-side when the sheet webhook isn't configured.
  */
-async function logNotificationToSheet(
-  action: 'add' | 'remove',
-  shipHeroName: string,
-  emails: string,
-): Promise<void> {
-  if (!emails.trim()) return;
+async function syncSheetRecipients(shipHeroName: string, emails: string): Promise<void> {
+  if (!shipHeroName.trim()) return; // the name is the row key — nothing to target without it
   try {
     await fetch('/api/notifications/sheet-log', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, shipHeroName, emails }),
+      body: JSON.stringify({ action: 'sync', shipHeroName, emails }),
     });
   } catch {
     /* best-effort — ignore */
@@ -195,19 +192,14 @@ function NotificationRow({
   const isChecked = (email: string) => emails.some(e => emailsEqual(e, email));
 
   const saveEmails = async (next: string[]) => {
-    // Which e-mails are NEW in this save (vs the current list) — only these are
-    // mirrored to the Google Sheet, so removals don't create rows.
-    const added = next.filter(e => !emails.some(p => emailsEqual(p, e)));
-    const removed = emails.filter(e => !next.some(p => emailsEqual(p, e)));
     setEmails(next); // optimistic
     setSavingEmails(true);
     setError('');
     try {
       await patchColumn(clientBoardItemId, emailsColumnId, joinEmailList(next));
-      // Monday saved — mirror the change to the Google Sheet (append added rows,
-      // delete removed ones) so it tracks the current recipients.
-      if (added.length > 0) void logNotificationToSheet('add', shipHeroName, joinEmailList(added));
-      if (removed.length > 0) void logNotificationToSheet('remove', shipHeroName, joinEmailList(removed));
+      // Monday saved — mirror the FULL current list to the Google Sheet as one
+      // consolidated row, so adds and removes both leave only the checked set.
+      void syncSheetRecipients(shipHeroName, joinEmailList(next));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -246,11 +238,10 @@ function NotificationRow({
     try {
       await patchColumn(clientBoardItemId, enabledColumnId, yes ? 'Yes' : 'No');
       if (!yes) {
-        // Turning off clears all recipient emails — remove them from the sheet too.
-        const cleared = emails;
+        // Turning off clears all recipient emails — clear the client's sheet row too.
         setEmails([]);
         await patchColumn(clientBoardItemId, emailsColumnId, '');
-        if (cleared.length > 0) void logNotificationToSheet('remove', shipHeroName, joinEmailList(cleared));
+        void syncSheetRecipients(shipHeroName, '');
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');

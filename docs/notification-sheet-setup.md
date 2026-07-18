@@ -1,11 +1,13 @@
 # Address-Hold Notification → Google Sheet
 
-When notification e-mails are **added or removed** for a client (the "Address
-Hold Notification E-mail(s)" flow), the app mirrors the change to a Google
-Sheet — appending a **ShipHero name + e-mail** row on add, and deleting the
-matching row on remove (also when the notification is switched off, which clears
-all its e-mails). The Monday.com column write is unchanged, and the sheet
-integration silently no-ops until the webhook below is configured.
+When notification e-mails change for a client (the "Address Hold Notification
+E-mail(s)" flow), the app mirrors the current recipients to a Google Sheet as
+**one consolidated row per client** — the **ShipHero name** in column A and all
+that client's e-mails **comma-separated** in column B. Every change re-syncs the
+full list, so removing an e-mail leaves only the ones still checked, and turning
+the notification off clears the client's row. The Monday.com column write is
+unchanged, and the sheet integration silently no-ops until the webhook below is
+configured.
 
 Target sheet:
 `https://docs.google.com/spreadsheets/d/1OvvO90JQgJ2r4DHSA6hI9aWpX9w-EULUQVO3l2dpSOE/edit`
@@ -46,8 +48,9 @@ Redeploy. Done — add an e-mail to a client's notifications and a row appears.
 
 ```javascript
 // ShipBots — Address Hold Notification logger.
-// Adds / removes { ShipHero name, e-mail } rows so the sheet mirrors the
-// current notification recipients.
+// Keeps ONE consolidated row per client: { ShipHero name, comma-separated
+// e-mails, timestamp }. The app sends the full current recipient list on every
+// change ('sync'), so the sheet always mirrors exactly who is checked.
 
 const SHEET_NAME = '';        // '' = first tab. Or set a specific tab name.
 const SHARED_SECRET = '';     // must match NOTIFICATION_SHEET_WEBHOOK_SECRET (or '' to disable)
@@ -63,20 +66,46 @@ function doPost(e) {
     const name = String(data.shipHeroName || '').trim();
     const emails = String(data.emails || '')
       .split(',').map(function (s) { return s.trim(); }).filter(String);
-    const action = data.action || 'add';
+    const action = data.action || 'sync';
+    const at = data.at || new Date().toISOString();
 
+    // 'sync' (the app's normal path) replaces the client's row with the full
+    // current list — one consolidated, comma-separated row. Passing no e-mails
+    // clears the client. 'remove'/'add' are legacy deltas kept for compatibility.
     if (action === 'remove') {
       return json_({ ok: true, action: 'remove', removed: removeRows_(sheet, name, emails) });
     }
-
-    // add — one row per e-mail so a later 'remove' can match it exactly.
-    // Columns: ShipHero name, e-mail, timestamp. Reorder to match your sheet.
-    const at = data.at || new Date().toISOString();
-    emails.forEach(function (email) { sheet.appendRow([name, email, at]); });
-    return json_({ ok: true, action: 'add', added: emails.length });
+    if (action === 'add') {
+      emails.forEach(function (email) { sheet.appendRow([name, email, at]); });
+      return json_({ ok: true, action: 'add', added: emails.length });
+    }
+    return json_({ ok: true, action: 'sync', recipients: syncClient_(sheet, name, emails, at) });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
   }
+}
+
+// Full replace for ONE client: the sheet keeps exactly one row per ShipHero name,
+// with every current recipient comma-separated in col B. Deletes the client's
+// existing rows (matched by name, case-insensitive) — plus any nameless legacy
+// row whose e-mails are ALL in this set, so old one-per-e-mail rows fold in — then
+// writes a single consolidated row when any recipients remain. No e-mails => the
+// client's row is removed. A different client's addresses are never touched.
+function syncClient_(sheet, name, emails, at) {
+  const wantName = String(name || '').trim().toLowerCase();
+  if (!wantName) return 0; // no client key — nothing to target
+  const set = {};
+  emails.forEach(function (e) { set[e.toLowerCase()] = true; });
+  const values = sheet.getDataRange().getValues();
+  for (let r = values.length - 1; r >= 0; r--) { // bottom-up so indices stay valid
+    const rowName = String(values[r][0] || '').trim().toLowerCase();
+    const cell = String(values[r][1] || '').split(',').map(function (s) { return s.trim(); }).filter(String);
+    const foldableBlank = rowName === '' && cell.length > 0 &&
+      cell.every(function (em) { return set[em.toLowerCase()]; });
+    if (rowName === wantName || foldableBlank) sheet.deleteRow(r + 1);
+  }
+  if (emails.length > 0) sheet.appendRow([name, emails.join(', '), at]);
+  return emails.length;
 }
 
 // Delete rows whose e-mail cell (col B) contains one of the removed e-mails and
@@ -142,15 +171,19 @@ function json_(obj) {
   Edit → Version: New version → Deploy** (same `/exec` URL, so no env-var change).
   If a stray row has a *non-blank but wrong* name (e.g. the client was renamed
   after the row was written), delete that row by hand once.
-- **Verify a deploy from the terminal** without touching the UI — POST an add
-  then a remove and read the JSON (note: no `-X POST`, so curl switches to GET on
-  Apps Script's 302 the same way the app's `fetch` does):
+- **Verify a deploy from the terminal** without touching the UI — POST a `sync`
+  with two e-mails (one consolidated row), then a `sync` with one (it collapses
+  back to a single address), and read the JSON (note: no `-X POST`, so curl
+  switches to GET on Apps Script's 302 the same way the app's `fetch` does):
   ```bash
   URL="…/exec"
   curl -sSL -H "Content-Type: application/json" \
-    -d '{"action":"add","shipHeroName":"ZZ-TEST","emails":"zz@example.com"}' "$URL"
+    -d '{"action":"sync","shipHeroName":"ZZ-TEST","emails":"a@x.com, b@x.com"}' "$URL"
   curl -sSL -H "Content-Type: application/json" \
-    -d '{"action":"remove","shipHeroName":"ZZ-TEST","emails":"zz@example.com"}' "$URL"
+    -d '{"action":"sync","shipHeroName":"ZZ-TEST","emails":"a@x.com"}' "$URL"
+  curl -sSL -H "Content-Type: application/json" \
+    -d '{"action":"sync","shipHeroName":"ZZ-TEST","emails":""}' "$URL"   # clears the row
   ```
-  A working deploy returns `{"ok":true,"action":"add","added":1}` then
-  `{"ok":true,"action":"remove","removed":1}`.
+  A working deploy returns `{"ok":true,"action":"sync","recipients":2}`, then
+  `…"recipients":1`, then `…"recipients":0` — and the sheet holds one `ZZ-TEST`
+  row that shows `a@x.com, b@x.com` → `a@x.com` → gone.
