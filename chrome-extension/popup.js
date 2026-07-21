@@ -182,14 +182,29 @@ function matchScore(client, query) {
 function filterClients(clients, query, limit = 8) {
   const q = query.trim();
   if (!q) return [];
-  return clients
+  const scored = clients
     .map(c => {
       const m = matchScore(c, q);
       return m ? { ...m, c } : null;
     })
     .filter(Boolean)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+    .sort((a, b) => b.score - a.score);
+  // Collapse clients that share a name into a single result. A client can exist
+  // as more than one Clients-board record (e.g. separate records per contact),
+  // which otherwise lists the same name several times. Highest score wins, so a
+  // name search shows the primary contact and an email search shows the record
+  // that actually matched.
+  const seenName = new Set();
+  const deduped = [];
+  for (const r of scored) {
+    const nameKey = String(r.c.name || '').trim().toLowerCase();
+    if (nameKey) {
+      if (seenName.has(nameKey)) continue;
+      seenName.add(nameKey);
+    }
+    deduped.push(r);
+  }
+  return deduped.slice(0, limit);
 }
 
 function renderResults(results, container, activeIdx) {
@@ -1245,8 +1260,11 @@ function noteShortDate(iso) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function noteInitials(email) {
-  return String(email ?? '').trim().slice(0, 2).toUpperCase();
+// Author label on a note — the full first name from the @shipbots.com email
+// ("andres@shipbots.com" → "Andres"), matching the dashboard sticky notes and
+// the agent pill, so it's clear at a glance who wrote it.
+function noteAuthorName(email) {
+  return firstNameFromEmail(email);
 }
 
 function renderClientStickyNotes(notes) {
@@ -1272,8 +1290,8 @@ function renderClientStickyNotes(notes) {
     card.className = `note-card ${color}`;
 
     const date = noteShortDate(note.createdAt);
-    const initials = noteInitials(note.authorEmail);
-    if (date || initials) {
+    const author = noteAuthorName(note.authorEmail);
+    if (date || author) {
       const meta = document.createElement('div');
       meta.className = 'note-card-meta';
       if (date) {
@@ -1281,14 +1299,14 @@ function renderClientStickyNotes(notes) {
         s.textContent = date;
         meta.appendChild(s);
       }
-      if (date && initials) {
+      if (date && author) {
         const sep = document.createElement('span');
         sep.textContent = '·';
         meta.appendChild(sep);
       }
-      if (initials) {
+      if (author) {
         const s = document.createElement('span');
-        s.textContent = initials;
+        s.textContent = author;
         meta.appendChild(s);
       }
       card.appendChild(meta);

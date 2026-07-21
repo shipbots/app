@@ -202,5 +202,21 @@ export function searchClients(
   }
 
   hits.sort((a, b) => b.score - a.score);
-  return hits.slice(0, limit);
+
+  // Collapse clients that share a name into a single result. A client can exist
+  // as more than one record (a duplicate Clients-board item, or separate records
+  // per contact), which otherwise lists the same name several times. Keeping the
+  // highest-scoring hit means a name search shows the primary contact while an
+  // email / phone search still surfaces the record that actually matched.
+  const seenName = new Set<string>();
+  const deduped: ClientSearchHit[] = [];
+  for (const hit of hits) {
+    const nameKey = (hit.item.name || hit.entry?.name || '').trim().toLowerCase();
+    if (nameKey) {
+      if (seenName.has(nameKey)) continue;
+      seenName.add(nameKey);
+    }
+    deduped.push(hit);
+  }
+  return deduped.slice(0, limit);
 }
