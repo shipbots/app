@@ -1175,16 +1175,24 @@ export function ClientsView({
     };
   }, [projects]);
 
+  // The sub-header only holds the local search box and the search-index status
+  // now (the "View inactive clients" toggle moved to the All Clients header).
+  // In the CS surface the app header hosts the search (hideLocalSearch) and the
+  // view isn't query-controlled, so once the index is ready this row is empty —
+  // hide it rather than leave a blank gap above the tables.
+  const showSubHeader =
+    (!isControlled && !hideLocalSearch) || (isControlled && indexStatus !== 'ready');
+
   return (
     // Vertical scroll container: each table below keeps a fixed, comfortable
     // size and the whole page scrolls to fit them — so more tables/sections
     // can be stacked here later without squeezing the existing ones.
     <div className="flex-1 min-h-0 flex flex-col overflow-y-auto bg-gray-50 p-4 gap-3">
-      {/* Sub-header: search + view inactive toggle.
-          When the header hosts the search (hideLocalSearch / controlled mode)
-          the "Browse by Client" title and the local search input both go away
-          — the surrounding row shrinks to just the inactive toggle. Otherwise
-          (fallback / other surfaces) the local search input still renders. */}
+      {/* Sub-header: local search + search-index status. The "View inactive
+          clients" toggle now lives in the All Clients table header. When the
+          app header hosts the search (hideLocalSearch / controlled mode) this
+          row can be empty, so it's hidden (see showSubHeader). */}
+      {showSubHeader && (
       <div className="flex items-center gap-3 flex-shrink-0">
         {!isControlled && !hideLocalSearch && (
           <div className="flex items-center gap-2 text-sm text-gray-700">
@@ -1235,27 +1243,8 @@ export function ClientsView({
           </p>
         )}
 
-        {/* View inactive clients — toggle button. Off by default; turning it
-            on brings inactive (Exited group) clients back into both tables. */}
-        <button
-          type="button"
-          onClick={() => setShowInactive(v => !v)}
-          title={showInactive ? 'Hide inactive (Exited group) clients' : 'Show inactive (Exited group) clients in the lists'}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-colors flex-shrink-0 ${
-            showInactive
-              ? 'border-[#43c7ff] bg-[#e6f8ff] text-[#015280]'
-              : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-          }`}
-        >
-          {showInactive ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-          {showInactive ? 'Hiding nothing' : 'View inactive clients'}
-          {!showInactive && inactiveHiddenCount > 0 && (
-            <span className="ml-0.5 text-[10px] font-bold bg-gray-200 text-gray-700 rounded-full px-1.5 py-0.5 leading-none">
-              {inactiveHiddenCount}
-            </span>
-          )}
-        </button>
       </div>
+      )}
 
       {/* Two-column layout: stacked client tables on the left, tasks on the
           right. `items-start` lets the tasks rail be sticky while the tables
@@ -1321,6 +1310,27 @@ export function ClientsView({
             }}
             headerExtra={
               <div className="flex items-center gap-2">
+                {/* View inactive clients — off by default (inactive/Exited-group
+                    clients are hidden from the lists). Turning it on brings them
+                    back into both tables. Lives here, on the All Clients header. */}
+                <button
+                  type="button"
+                  onClick={() => setShowInactive(v => !v)}
+                  title={showInactive ? 'Hide inactive (Exited group) clients' : 'Show inactive (Exited group) clients'}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-colors ${
+                    showInactive
+                      ? 'border-[#43c7ff] bg-[#e6f8ff] text-[#015280]'
+                      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {showInactive ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                  {showInactive ? 'Showing inactive' : 'View inactive'}
+                  {!showInactive && inactiveHiddenCount > 0 && (
+                    <span className="ml-0.5 text-[10px] font-bold bg-gray-200 text-gray-700 rounded-full px-1.5 py-0.5 leading-none">
+                      {inactiveHiddenCount}
+                    </span>
+                  )}
+                </button>
                 {selectedManagers.size > 0 && (
                   <button
                     type="button"
