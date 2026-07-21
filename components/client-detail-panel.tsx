@@ -1721,6 +1721,31 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
               </div>
             )}
           </div>
+          {activeTab === 'billing' && canViewBilling && (
+            <div className="h-full overflow-hidden">
+              {loadingClient && !clientInfo ? (
+                <div className="p-4 flex items-center justify-center h-32">
+                  <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-500 border-t-transparent" />
+                  <span className="ml-2 text-sm text-gray-500">Loading billing info…</span>
+                </div>
+              ) : clientInfo ? (
+                <ClientInfoTab
+                  client={clientInfo}
+                  billingOnly
+                  customerService={isCustomerService}
+                  onboardingItemId={item.id}
+                  deliveredDate={item.deliveredDate}
+                  onDeliveredDateSaved={(newValue) =>
+                    onItemUpdate?.(item.id, { deliveredDate: newValue || null })
+                  }
+                />
+              ) : (
+                <div className="p-8 text-center text-gray-500">
+                  <p className="text-sm">No client record linked</p>
+                </div>
+              )}
+            </div>
+          )}
           {activeTab === 'meetings' && (
             <MeetingsTab
               meetings={meetings}
