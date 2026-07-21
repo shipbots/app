@@ -6,7 +6,7 @@ import {
   Mail, Phone, MapPin, ExternalLink, Check, Pencil,
   ChevronDown, ChevronRight, Upload, FileText, Sparkles, Calendar, Plus,
   UserCheck, UserPlus, X, Loader2, ShieldCheck, Users, Copy, KeyRound, LogIn,
-  ArrowUpDown, Paperclip,
+  ArrowUpDown, Paperclip, Receipt, CreditCard, Info, Landmark,
 } from 'lucide-react';
 import { ClientStickyNotesSummary } from './client-sticky-notes-summary';
 import { SectionDocuments } from './section-documents';
@@ -251,6 +251,12 @@ interface ClientInfoTabProps {
    *  with a per-section Edit button that reveals all fields for editing.
    *  Off (default) in Onboarding, which keeps the always-editable layout. */
   customerService?: boolean;
+  /** Render ONLY the curated Billing Info view — a filtered subset of fields
+   *  for the billing department (ShipHero / legal / EIN / QuickBooks / invoicing
+   *  / billing address / DocuSign / delivered date). The parent gates this tab
+   *  to viewers with DocuSign access, so EIN + the contract are never redacted
+   *  here. Skips every other section, the name header, and contacts. */
+  billingOnly?: boolean;
   /** Projects (scaffold) + opener — renders a "Projects for this client" box
    *  in the side-panel (non-fullscreen) CS view. The expanded view shows its
    *  own box in the right column, so this one is gated to !fullscreen. */
@@ -736,6 +742,7 @@ function DateField({
   highlight,
   patchUrl,
   onSaved,
+  labelTooltip,
 }: {
   label: string;
   value: string;
@@ -747,6 +754,8 @@ function DateField({
   patchUrl?: string;
   /** Called with the new value after a successful save (for parent sync) */
   onSaved?: (newValue: string) => void;
+  /** Extra context shown on hover over the label (an ⓘ appears next to it). */
+  labelTooltip?: string;
 }) {
   const [value, setValue] = useState(initialValue);
   const [savedValue, setSavedValue] = useState(initialValue);
@@ -806,7 +815,7 @@ function DateField({
         onClick={() => { setExpanded(true); setTimeout(() => inputRef2.current?.showPicker?.(), 50); }}
       >
         {icon && <span className="text-gray-400 flex-shrink-0">{icon}</span>}
-        <p className={`text-[11px] flex-1 leading-none ${isHighlighted ? 'text-amber-600 font-semibold' : 'text-gray-400'}`}>{label}</p>
+        <p title={labelTooltip} className={`text-[11px] flex-1 leading-none inline-flex items-center gap-1 ${labelTooltip ? 'cursor-help' : ''} ${isHighlighted ? 'text-amber-600 font-semibold' : 'text-gray-400'}`}>{label}{labelTooltip && <Info className="w-3 h-3 opacity-60 flex-shrink-0" />}</p>
         <Plus className="w-3 h-3 text-gray-300 group-hover:text-[#43c7ff] flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
     );
@@ -816,7 +825,7 @@ function DateField({
     <div className={`flex items-start gap-2 px-1 py-1.5 ${isHighlighted ? HL : ''}`}>
       {icon && <span className="text-gray-400 mt-0.5 flex-shrink-0">{icon}</span>}
       <div className="flex-1 min-w-0">
-        <p className={`text-[11px] leading-none mb-1 ${isHighlighted ? 'text-amber-600 font-semibold' : 'text-gray-400'}`}>{label}</p>
+        <p title={labelTooltip} className={`text-[11px] leading-none mb-1 inline-flex items-center gap-1 ${labelTooltip ? 'cursor-help' : ''} ${isHighlighted ? 'text-amber-600 font-semibold' : 'text-gray-400'}`}>{label}{labelTooltip && <Info className="w-3 h-3 opacity-60 flex-shrink-0" />}</p>
         <div className="flex items-center gap-2">
           <input
             ref={inputRef2}
@@ -1659,7 +1668,95 @@ function FileField({
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
-export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, hideHeader = false, hideContactInfo = false, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange, onDeliveredDateSaved, onEstimatedDeliveryDateSaved, customerService = false, projects = [], onOpenProject, onCreateProject }: ClientInfoTabProps) {
+// ─── Billing address (Billing Info tab) ──────────────────────────────────────
+// Shows the full billing address on one line (street, city, state, zip,
+// country). An explicit Edit button reveals the individual fields — each is a
+// normal EditField that PATCHes its own Monday column and reports back so the
+// composed line refreshes. Kept self-contained (its own edit toggle) so it
+// works the same in both the CS and Onboarding surfaces.
+function BillingAddressBlock({
+  client,
+  clientId,
+  onSaved,
+}: {
+  client: ClientInfo;
+  clientId: string;
+  onSaved: (patch: Partial<ClientInfo>) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const cityStateZip = [
+    [client.billingCity, client.billingState].filter(Boolean).join(', '),
+    client.billingZip,
+  ].filter(s => s && s.trim()).join(' ');
+  const composed = [
+    client.billingStreet1,
+    client.billingStreet2,
+    cityStateZip,
+    client.billingCountry,
+  ].map(s => (s || '').trim()).filter(Boolean).join(', ');
+
+  if (editing) {
+    return (
+      <div className="mt-1 mb-0.5 rounded-lg border border-gray-200 bg-gray-50/50 p-1.5">
+        <div className="flex items-center justify-between px-1 mb-0.5">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider inline-flex items-center gap-1">
+            <MapPin className="w-3 h-3" /> Billing Address
+          </p>
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            className="text-[11px] font-semibold text-white bg-[#015280] hover:bg-[#013d60] px-2.5 py-0.5 rounded-full transition-colors"
+          >
+            Done
+          </button>
+        </div>
+        <EditField label="Street 1" value={client.billingStreet1} columnId="text_mkx5vzht" clientId={clientId} highlight onSaved={v => onSaved({ billingStreet1: v })} />
+        <EditField label="Street 2" value={client.billingStreet2} columnId="text_mkx5f9p9" clientId={clientId} onSaved={v => onSaved({ billingStreet2: v })} />
+        <EditField label="City" value={client.billingCity} columnId="text_mkx5z70k" clientId={clientId} highlight onSaved={v => onSaved({ billingCity: v })} />
+        <EditField label="State" value={client.billingState} columnId="text_mkx5er1a" clientId={clientId} highlight onSaved={v => onSaved({ billingState: v })} />
+        <EditField label="Zip Code" value={client.billingZip} columnId="text_mkx5tjd7" clientId={clientId} highlight onSaved={v => onSaved({ billingZip: v })} />
+        <EditField label="Country" value={client.billingCountry} columnId="text_mkx5kyv4" clientId={clientId} highlight onSaved={v => onSaved({ billingCountry: v })} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start gap-2 px-1 py-1.5">
+      <MapPin className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-[11px] leading-none mb-0.5 text-gray-400">🏠 Billing Address</p>
+        {composed ? (
+          <p className="text-sm text-gray-900 break-words">{composed}</p>
+        ) : (
+          <p className="text-sm text-gray-400 italic">No billing address on file</p>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        title="Edit billing address"
+        className="flex-shrink-0 self-center text-[11px] font-semibold text-[#0071BC] hover:bg-[#e6f8ff] px-2 py-0.5 rounded-full transition-colors inline-flex items-center gap-1"
+      >
+        <Pencil className="w-3 h-3" /> Edit
+      </button>
+    </div>
+  );
+}
+
+// A single "Coming soon" row for the Payment Method card (ACH / credit card).
+function ComingSoonRow({ label, icon }: { label: string; icon?: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 px-1 py-1.5">
+      {icon && <span className="text-gray-400 flex-shrink-0">{icon}</span>}
+      <span className="text-sm text-gray-600 flex-1">{label}</span>
+      <span className="text-[10px] font-semibold uppercase tracking-wide bg-gray-100 text-gray-500 rounded-full px-2 py-0.5 flex-shrink-0">
+        Coming soon
+      </span>
+    </div>
+  );
+}
+
+export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, hideHeader = false, hideContactInfo = false, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange, onDeliveredDateSaved, onEstimatedDeliveryDateSaved, customerService = false, billingOnly = false, projects = [], onOpenProject, onCreateProject }: ClientInfoTabProps) {
   // The "two-column-per-section" layout is the standard fullscreen treatment
   // when the panel is the only thing on screen. The CS expanded view sets
   // forceSingleColumn so the right half of the screen can host its own
@@ -1925,6 +2022,73 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
       setExtracting(false);
     }
   }, [id, localClient.docusignFile]);
+
+  // ── Billing Info tab — a curated, access-gated subset of billing fields.
+  // Rendered directly editable (no CS read/edit toggle): the tab is only shown
+  // to DocuSign-access viewers, so EIN + the contract are never redacted here.
+  if (billingOnly) {
+    const cardCls = 'rounded-2xl bg-white border border-gray-200/70 shadow-[0_1px_2px_rgba(20,24,40,.04),0_6px_16px_rgba(20,24,40,.04)] overflow-hidden mb-2.5';
+    return (
+      <div className="p-3 overflow-y-auto h-full bg-[#F2F2F7]">
+        <section className={cardCls}>
+          <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-gray-100">
+            <Receipt className="w-4 h-4 text-[#0071BC] flex-shrink-0" />
+            <span className="text-[13px] font-semibold text-gray-800 tracking-[-0.01em]">Billing Info</span>
+          </div>
+          <div className="px-2 py-1.5">
+            <EditField label="🚢 ShipHero Name" value={localClient.shipHeroName} columnId="text_mkw9n26z" clientId={id} highlight onSaved={v => setLocalClient(prev => ({ ...prev, shipHeroName: v }))} />
+            <EditField label="🆔 ShipHero Customer Account ID" value={localClient.shipHeroId} columnId="text_mktmf2yw" clientId={id} highlight onSaved={v => setLocalClient(prev => ({ ...prev, shipHeroId: v }))} />
+            <SelectField label="🏢 Umbrella Company" value={localClient.umbrellaCompany} columnId="dropdown_mkyk2va7" clientId={id} options={colOptions['dropdown_mkyk2va7'] ?? []} valueType="dropdown" icon={<Landmark className="w-3.5 h-3.5" />} />
+            <EditField label="📋 Name of Legal Entity" value={localClient.legalEntity} columnId="text_mktp4fvk" clientId={id} highlight onSaved={v => setLocalClient(prev => ({ ...prev, legalEntity: v }))} />
+            {restrictSensitive ? (
+              <OnFileField label="🔢 EIN" onFile={!!localClient.einOnFile} columnId="text_mkxxfg1b" clientId={id} noun="EIN" editable />
+            ) : (
+              <EditField label="🔢 EIN" value={localClient.ein} columnId="text_mkxxfg1b" clientId={id} highlight onSaved={v => setLocalClient(prev => ({ ...prev, ein: v }))} />
+            )}
+            <EditField label="💼 QuickBooks Company Name" value={localClient.quickbooksName} columnId="text_mkx5b9b4" clientId={id} onSaved={v => setLocalClient(prev => ({ ...prev, quickbooksName: v }))} />
+            <EditField label="📧 Email for Invoices" value={localClient.invoicingEmail} columnId="text_mktqjmmm" clientId={id} icon={<Mail className="w-3.5 h-3.5" />} highlight onSaved={v => setLocalClient(prev => ({ ...prev, invoicingEmail: v }))} />
+            <BillingAddressBlock client={localClient} clientId={id} onSaved={patch => setLocalClient(prev => ({ ...prev, ...patch }))} />
+            {restrictSensitive ? (
+              <OnFileField label="📄 DocuSign Contract" onFile={!!localClient.docusignOnFile} columnId="" clientId={id} noun="DocuSign" icon={<FileText className="w-3.5 h-3.5" />} />
+            ) : (
+              <FileField
+                label="📄 DocuSign Contract"
+                file={localClient.docusignFile}
+                columnId="files"
+                clientId={onboardingItemId || id}
+                onUploaded={newFile => setLocalClient(prev => ({ ...prev, docusignFile: newFile }))}
+              />
+            )}
+            <DateField label="🖊️ Date DocuSign Signed" value={localClient.dateDocusignSigned} columnId="date_mkw2fhte" clientId={id} icon={<Calendar className="w-3.5 h-3.5" />} />
+            {onboardingItemId && (
+              <DateField
+                label="✅ Delivered Date"
+                value={deliveredDate || ''}
+                columnId="date__1"
+                clientId={id}
+                icon={<Calendar className="w-3.5 h-3.5" />}
+                patchUrl={`/api/onboarding/${onboardingItemId}`}
+                onSaved={onDeliveredDateSaved}
+                labelTooltip="This data is accurate as of 07/01/2026. Date the initial inventory arrived to our warehouse."
+              />
+            )}
+          </div>
+        </section>
+
+        {/* Payment method — ACH / credit card capture is not built yet. */}
+        <section className={cardCls}>
+          <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-gray-100">
+            <CreditCard className="w-4 h-4 text-[#0071BC] flex-shrink-0" />
+            <span className="text-[13px] font-semibold text-gray-800 tracking-[-0.01em]">Payment Method</span>
+          </div>
+          <div className="px-2 py-1.5">
+            <ComingSoonRow label="ACH / Bank Account" icon={<Landmark className="w-3.5 h-3.5" />} />
+            <ComingSoonRow label="Credit Card" icon={<CreditCard className="w-3.5 h-3.5" />} />
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <CsModeContext.Provider value={customerService}>

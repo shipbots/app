@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useSession } from 'next-auth/react';
 import { useCachedFetch } from '@/hooks/use-cached-fetch';
 import { OnboardingItem, ClientInfo, FirefliesMeeting, GmailThread } from '@/lib/types';
 import { StatusBadge } from './status-badge';
@@ -25,7 +26,7 @@ import type { Project } from '@/lib/projects';
 import {
   X, FileText, ClipboardList, Video, Mail, ExternalLink,
   Maximize2, Minimize2, UserPlus, ChevronDown, MailWarning, Phone, Package, CheckSquare, RefreshCw, FolderOpen,
-  Search, ChevronRight, Loader2, BarChart3, Truck,
+  Search, ChevronRight, Loader2, BarChart3, Truck, Receipt,
 } from 'lucide-react';
 
 // ─── Agent badge helpers ─────────────────────────────────────────────────────
@@ -641,11 +642,13 @@ interface ClientDetailPanelProps {
   onCreateProject?: (clientBoardItemId: string | null, clientName: string) => void;
 }
 
-type Tab = 'info' | 'onboarding' | 'meetings' | 'emails' | 'pos' | 'tasks' | 'docs' | 'bols';
+type Tab = 'info' | 'billing' | 'onboarding' | 'meetings' | 'emails' | 'pos' | 'tasks' | 'docs' | 'bols';
 
 // Tabs visible in the Customer Service surface — the focus is reference
-// material (client info + docs + BOLs), task work, and shared calendar context.
-const CUSTOMER_SERVICE_TABS: ReadonlyArray<Tab> = ['info', 'tasks', 'docs', 'bols'];
+// material (client info + billing + docs + BOLs), task work, and shared
+// calendar context. 'billing' is further gated to DocuSign-access viewers
+// (see canViewBilling) since it exposes EIN / the contract / billing address.
+const CUSTOMER_SERVICE_TABS: ReadonlyArray<Tab> = ['info', 'billing', 'tasks', 'docs', 'bols'];
 
 // ── Persisted layout sizes for the CS expanded view ──────────────────────
 // Keyed in localStorage so the rep's chosen split sticks across sessions /
@@ -672,6 +675,11 @@ function readPersistedNumber(key: string, fallback: number): number {
 
 export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onItemUpdate, onNavigate, appMode = 'onboarding', onClientActiveChanged, fullscreen: fullscreenProp, onFullscreenChange, projects = [], onOpenProject, onCreateProject }: ClientDetailPanelProps) {
   const isCustomerService = appMode === 'customer-service';
+  // The Billing Info tab exposes sensitive data (EIN, the DocuSign contract,
+  // billing address), so it's gated to the DocuSign-access group — the same
+  // people who already see EIN + the contract on the Client Info tab.
+  const { data: session } = useSession();
+  const canViewBilling = Boolean(session?.user?.canDocusign);
   // CS expanded view layout sizes — drag the handles to resize, prefs
   // persist in localStorage so they stick across sessions.
   const [leftColPct, setLeftColPct] = useState<number>(() =>
@@ -1018,6 +1026,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
   const allTabs: { id: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: 'onboarding', label: 'Onboarding', icon: <ClipboardList className="w-4 h-4" /> },
     { id: 'info', label: 'Client Info', icon: <FileText className="w-4 h-4" /> },
+    { id: 'billing', label: 'Billing Info', icon: <Receipt className="w-4 h-4" /> },
     { id: 'meetings', label: 'Meetings', icon: <Video className="w-4 h-4" /> },
     { id: 'emails', label: 'Emails', icon: <Mail className="w-4 h-4" /> },
     { id: 'pos', label: 'ShipHero POs', icon: <Package className="w-4 h-4" /> },
@@ -1031,11 +1040,14 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
     { id: 'bols', label: 'BOLs', icon: <Truck className="w-4 h-4" /> },
   ];
 
-  // Customer Service surface only shows Client Info, Tasks, Docs, and BOLs —
-  // keep the onboarding-specific tabs hidden so CS reps don't see / edit them.
-  const tabs = isCustomerService
+  // Customer Service surface only shows Client Info, Billing, Tasks, Docs, and
+  // BOLs — keep the onboarding-specific tabs hidden so CS reps don't see / edit
+  // them. The Billing Info tab is additionally hidden from anyone without
+  // DocuSign access, on either surface.
+  const tabs = (isCustomerService
     ? allTabs.filter(t => CUSTOMER_SERVICE_TABS.includes(t.id))
-    : allTabs;
+    : allTabs
+  ).filter(t => t.id !== 'billing' || canViewBilling);
 
   const panelWidth = fullscreen ? 'w-full' : 'w-full max-w-xl';
 
@@ -1142,6 +1154,31 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
           </div>
         )}
       </div>
+      {activeTab === 'billing' && canViewBilling && (
+        <div className="h-full overflow-hidden">
+          {loadingClient && !clientInfo ? (
+            <div className="p-4 flex items-center justify-center h-32">
+              <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-500 border-t-transparent" />
+              <span className="ml-2 text-sm text-gray-500">Loading billing info…</span>
+            </div>
+          ) : clientInfo ? (
+            <ClientInfoTab
+              client={clientInfo}
+              billingOnly
+              customerService={isCustomerService}
+              onboardingItemId={item.id}
+              deliveredDate={item.deliveredDate}
+              onDeliveredDateSaved={(newValue) =>
+                onItemUpdate?.(item.id, { deliveredDate: newValue || null })
+              }
+            />
+          ) : (
+            <div className="p-8 text-center text-gray-500">
+              <p className="text-sm">No client record linked</p>
+            </div>
+          )}
+        </div>
+      )}
       {activeTab === 'meetings' && (
         <MeetingsTab
           meetings={meetings}
