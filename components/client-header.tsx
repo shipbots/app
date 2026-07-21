@@ -27,7 +27,7 @@ import { useNotificationSync, isContactEmailColumn } from './notification-sync';
 import {
   ChevronDown, ChevronUp,
   Mail, Phone, Copy, Check, User,
-  Warehouse, Pencil, Loader2, ShieldCheck,
+  Warehouse, Boxes, Pencil, Loader2, ShieldCheck,
   RefreshCw, Minimize2, X,
 } from 'lucide-react';
 
@@ -346,11 +346,18 @@ function PlatformPills({ value, clientId, onSaved }: {
 // multi-value dropdowns (matches the PlatformPills convention upstairs).
 // Edits batch into one ConfirmDialog so a single click on Save reviews
 // every checkbox change before syncing to Monday.
-function WarehousePill({ value, options, clientId, onSaved }: {
+function WarehousePill({ value, options, clientId, onSaved, columnId = 'dropdown_mktxaege', label = 'WAREHOUSE', noun = 'warehouse', icon }: {
   value: string;
   options: string[];
   clientId: string;
   onSaved: (newValue: string) => void;
+  /** Monday dropdown column this pill edits. Defaults to Warehouse Location. */
+  columnId?: string;
+  /** Uppercase pill label — an 'S' is appended when more than one is selected. */
+  label?: string;
+  /** Lowercase noun for the menu / confirm copy ("warehouse" → "warehouses"). */
+  noun?: string;
+  icon?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<string[]>([]);
@@ -413,7 +420,7 @@ function WarehousePill({ value, options, clientId, onSaved }: {
       const res = await fetch(`/api/client/${clientId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ columnId: 'dropdown_mktxaege', value: next, valueType: 'dropdown' }),
+        body: JSON.stringify({ columnId, value: next, valueType: 'dropdown' }),
       });
       if (!res.ok) throw new Error(`${res.status}`);
       onSaved(next);
@@ -447,12 +454,12 @@ function WarehousePill({ value, options, clientId, onSaved }: {
           onClick={() => { if (!disabled) { open ? cancel() : openMenu(); } }}
           disabled={disabled}
           className="flex items-center gap-2 bg-gray-50/80 border border-gray-200/70 hover:bg-gray-100 disabled:hover:bg-gray-50/80 rounded-xl px-2.5 py-1.5 max-w-[260px] transition-colors"
-          title={disabled ? 'Loading warehouse options…' : currentList.length > 1 ? `Warehouses: ${currentList.join(', ')}` : 'Change warehouses'}
+          title={disabled ? `Loading ${noun} options…` : currentList.length > 1 ? currentList.join(', ') : `Change ${noun}`}
         >
-          <Warehouse className="w-3.5 h-3.5 text-[#0071BC] flex-shrink-0" />
+          {icon ?? <Warehouse className="w-3.5 h-3.5 text-[#0071BC] flex-shrink-0" />}
           <div className="flex flex-col gap-0.5 min-w-0 text-left">
             <p className="text-[9px] font-bold text-gray-400 uppercase tracking-[.08em] leading-none">
-              WAREHOUSE{currentList.length > 1 ? 'S' : ''}
+              {label}{currentList.length > 1 ? 'S' : ''}
             </p>
             <p className="text-xs font-semibold text-gray-900 truncate">{displayLabel}</p>
           </div>
@@ -508,7 +515,7 @@ function WarehousePill({ value, options, clientId, onSaved }: {
       </div>
       {pending && (
         <ConfirmDialog
-          title={pending.length === 0 ? 'Clear all warehouses?' : currentList.length === 0 ? 'Set warehouses?' : 'Update warehouses?'}
+          title={pending.length === 0 ? `Clear all ${noun}s?` : currentList.length === 0 ? `Set ${noun}s?` : `Update ${noun}s?`}
           description={
             <div className="space-y-1.5">
               <div>
@@ -531,7 +538,7 @@ function WarehousePill({ value, options, clientId, onSaved }: {
               <div className="text-[11px] text-gray-500">This will sync to Monday.com.</div>
             </div>
           }
-          confirmLabel="Update warehouses"
+          confirmLabel={`Update ${noun}s`}
           onCancel={() => { setPending(null); setDraft([]); }}
           onConfirm={confirm}
           busy={saving}
@@ -806,16 +813,19 @@ export function ClientHeader({
   const [collapsed, setCollapsed] = useState<boolean>(loadCollapsed);
   useEffect(() => { saveCollapsed(collapsed); }, [collapsed]);
 
-  // Warehouse dropdown options — fetched once, shared across all clients.
-  // Pulled from /api/client/column-options which reads settings_str of the
-  // Warehouse Location dropdown on the Clients board.
+  // Warehouse + Sub Warehouse dropdown options — fetched once, shared across all
+  // clients. Pulled from /api/client/column-options which reads settings_str of
+  // the Warehouse Location + Sub Warehouse Location dropdowns on the Clients board.
   const [warehouseOptions, setWarehouseOptions] = useState<string[]>([]);
+  const [subWarehouseOptions, setSubWarehouseOptions] = useState<string[]>([]);
   useEffect(() => {
     let cancelled = false;
     fetch('/api/client/column-options')
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`${r.status}`)))
       .then((data: Record<string, string[]>) => {
-        if (!cancelled) setWarehouseOptions(data['dropdown_mktxaege'] ?? []);
+        if (cancelled) return;
+        setWarehouseOptions(data['dropdown_mktxaege'] ?? []);
+        setSubWarehouseOptions(data['dropdown_mm5ftdxb'] ?? []);
       })
       .catch(err => console.error('[ClientHeader] warehouse options fetch failed:', err));
     return () => { cancelled = true; };
@@ -898,12 +908,26 @@ export function ClientHeader({
             clientId={clientId}
             onSaved={next => onClientChanged({ portalDropdown: next })}
           />
-          <WarehousePill
-            value={client.warehouseLocation}
-            options={warehouseOptions}
-            clientId={clientId}
-            onSaved={next => onClientChanged({ warehouseLocation: next })}
-          />
+          {/* Warehouse + Sub Warehouse stacked: the sub-warehouse
+              (Gardena-A/B/C) sits directly beneath the main warehouse. */}
+          <div className="flex flex-col gap-1">
+            <WarehousePill
+              value={client.warehouseLocation}
+              options={warehouseOptions}
+              clientId={clientId}
+              onSaved={next => onClientChanged({ warehouseLocation: next })}
+            />
+            <WarehousePill
+              value={client.subWarehouse}
+              options={subWarehouseOptions}
+              clientId={clientId}
+              columnId="dropdown_mm5ftdxb"
+              label="SUB WAREHOUSE"
+              noun="sub warehouse"
+              icon={<Boxes className="w-3.5 h-3.5 text-[#0071BC] flex-shrink-0" />}
+              onSaved={next => onClientChanged({ subWarehouse: next })}
+            />
+          </div>
           {actionsSlot}
         </div>
       </div>

@@ -440,6 +440,7 @@ export async function fetchClientInfo(itemId: string, onboardingItemId?: string)
     productCategory: cols['color_mktq81r3'] || '',
     productDescription: cols['long_text_mktqtxm'] || '',
     warehouseLocation: cols['dropdown_mktxaege'] || '',
+    subWarehouse: cols['dropdown_mm5ftdxb'] || '',
     businessHQ: cols['text_mktx63am'] || '',
     manufacturingLocation: cols['text_mktxyg5p'] || '',
     clientStatus: cols['color_mkvq7kn6'] || '',

@@ -122,6 +122,8 @@ export interface ClientInfo {
   productCategory: string;
   productDescription: string;
   warehouseLocation: string;
+  /** Sub Warehouse Location dropdown (dropdown_mm5ftdxb) — e.g. Gardena-A/B/C. */
+  subWarehouse: string;
   businessHQ: string;
   manufacturingLocation: string;
   clientStatus: string;

@@ -20,6 +20,7 @@ const TARGET_COLUMN_IDS = new Set([
   'color_mkxfkdyh',    // Returns - New Condition
   'color_mkxfxdx5',    // Returns - Used Condition
   'dropdown_mktxaege', // Warehouse Location
+  'dropdown_mm5ftdxb', // Sub Warehouse Location
   'dropdown_mkyk2va7', // Umbrella Company
   'dropdown_mktq27te', // Current Fulfillment Method
   'dropdown_mktptjhb', // Packaging
@@ -97,18 +98,27 @@ export async function GET() {
       } catch { /* skip columns with malformed settings */ }
     }
 
-    // Always offer these warehouse options even before they exist as Monday
-    // labels. Selecting + saving one creates the real label
-    // (updateClientField uses create_labels_if_missing), after which Monday
-    // returns it here anyway — the dedupe below keeps it from doubling up.
+    // Warehouse Location no longer offers the per-section variants — those now
+    // live in the separate Sub Warehouse Location field below it. Drop them so
+    // the main Warehouse dropdown lists only actual warehouses.
     const WAREHOUSE_COL = 'dropdown_mktxaege';
-    const EXTRA_WAREHOUSES = ['Gardena B', 'Gardena C'];
-    const currentWarehouses = options[WAREHOUSE_COL] ?? [];
-    const seenWarehouses = new Set(currentWarehouses.map(w => w.toLowerCase()));
-    options[WAREHOUSE_COL] = [
-      ...currentWarehouses,
-      ...EXTRA_WAREHOUSES.filter(w => !seenWarehouses.has(w.toLowerCase())),
-    ];
+    const WAREHOUSE_HIDE = new Set(['gardena b', 'gardena c', 'gardena, gardena c']);
+    if (options[WAREHOUSE_COL]) {
+      options[WAREHOUSE_COL] = options[WAREHOUSE_COL].filter(
+        w => !WAREHOUSE_HIDE.has(w.trim().toLowerCase()),
+      );
+    }
+
+    // Sub Warehouse Location: the Monday column carries a stray non-hyphenated
+    // "Gardena C" alongside the canonical "Gardena-C". Hide it so the options
+    // read Gardena-A / Gardena-B / Gardena-C.
+    const SUB_WAREHOUSE_COL = 'dropdown_mm5ftdxb';
+    const SUB_WAREHOUSE_HIDE = new Set(['gardena c']);
+    if (options[SUB_WAREHOUSE_COL]) {
+      options[SUB_WAREHOUSE_COL] = options[SUB_WAREHOUSE_COL].filter(
+        w => !SUB_WAREHOUSE_HIDE.has(w.trim().toLowerCase()),
+      );
+    }
 
     // No cache header — options change rarely but must stay fresh.
     // Let the browser re-fetch every time rather than caching a stale/empty response.

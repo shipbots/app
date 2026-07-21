@@ -2168,6 +2168,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
             <SelectField label="⭐ Product Category" value={localClient.productCategory} columnId="color_mktq81r3" clientId={id} options={colOptions['color_mktq81r3'] ?? []} valueType="status" />
             <EditField label="📦 Product Description" value={localClient.productDescription} columnId="long_text_mktqtxm" clientId={id} multiline />
             <SelectField label="🏭 Warehouse Location" value={localClient.warehouseLocation} columnId="dropdown_mktxaege" clientId={id} options={colOptions['dropdown_mktxaege'] ?? []} valueType="dropdown" icon={<MapPin className="w-3.5 h-3.5" />} highlight />
+            <SelectField label="📦 Sub Warehouse" value={localClient.subWarehouse} columnId="dropdown_mm5ftdxb" clientId={id} options={colOptions['dropdown_mm5ftdxb'] ?? []} valueType="dropdown" />
             <EditField label="🏗️ Where They Manufacture" value={localClient.manufacturingLocation} columnId="text_mktxyg5p" clientId={id} />
             <SelectField label="🟢 Client Status" value={localClient.clientStatus} columnId="color_mkvq7kn6" clientId={id} options={colOptions['color_mkvq7kn6'] ?? []} valueType="status" />
             <ReadField label="⏱️ Time as Client (Days)" value={localClient.timeAsClientDays} />
