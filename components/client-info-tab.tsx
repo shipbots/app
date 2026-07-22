@@ -9,6 +9,7 @@ import {
   ArrowUpDown, Paperclip, Receipt, CreditCard, Info, Landmark,
 } from 'lucide-react';
 import { ClientStickyNotesSummary } from './client-sticky-notes-summary';
+import { ClientAchInfo } from './client-ach-info';
 import { SectionDocuments } from './section-documents';
 import { ClientProjectsBox } from './client-projects-box';
 import { EmailNotificationsSection } from './email-notifications-section';
@@ -2075,14 +2076,16 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
           </div>
         </section>
 
-        {/* Payment method — ACH / credit card capture is not built yet. */}
+        {/* Payment method — ACH is read from the Client Billing Info board
+            (matched by client name); card capture is not built yet. */}
         <section className={cardCls}>
           <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-gray-100">
             <CreditCard className="w-4 h-4 text-[#0071BC] flex-shrink-0" />
             <span className="text-[13px] font-semibold text-gray-800 tracking-[-0.01em]">Payment Method</span>
           </div>
           <div className="px-2 py-1.5">
-            <ComingSoonRow label="ACH / Bank Account" icon={<Landmark className="w-3.5 h-3.5" />} />
+            <ClientAchInfo clientName={localClient.name} />
+            <div className="border-t border-gray-100 my-1.5" />
             <ComingSoonRow label="Credit Card" icon={<CreditCard className="w-3.5 h-3.5" />} />
           </div>
         </section>
