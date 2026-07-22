@@ -22,11 +22,12 @@ const MONDAY_API_URL = 'https://api.monday.com/v2';
 const BILLING_BOARD_ID = '18422386902'; // "Client Billing Info"
 
 // Known ACH columns on the Client Billing Info board.
-const COL_FIRST   = 'text_mm5gjfsv'; // "Name" (signer first name)
-const COL_LAST    = 'text_mm5gk3v5'; // "Last Name"
-const COL_ROUTING = 'text_mm5g5sge'; // "Routing Number"
-const COL_ACCOUNT = 'text_mm5gn0xc'; // "Account Number"
-const COL_DOC     = 'file_mm5aqrwq'; // "ACH Doc"
+const COL_FIRST     = 'text_mm5gjfsv'; // "Name" (signer first name)
+const COL_LAST      = 'text_mm5gk3v5'; // "Last Name"
+const COL_ROUTING   = 'text_mm5g5sge'; // "Routing Number"
+const COL_ACCOUNT   = 'text_mm5gn0xc'; // "Account Number"
+const COL_FINANCIAL = 'text_mm5gbaz0'; // "Financial Institution"
+const COL_DOC       = 'file_mm5aqrwq'; // "ACH Doc"
 
 type ColVal = { id: string; text: string | null; value: string | null; column?: { title: string | null } | null };
 
@@ -128,8 +129,9 @@ export async function GET(req: Request) {
         found: true,
         accountNumber: byId(COL_ACCOUNT),
         routingNumber: byId(COL_ROUTING),
-        // No dedicated column on the board today; match one dynamically if added.
-        financialInstitution: byTitle(/financial\s*inst|bank\s*name|\bbank\b/i),
+        // Pinned to the Financial Institution column; fall back to matching by
+        // title so a future rename / new id still resolves it.
+        financialInstitution: byId(COL_FINANCIAL) || byTitle(/financial\s*inst|bank\s*name/i),
         firstName: byId(COL_FIRST),
         lastName: byId(COL_LAST),
         doc,
