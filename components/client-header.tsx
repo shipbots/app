@@ -270,7 +270,7 @@ function PlatformPills({ value, clientId, onSaved }: {
   const requestToggle = (token: 'AppDot' | 'Portal') => {
     if (saving || pending) return;
     const currentlyOn = isPlatformActive(value, token);
-    const set = new Set(value.split(',').map(s => s.trim()).filter(Boolean));
+    const set = new Set((value || '').split(',').map(s => s.trim()).filter(Boolean));
     if (currentlyOn) set.delete(token); else set.add(token);
     const next = Array.from(set).join(', ');
     setPending({ token, nextValue: next, turningOn: !currentlyOn });
@@ -367,7 +367,7 @@ function WarehousePill({ value, options, clientId, onSaved, columnId = 'dropdown
 
   // Comma-separated string ↔ array. Trims + drops blanks defensively.
   const currentList = useMemo(
-    () => value.split(',').map(s => s.trim()).filter(Boolean),
+    () => (value || '').split(',').map(s => s.trim()).filter(Boolean),
     [value],
   );
 
