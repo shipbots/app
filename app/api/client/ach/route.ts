@@ -1,14 +1,15 @@
 /**
- * GET /api/client/ach?name=<client name>
+ * Client ACH banking details — on the "Client Billing Info" Monday board
+ * (18422386902), where each item links to its client on the Clients board via
+ * the "✳️ CLIENTS" board-relation column.
  *
- * Reads a client's ACH banking details from the "Client Billing Info" Monday
- * board (18422386902), where each item's NAME is the client name. Returns the
- * account / routing numbers, financial institution (if a column for it exists),
- * the signer's first / last name, and a previewable link to the ACH document.
+ *   GET   ?clientId=&name=   → read the ACH record (matched by the client link,
+ *                              name as fallback) + a previewable document link.
+ *   PATCH { itemId, field, value } → edit one ACH text field (whitelisted).
+ *   POST  { clientId, clientName } → create a record linked to the client.
  *
- * Sensitive data (account + routing numbers), so it's gated to the same
- * DocuSign-access group that can see the Billing Info tab — a non-member gets
- * 403 even though the tab is already hidden from them in the UI.
+ * Sensitive data (account + routing numbers), so every method is gated to the
+ * DocuSign-access group that can see the Billing Info tab.
  */
 
 import { NextResponse } from 'next/server';
@@ -32,13 +33,27 @@ const COL_DOC       = 'file_mm5aqrwq'; // "ACH Doc"
 // board (7846251224). Preferred over name (item names carry suffixes like "LLC").
 const COL_CLIENT_LINK = 'board_relation_mm5gxg2g';
 
+// Semantic field name → text column id. A whitelist so a caller can only edit
+// ACH columns, never an arbitrary column on the board.
+const EDITABLE_FIELDS: Record<string, string> = {
+  financialInstitution: COL_FINANCIAL,
+  accountNumber: COL_ACCOUNT,
+  routingNumber: COL_ROUTING,
+  firstName: COL_FIRST,
+  lastName: COL_LAST,
+};
+
 type ColVal = { id: string; text: string | null; value: string | null; column?: { title: string | null } | null };
 
-async function mondayQuery(query: string, key: string): Promise<Record<string, unknown>> {
+async function mondayQuery(
+  query: string,
+  key: string,
+  variables?: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
   const res = await fetch(MONDAY_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: key, 'API-Version': '2024-10' },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify(variables ? { query, variables } : { query }),
     cache: 'no-store',
     signal: AbortSignal.timeout(15000),
   });
@@ -47,15 +62,22 @@ async function mondayQuery(query: string, key: string): Promise<Record<string, u
   return data.data ?? {};
 }
 
-export async function GET(req: Request) {
+// Auth + DocuSign-access gate shared by GET / PATCH / POST. Returns the Monday
+// API key on success, or a ready-to-return error response.
+async function gate(): Promise<{ ok: true; key: string } | { ok: false; res: NextResponse }> {
   const session = await auth();
   const email = session?.user?.email;
-  if (!email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  // Account + routing numbers are sensitive — same gate as the Billing Info tab.
-  if (!canUseDocusign(email)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-
+  if (!email) return { ok: false, res: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+  if (!canUseDocusign(email)) return { ok: false, res: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
   const key = process.env.MONDAY_API_KEY;
-  if (!key) return NextResponse.json({ error: 'MONDAY_API_KEY not set' }, { status: 500 });
+  if (!key) return { ok: false, res: NextResponse.json({ error: 'MONDAY_API_KEY not set' }, { status: 500 }) };
+  return { ok: true, key };
+}
+
+export async function GET(req: Request) {
+  const g = await gate();
+  if (!g.ok) return g.res;
+  const { key } = g;
 
   const params = new URL(req.url).searchParams;
   const clientId = (params.get('clientId') || '').trim();
@@ -141,6 +163,7 @@ export async function GET(req: Request) {
     return NextResponse.json(
       {
         found: true,
+        itemId: matchId,
         accountNumber: byId(COL_ACCOUNT),
         routingNumber: byId(COL_ROUTING),
         // Pinned to the Financial Institution column; fall back to matching by
@@ -153,7 +176,81 @@ export async function GET(req: Request) {
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (err) {
-    console.error('[client/ach] failed:', err);
+    console.error('[client/ach GET] failed:', err);
     return NextResponse.json({ error: 'ACH lookup failed' }, { status: 502 });
+  }
+}
+
+/**
+ * PATCH /api/client/ach  { itemId, field, value }
+ * Edit one ACH text field. `field` is a whitelisted key (EDITABLE_FIELDS).
+ */
+export async function PATCH(req: Request) {
+  const g = await gate();
+  if (!g.ok) return g.res;
+  const { key } = g;
+
+  let body: { itemId?: unknown; field?: unknown; value?: unknown };
+  try { body = await req.json(); } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
+
+  const itemId = String(body.itemId ?? '').trim();
+  const field = String(body.field ?? '');
+  const value = typeof body.value === 'string' ? body.value : '';
+  const columnId = EDITABLE_FIELDS[field];
+  if (!/^\d+$/.test(itemId) || !columnId) {
+    return NextResponse.json({ error: 'Bad request' }, { status: 400 });
+  }
+
+  try {
+    // All ACH fields are text columns — change_simple_column_value takes the raw
+    // string (passed as a variable so quotes / apostrophes are safe).
+    await mondayQuery(
+      `mutation ($val: String!) {
+        change_simple_column_value(board_id: ${BILLING_BOARD_ID}, item_id: ${itemId}, column_id: "${columnId}", value: $val) { id }
+      }`,
+      key,
+      { val: value },
+    );
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error('[client/ach PATCH] failed:', err);
+    return NextResponse.json({ error: 'Save failed' }, { status: 502 });
+  }
+}
+
+/**
+ * POST /api/client/ach  { clientId, clientName }
+ * Create an ACH record named after the client and linked to them via the
+ * "✳️ CLIENTS" board-relation. Returns the new item id for immediate editing.
+ */
+export async function POST(req: Request) {
+  const g = await gate();
+  if (!g.ok) return g.res;
+  const { key } = g;
+
+  let body: { clientId?: unknown; clientName?: unknown };
+  try { body = await req.json(); } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
+
+  const clientId = String(body.clientId ?? '').trim();
+  const clientName = String(body.clientName ?? '').trim();
+  if (!clientName) return NextResponse.json({ error: 'Missing client name' }, { status: 400 });
+
+  const columnValues = /^\d+$/.test(clientId)
+    ? JSON.stringify({ [COL_CLIENT_LINK]: { item_ids: [Number(clientId)] } })
+    : '{}';
+
+  try {
+    const data = await mondayQuery(
+      `mutation ($name: String!, $cols: JSON!) {
+        create_item(board_id: ${BILLING_BOARD_ID}, item_name: $name, column_values: $cols) { id }
+      }`,
+      key,
+      { name: clientName, cols: columnValues },
+    );
+    const newId = (data.create_item as { id?: string } | undefined)?.id ?? null;
+    return NextResponse.json({ ok: true, itemId: newId });
+  } catch (err) {
+    console.error('[client/ach POST] failed:', err);
+    return NextResponse.json({ error: 'Create failed' }, { status: 502 });
   }
 }

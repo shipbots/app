@@ -1,21 +1,25 @@
 'use client';
 
 /**
- * ACH / bank details for the Billing Info tab. Reads from the "Client Billing
- * Info" Monday board (matched by client name) via /api/client/ach — shows the
- * account / routing numbers, financial institution, the signer's name, and a
- * click-to-preview of the ACH document when one is on file.
+ * ACH / bank details for the Billing Info tab. Reads from (and writes back to)
+ * the "Client Billing Info" Monday board, matched to the client by the board
+ * relation. Every field is editable inline — Financial Institution, Account /
+ * Routing numbers, the signer's name — plus upload / replace of the ACH
+ * document and creation of a record when a client doesn't have one yet.
  *
- * The route is gated to the DocuSign-access group (same as the Billing tab),
- * so this only renders inside a surface those users already see.
+ * All endpoints are gated to the DocuSign-access group (same as the Billing
+ * tab), so this only renders inside a surface those users already see.
  */
 
-import { useEffect, useState } from 'react';
-import { Landmark, FileText, Loader2, Eye } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Landmark, FileText, Loader2, Eye, Pencil, Check, Upload, Plus } from 'lucide-react';
 import { FilePreviewModal, type PreviewableFile } from './file-preview-modal';
+
+type AchField = 'financialInstitution' | 'accountNumber' | 'routingNumber' | 'firstName' | 'lastName';
 
 interface AchData {
   found: boolean;
+  itemId?: string;
   accountNumber?: string;
   routingNumber?: string;
   financialInstitution?: string;
@@ -24,16 +28,101 @@ interface AchData {
   doc?: PreviewableFile | null;
 }
 
-function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+// One inline-editable ACH text field. Click to edit; Enter / blur saves via
+// PATCH /api/client/ach; Escape cancels.
+function EditableAchField({
+  itemId,
+  field,
+  label,
+  value: initial,
+  mono,
+  onSaved,
+}: {
+  itemId: string;
+  field: AchField;
+  label: string;
+  value: string;
+  mono?: boolean;
+  onSaved: (value: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(initial);
+  const [saved, setSaved] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const [flash, setFlash] = useState<'ok' | 'err' | null>(null);
+
+  useEffect(() => { setValue(initial); setSaved(initial); }, [initial]);
+
+  const commit = async () => {
+    setEditing(false);
+    const next = value.trim();
+    if (next === saved.trim()) { setValue(saved); return; }
+    setSaving(true);
+    try {
+      const res = await fetch('/api/client/ach', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemId, field, value: next }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      setSaved(next);
+      setValue(next);
+      onSaved(next);
+      setFlash('ok');
+    } catch {
+      setFlash('err');
+      setValue(saved); // revert on failure
+    } finally {
+      setSaving(false);
+      setTimeout(() => setFlash(null), 2000);
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="px-1 py-1.5">
+        <p className="text-[11px] leading-none mb-1 text-gray-400">{label}</p>
+        <div className="flex items-center gap-2">
+          <input
+            autoFocus
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commit();
+              if (e.key === 'Escape') { setValue(saved); setEditing(false); }
+            }}
+            onBlur={commit}
+            className={`flex-1 text-sm border border-[#43c7ff] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] ${mono ? 'font-mono tracking-tight' : ''}`}
+          />
+          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400 flex-shrink-0" />}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="px-1 py-1.5">
-      <p className="text-[11px] leading-none mb-0.5 text-gray-400">{label}</p>
-      {value ? (
-        <p className={`text-sm text-gray-900 break-words ${mono ? 'font-mono tracking-tight' : ''}`}>{value}</p>
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      className="w-full text-left px-1 py-1.5 rounded hover:bg-gray-50 transition-colors group flex items-start gap-2"
+    >
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] leading-none mb-0.5 text-gray-400">{label}</p>
+        {value ? (
+          <p className={`text-sm text-gray-900 break-words ${mono ? 'font-mono tracking-tight' : ''}`}>{value}</p>
+        ) : (
+          <p className="text-sm text-gray-400 italic">Not on file — click to add</p>
+        )}
+      </div>
+      {saving ? (
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400 mt-0.5 flex-shrink-0" />
+      ) : flash === 'ok' ? (
+        <Check className="w-3.5 h-3.5 text-green-500 mt-0.5 flex-shrink-0" />
       ) : (
-        <p className="text-sm text-gray-400 italic">Not on file</p>
+        <Pencil className="w-3 h-3 text-gray-300 group-hover:text-[#43c7ff] mt-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
       )}
-    </div>
+      {flash === 'err' && <span className="text-[11px] text-red-500 mt-0.5">!</span>}
+    </button>
   );
 }
 
@@ -41,6 +130,9 @@ export function ClientAchInfo({ clientBoardItemId, clientName }: { clientBoardIt
   const [data, setData] = useState<AchData | null>(null);
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState<PreviewableFile | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,6 +161,51 @@ export function ClientAchInfo({ clientBoardItemId, clientName }: { clientBoardIt
     </div>
   );
 
+  const createRecord = async () => {
+    setCreating(true);
+    try {
+      const res = await fetch('/api/client/ach', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: clientBoardItemId, clientName }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const d = await res.json();
+      if (d.itemId) {
+        setData({
+          found: true, itemId: d.itemId,
+          accountNumber: '', routingNumber: '', financialInstitution: '',
+          firstName: '', lastName: '', doc: null,
+        });
+      }
+    } catch { /* best-effort */ } finally { setCreating(false); }
+  };
+
+  const uploadDoc = async (file: File) => {
+    if (!data?.itemId) return;
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('itemId', data.itemId);
+      const res = await fetch('/api/client/ach/file', { method: 'POST', body: form });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const d = await res.json();
+      setData(prev => prev ? {
+        ...prev,
+        doc: {
+          name: d.name || file.name,
+          url: d.url || '',
+          fileType: (file.name.split('.').pop() || 'pdf').toLowerCase(),
+          assetId: String(d.assetId || ''),
+        },
+      } : prev);
+    } catch { /* best-effort */ } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
   if (loading) {
     return (
       <div>
@@ -80,42 +217,77 @@ export function ClientAchInfo({ clientBoardItemId, clientName }: { clientBoardIt
     );
   }
 
-  if (!data?.found) {
+  // No record yet — offer to create one so its fields can be filled in.
+  if (!data?.found || !data.itemId) {
     return (
       <div>
         {header}
         <p className="px-1 py-1.5 text-sm text-gray-400 italic">No ACH information on file for this client.</p>
+        <button
+          type="button"
+          onClick={createRecord}
+          disabled={creating || !clientName}
+          className="ml-1 mt-0.5 inline-flex items-center gap-1.5 text-xs font-semibold text-[#015280] border border-[#43c7ff] bg-[#e6f8ff] hover:bg-[#d6f1ff] px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+        >
+          {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+          Add ACH details
+        </button>
       </div>
     );
   }
 
-  const signer = [data.firstName, data.lastName].filter(Boolean).join(' ').trim();
+  const itemId = data.itemId;
 
   return (
     <div>
       {header}
-      <Row label="🏦 Financial Institution" value={data.financialInstitution || ''} />
-      <Row label="🔢 Account Number" value={data.accountNumber || ''} mono />
-      <Row label="🔀 Routing Number" value={data.routingNumber || ''} mono />
-      <Row label="✍️ Signed by" value={signer} />
+      <EditableAchField itemId={itemId} field="financialInstitution" label="🏦 Financial Institution" value={data.financialInstitution || ''} onSaved={v => setData(p => p ? { ...p, financialInstitution: v } : p)} />
+      <EditableAchField itemId={itemId} field="accountNumber" label="🔢 Account Number" value={data.accountNumber || ''} mono onSaved={v => setData(p => p ? { ...p, accountNumber: v } : p)} />
+      <EditableAchField itemId={itemId} field="routingNumber" label="🔀 Routing Number" value={data.routingNumber || ''} mono onSaved={v => setData(p => p ? { ...p, routingNumber: v } : p)} />
+      <EditableAchField itemId={itemId} field="firstName" label="✍️ Signer First Name" value={data.firstName || ''} onSaved={v => setData(p => p ? { ...p, firstName: v } : p)} />
+      <EditableAchField itemId={itemId} field="lastName" label="✍️ Signer Last Name" value={data.lastName || ''} onSaved={v => setData(p => p ? { ...p, lastName: v } : p)} />
 
-      {data.doc ? (
-        <button
-          type="button"
-          onClick={() => setPreview(data.doc ?? null)}
-          className="mt-1 flex items-center gap-2 px-1 py-1.5 w-full text-left rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          <FileText className="w-3.5 h-3.5 text-[#0071BC] flex-shrink-0" />
-          <span className="text-sm text-[#015280] font-medium truncate flex-1">{data.doc.name || 'ACH document'}</span>
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0071BC] bg-[#e6f8ff] px-2 py-0.5 rounded-full flex-shrink-0">
-            <Eye className="w-3 h-3" /> Preview
-          </span>
-        </button>
-      ) : (
-        <div className="mt-1 flex items-center gap-2 px-1 py-1.5 text-xs text-gray-400">
-          <FileText className="w-3.5 h-3.5" /> No document on file
+      {/* ACH document — preview + upload / replace */}
+      <input
+        ref={fileRef}
+        type="file"
+        className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) void uploadDoc(f); }}
+      />
+      <div className="mt-1 flex items-center gap-2 px-1 py-1.5">
+        <FileText className="w-3.5 h-3.5 text-[#0071BC] flex-shrink-0" />
+        {data.doc ? (
+          <button
+            type="button"
+            onClick={() => setPreview(data.doc ?? null)}
+            className="text-sm text-[#015280] font-medium truncate flex-1 text-left hover:underline"
+          >
+            {data.doc.name || 'ACH document'}
+          </button>
+        ) : (
+          <span className="text-sm text-gray-400 italic flex-1">No document on file</span>
+        )}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {data.doc && (
+            <button
+              type="button"
+              onClick={() => setPreview(data.doc ?? null)}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0071BC] bg-[#e6f8ff] px-2 py-0.5 rounded-full"
+            >
+              <Eye className="w-3 h-3" /> Preview
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 px-2 py-0.5 rounded-full disabled:opacity-50"
+          >
+            {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+            {data.doc ? 'Replace' : 'Upload'}
+          </button>
         </div>
-      )}
+      </div>
 
       <FilePreviewModal file={preview} onClose={() => setPreview(null)} />
     </div>
