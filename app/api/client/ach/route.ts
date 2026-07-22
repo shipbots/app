@@ -28,6 +28,9 @@ const COL_ROUTING   = 'text_mm5g5sge'; // "Routing Number"
 const COL_ACCOUNT   = 'text_mm5gn0xc'; // "Account Number"
 const COL_FINANCIAL = 'text_mm5gbaz0'; // "Financial Institution"
 const COL_DOC       = 'file_mm5aqrwq'; // "ACH Doc"
+// "✳️ CLIENTS" board-relation — the reliable link to the client on the Clients
+// board (7846251224). Preferred over name (item names carry suffixes like "LLC").
+const COL_CLIENT_LINK = 'board_relation_mm5gxg2g';
 
 type ColVal = { id: string; text: string | null; value: string | null; column?: { title: string | null } | null };
 
@@ -54,32 +57,43 @@ export async function GET(req: Request) {
   const key = process.env.MONDAY_API_KEY;
   if (!key) return NextResponse.json({ error: 'MONDAY_API_KEY not set' }, { status: 500 });
 
-  const name = (new URL(req.url).searchParams.get('name') || '').trim();
-  if (!name) return NextResponse.json({ found: false });
-  const want = name.toLowerCase();
+  const params = new URL(req.url).searchParams;
+  const clientId = (params.get('clientId') || '').trim();
+  const wantName = (params.get('name') || '').trim().toLowerCase();
+  if (!clientId && !wantName) return NextResponse.json({ found: false });
 
   try {
-    // 1) Page through the board (id + name only) to find the item whose name
-    //    matches the client. The board is small; one page usually suffices.
-    type NamedItem = { id: string; name: string };
-    type ItemsPage = { cursor: string | null; items: NamedItem[] };
+    // 1) Page through the board collecting each item's name + linked client id
+    //    (the "✳️ CLIENTS" board-relation). The board is small.
+    type LinkCV = { id: string; linked_item_ids?: string[] | null };
+    type BoardItem = { id: string; name: string; column_values: LinkCV[] };
+    type ItemsPage = { cursor: string | null; items: BoardItem[] };
+    const all: BoardItem[] = [];
     let cursor: string | null = null;
-    let matchId: string | null = null;
     do {
+      const cols = `column_values(ids: ["${COL_CLIENT_LINK}"]) { id ... on BoardRelationValue { linked_item_ids } }`;
       const q: string = cursor
-        ? `query { next_items_page(cursor: "${cursor}", limit: 200) { cursor items { id name } } }`
-        : `query { boards(ids: [${BILLING_BOARD_ID}]) { items_page(limit: 200) { cursor items { id name } } } }`;
+        ? `query { next_items_page(cursor: "${cursor}", limit: 200) { cursor items { id name ${cols} } } }`
+        : `query { boards(ids: [${BILLING_BOARD_ID}]) { items_page(limit: 200) { cursor items { id name ${cols} } } } }`;
       const data = await mondayQuery(q, key);
       const page: ItemsPage | null = cursor
         ? ((data.next_items_page as ItemsPage | undefined) ?? null)
         : (((data.boards as Array<{ items_page: ItemsPage }> | undefined)?.[0]?.items_page) ?? null);
-      const items: NamedItem[] = page?.items ?? [];
-      const hit = items.find(it => (it.name || '').trim().toLowerCase() === want);
-      matchId = hit?.id ?? null;
-      cursor = matchId ? null : (page?.cursor ?? null);
-    } while (cursor && !matchId);
+      for (const it of page?.items ?? []) all.push(it);
+      cursor = page?.cursor ?? null;
+    } while (cursor);
 
-    if (!matchId) return NextResponse.json({ found: false });
+    // Prefer the board-relation link — the ACH item points at the client on the
+    // Clients board, so it's correct even when the item name differs (e.g.
+    // "SabersPro LLC" linked to client "SabersPro"). Fall back to an exact name
+    // match for any ACH item not linked yet.
+    const linkedIds = (it: BoardItem): string[] =>
+      it.column_values.find(cv => cv.id === COL_CLIENT_LINK)?.linked_item_ids ?? [];
+    let match: BoardItem | undefined;
+    if (clientId) match = all.find(it => linkedIds(it).includes(clientId));
+    if (!match && wantName) match = all.find(it => (it.name || '').trim().toLowerCase() === wantName);
+    if (!match) return NextResponse.json({ found: false });
+    const matchId = match.id;
 
     // 2) Fetch that item's columns (with titles so we can find a Financial
     //    Institution / Bank column dynamically if one is ever added).

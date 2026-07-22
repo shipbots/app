@@ -2084,7 +2084,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
             <span className="text-[13px] font-semibold text-gray-800 tracking-[-0.01em]">Payment Method</span>
           </div>
           <div className="px-2 py-1.5">
-            <ClientAchInfo clientName={localClient.name} />
+            <ClientAchInfo clientBoardItemId={id} clientName={localClient.name} />
             <div className="border-t border-gray-100 my-1.5" />
             <ComingSoonRow label="Credit Card" icon={<CreditCard className="w-3.5 h-3.5" />} />
           </div>

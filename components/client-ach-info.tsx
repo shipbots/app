@@ -37,7 +37,7 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
   );
 }
 
-export function ClientAchInfo({ clientName }: { clientName: string }) {
+export function ClientAchInfo({ clientBoardItemId, clientName }: { clientBoardItemId: string; clientName: string }) {
   const [data, setData] = useState<AchData | null>(null);
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState<PreviewableFile | null>(null);
@@ -46,7 +46,12 @@ export function ClientAchInfo({ clientName }: { clientName: string }) {
     let cancelled = false;
     setLoading(true);
     setData(null);
-    fetch(`/api/client/ach?name=${encodeURIComponent(clientName)}`, {
+    // Match primarily by the client's Clients-board item id (the ACH item's
+    // "✳️ CLIENTS" link); name is a fallback for items not linked yet.
+    const qs = new URLSearchParams();
+    if (clientBoardItemId) qs.set('clientId', clientBoardItemId);
+    if (clientName) qs.set('name', clientName);
+    fetch(`/api/client/ach?${qs.toString()}`, {
       credentials: 'include',
       headers: { Accept: 'application/json' },
     })
@@ -55,7 +60,7 @@ export function ClientAchInfo({ clientName }: { clientName: string }) {
       .catch(() => { if (!cancelled) setData({ found: false }); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [clientName]);
+  }, [clientBoardItemId, clientName]);
 
   const header = (
     <div className="flex items-center gap-2 px-1 pt-1 pb-0.5">
