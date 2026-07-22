@@ -52,6 +52,18 @@ const TYPE_BY_EXT: Record<string, string> = {
   txt: 'text/plain; charset=utf-8',
 };
 
+// Best-effort content sniff by magic number, for files whose name carries no
+// usable extension (Monday sometimes stores files without one — e.g. an ACH
+// form saved as just "ACH"). Only the formats the preview modal renders inline.
+function sniffContentType(b: Buffer): string {
+  if (b.length >= 4 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return 'application/pdf';           // %PDF
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';                // ‰PNG
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';                                // JPEG
+  if (b.length >= 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return 'image/gif';                // GIF8
+  if (b.length >= 12 && b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP') return 'image/webp';
+  return '';
+}
+
 export async function GET(req: NextRequest) {
   const assetId = req.nextUrl.searchParams.get('assetId') ?? '';
   const rawUrl = req.nextUrl.searchParams.get('url') ?? '';
@@ -99,15 +111,26 @@ export async function GET(req: NextRequest) {
     }
 
     const ext = (name.split('.').pop() || '').toLowerCase().split('?')[0];
-    // S3 usually reports application/octet-stream regardless of content;
-    // the extension-derived type is what makes browsers render inline.
-    const contentType =
-      TYPE_BY_EXT[ext] || fileRes.headers.get('content-type') || 'application/octet-stream';
+    // The extension-derived type is what makes browsers render inline (S3
+    // reports application/octet-stream regardless of content). When the file
+    // name has no usable extension, buffer the bytes and sniff the magic number
+    // so real PDFs / images still preview instead of downloading.
+    const knownType = TYPE_BY_EXT[ext];
+    let responseBody: BodyInit | null;
+    let contentType: string;
+    if (knownType) {
+      responseBody = fileRes.body;
+      contentType = knownType;
+    } else {
+      const buf = Buffer.from(await fileRes.arrayBuffer());
+      responseBody = buf;
+      contentType = sniffContentType(buf) || fileRes.headers.get('content-type') || 'application/octet-stream';
+    }
     // Strip quotes/control chars so the header can't be broken by a
     // hostile filename; keep it readable for the save-as dialog.
     const safeName = name.replace(/[^\w.\- ()]/g, '_');
 
-    return new NextResponse(fileRes.body, {
+    return new NextResponse(responseBody, {
       headers: {
         'Content-Type': contentType,
         'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename="${safeName}"`,
