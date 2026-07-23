@@ -141,13 +141,21 @@ export interface ClientInfo {
   docusignFile: MonFile | null;
   dateDocusignSigned: string;
   pickAndPack: string;
-  // Pricing Info (Billing tab). Free-text rate/terms per 3PL billing category.
-  receivingPricing: string;
-  storagePricing: string;
-  dtcPickPackPricing: string;
-  b2bShippingUpcharge: string;
+  // Pricing Info (Billing tab) — 3PL billing categories, extracted from the
+  // DocuSign Statement of Work. Free-text so reps can hold rates + terms.
+  receivingPricing: string;      // per-item receiving + bagging + barcoding
+  floorLoadedFee: string;
+  binStorage: string;
+  palletStorage: string;
+  dtcPickPackPricing: string;    // pick per order + per item
+  b2bPickPack: string;
+  shippingUpcharge: string;      // "V###" code string
+  intlShippingUpcharge: string;  // "INT V###" code string
+  returnsFee: string;
   accountManagerFee: string;
   platformFee: string;
+  paymentTerms: string;          // Net 4 / Net 7 / Net 15…
+  otherNotes: string;            // long text — other SOW pricing / promos
   invoicingEmail: string;
   // Contact Info
   contactName: string;

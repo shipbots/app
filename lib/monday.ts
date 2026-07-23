@@ -458,13 +458,20 @@ export async function fetchClientInfo(itemId: string, onboardingItemId?: string)
     docusignFile,
     dateDocusignSigned,
     pickAndPack: cols['text_mm1zw2vf'] || '',
-    // Pricing Info (Billing tab) — dedicated pricing columns
+    // Pricing Info (Billing tab) — dedicated pricing columns (extracted from SOW)
     receivingPricing: cols['text_mm5hpark'] || '',
-    storagePricing: cols['text_mm5hwtkt'] || '',
+    floorLoadedFee: cols['text_mm5hxygd'] || '',
+    binStorage: cols['text_mm5hwtkt'] || '',
+    palletStorage: cols['text_mm5h6606'] || '',
     dtcPickPackPricing: cols['text_mm5hc2dg'] || '',
-    b2bShippingUpcharge: cols['text_mm5h4938'] || '',
+    b2bPickPack: cols['text_mm5h4938'] || '',
+    shippingUpcharge: cols['text_mm5h681j'] || '',
+    intlShippingUpcharge: cols['text_mm5h1w32'] || '',
+    returnsFee: cols['text_mm5hzk9n'] || '',
     accountManagerFee: cols['text_mm5hb9'] || '',
     platformFee: cols['text_mm5hq2xy'] || '',
+    paymentTerms: cols['text_mm5hgn1k'] || '',
+    otherNotes: cols['long_text_mm5hy744'] || '',
     invoicingEmail: cols['text_mktqjmmm'] || '',
     // Contact Info
     contactName: cols['text_mktqq7h6'] || '',

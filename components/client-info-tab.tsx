@@ -11,6 +11,7 @@ import {
 import { ClientStickyNotesSummary } from './client-sticky-notes-summary';
 import { ClientAchInfo } from './client-ach-info';
 import { FilePreviewModal, type PreviewableFile } from './file-preview-modal';
+import { ConfirmDialog } from './client-header';
 import { SectionDocuments } from './section-documents';
 import { ClientProjectsBox } from './client-projects-box';
 import { EmailNotificationsSection } from './email-notifications-section';
@@ -33,6 +34,15 @@ const SectionEditContext = createContext(false);
 function useFieldMode() {
   return { csMode: useContext(CsModeContext), editing: useContext(SectionEditContext) };
 }
+
+// The Billing tab's Pricing Info fields (ClientInfo keys). Used to detect
+// whether a client already has pricing on file before a DocuSign (re)extract
+// would overwrite it.
+const PRICING_FIELDS: (keyof ClientInfo)[] = [
+  'receivingPricing', 'floorLoadedFee', 'binStorage', 'palletStorage',
+  'dtcPickPackPricing', 'b2bPickPack', 'shippingUpcharge', 'intlShippingUpcharge',
+  'returnsFee', 'accountManagerFee', 'platformFee', 'paymentTerms', 'otherNotes',
+];
 
 // ─── "On file / Not on file" field ───────────────────────────────────────────
 // For sensitive values (EIN, the DocuSign document) that a Customer Service rep
@@ -497,10 +507,14 @@ function Section({
   children,
   defaultOpen = false,
   attachmentCount = 0,
+  headerAction,
 }: {
   title: string;
   /** Optional leading icon shown between the collapse chevron and the title. */
   icon?: React.ReactNode;
+  /** Optional action rendered on the right of the header (e.g. a button).
+   *  Shown regardless of csMode; sits where the CS Edit button would. */
+  headerAction?: React.ReactNode;
   children: React.ReactNode;
   defaultOpen?: boolean;
   /**
@@ -550,6 +564,7 @@ function Section({
             </span>
           )}
         </button>
+        {headerAction}
         {csMode && (
           <button
             type="button"
@@ -1762,6 +1777,38 @@ function ComingSoonRow({ label, icon }: { label: string; icon?: React.ReactNode 
   );
 }
 
+// "Extract from DocuSign" action for the Pricing Info header. Disabled (with an
+// explanatory tooltip) when the client has no DocuSign contract on file.
+function ExtractFromDocusignButton({
+  hasFile,
+  extracting,
+  flash,
+  onClick,
+}: {
+  hasFile: boolean;
+  extracting: boolean;
+  flash: 'ok' | 'none' | 'err' | null;
+  onClick: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 flex-shrink-0">
+      {flash === 'ok' && <span className="text-[11px] text-green-600 font-medium">Filled from contract ✓</span>}
+      {flash === 'none' && <span className="text-[11px] text-gray-400">No pricing found</span>}
+      {flash === 'err' && <span className="text-[11px] text-red-500">Extract failed</span>}
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={!hasFile || extracting}
+        title={hasFile ? 'Read the pricing (Statement of Work) from the signed DocuSign contract' : 'No DocuSign contract on file to extract from'}
+        className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-white bg-[#015280] hover:bg-[#013d60]"
+      >
+        {extracting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+        {extracting ? 'Extracting…' : 'Extract from DocuSign'}
+      </button>
+    </div>
+  );
+}
+
 export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, hideHeader = false, hideContactInfo = false, onboardingItemId, deliveredDate, inventoryDelivered, onNameChange, onDeliveredDateSaved, onEstimatedDeliveryDateSaved, customerService = false, billingOnly = false, projects = [], onOpenProject, onCreateProject }: ClientInfoTabProps) {
   // The "two-column-per-section" layout is the standard fullscreen treatment
   // when the panel is the only thing on screen. The CS expanded view sets
@@ -1841,6 +1888,76 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
     setLocalClient(client);
     setBillingVersion(0);
   }, [client.id]);
+
+  // "Extract from DocuSign" (Pricing Info) — reads the Statement of Work out of
+  // the signed contract and writes the pricing columns server-side, then merges
+  // the saved values into local state so the fields reflect them immediately.
+  const [extractingPricing, setExtractingPricing] = useState(false);
+  const [pricingFlash, setPricingFlash] = useState<'ok' | 'none' | 'err' | null>(null);
+  const extractPricingFromDocusign = useCallback(async (assetIdOverride?: string) => {
+    const assetId = assetIdOverride || localClient.docusignFile?.assetId;
+    if (!assetId || extractingPricing) return;
+    setExtractingPricing(true);
+    setPricingFlash(null);
+    try {
+      const res = await fetch(`/api/client/${id}/extract-pricing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assetId }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      const saved = (data?.saved ?? {}) as Partial<ClientInfo>;
+      if (Object.keys(saved).length > 0) {
+        setLocalClient(prev => ({ ...prev, ...saved }));
+        setPricingFlash('ok');
+      } else {
+        setPricingFlash('none');
+      }
+    } catch (err) {
+      console.error('[extract-pricing] failed:', err);
+      setPricingFlash('err');
+    } finally {
+      setExtractingPricing(false);
+      setTimeout(() => setPricingFlash(null), 4000);
+    }
+  }, [id, localClient.docusignFile?.assetId, extractingPricing]);
+
+  // On a NEW DocuSign upload, offer to pull the pricing from it. If the client
+  // already has pricing on file, confirm before overwriting; otherwise extract
+  // straight away. Declining keeps the existing pricing (the upload still ran).
+  const [pendingDocusignAsset, setPendingDocusignAsset] = useState<string | null>(null);
+  const handleDocusignUploaded = useCallback((newFile: MonFile) => {
+    const assetId = newFile?.assetId;
+    if (!assetId) return;
+    const hasPricing = PRICING_FIELDS.some(f => String(localClient[f] ?? '').trim());
+    if (hasPricing) setPendingDocusignAsset(assetId);
+    else void extractPricingFromDocusign(assetId);
+  }, [localClient, extractPricingFromDocusign]);
+
+  // Overwrite-confirm dialog for the DocuSign upload → pricing extraction flow.
+  // Rendered in BOTH the Billing tab and the main view so a DocuSign uploaded
+  // from either surface can prompt before overwriting existing pricing.
+  const pricingOverwriteDialog = pendingDocusignAsset ? (
+    <ConfirmDialog
+      title="Overwrite existing pricing?"
+      description={
+        <>
+          This client already has pricing on file. Pull the pricing from the DocuSign you just uploaded and replace the current values?
+          <br />
+          Choose <strong>Cancel</strong> to keep the existing pricing — the contract is uploaded either way.
+        </>
+      }
+      confirmLabel="Overwrite with new pricing"
+      busy={extractingPricing}
+      onCancel={() => setPendingDocusignAsset(null)}
+      onConfirm={() => {
+        const a = pendingDocusignAsset;
+        if (!a) return;
+        void extractPricingFromDocusign(a).finally(() => setPendingDocusignAsset(null));
+      }}
+    />
+  ) : null;
 
   // ── Inline name / rename ────────────────────────────────────────────────────
   const [nameEditing, setNameEditing] = useState(false);
@@ -2056,7 +2173,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
                 file={localClient.docusignFile}
                 columnId="files"
                 clientId={onboardingItemId || id}
-                onUploaded={newFile => setLocalClient(prev => ({ ...prev, docusignFile: newFile }))}
+                onUploaded={newFile => { setLocalClient(prev => ({ ...prev, docusignFile: newFile })); handleDocusignUploaded(newFile); }}
               />
             )}
             <DateField label="🖊️ Date DocuSign Signed" value={localClient.dateDocusignSigned} columnId="date_mkw2fhte" clientId={id} icon={<Calendar className="w-3.5 h-3.5" />} />
@@ -2082,18 +2199,43 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
           <ComingSoonRow label="Credit Card" icon={<CreditCard className="w-3.5 h-3.5" />} />
         </Section>
 
-        {/* Pricing Info — negotiated 3PL rates per billing category. Each
-            subsection maps to a dedicated Monday column ("Pick and Pack" reuses
-            the existing billing column). Free-text so reps enter rates + terms. */}
-        <Section title="Pricing Info" icon={<Tag className="w-4 h-4 text-[#0071BC]" />} defaultOpen>
-          <EditField label="📥 Receiving Pricing" value={localClient.receivingPricing} columnId="text_mm5hpark" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, receivingPricing: v }))} />
-          <EditField label="📦 Storage" value={localClient.storagePricing} columnId="text_mm5hwtkt" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, storagePricing: v }))} />
-          <EditField label="🔧 Pick and Pack" value={localClient.pickAndPack} columnId="text_mm1zw2vf" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, pickAndPack: v }))} />
-          <EditField label="🏬 DTC Pick and Pack" value={localClient.dtcPickPackPricing} columnId="text_mm5hc2dg" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, dtcPickPackPricing: v }))} />
-          <EditField label="🚚 B2B Shipping Upcharge" value={localClient.b2bShippingUpcharge} columnId="text_mm5h4938" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, b2bShippingUpcharge: v }))} />
-          <EditField label="👤 Dedicated Account Manager Fee" value={localClient.accountManagerFee} columnId="text_mm5hb9" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, accountManagerFee: v }))} />
-          <EditField label="🧾 Platform Fee" value={localClient.platformFee} columnId="text_mm5hq2xy" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, platformFee: v }))} />
+        {/* Pricing Info — 3PL rates from the DocuSign Statement of Work (last
+            page). Each field maps to a dedicated Monday column; "Extract from
+            DocuSign" reads them out of the signed contract and saves them. Shown
+            in two columns so it reads as a grid, not one long list. */}
+        <Section
+          title="Pricing Info"
+          icon={<Tag className="w-4 h-4 text-[#0071BC]" />}
+          defaultOpen
+          headerAction={
+            <ExtractFromDocusignButton
+              hasFile={!!localClient.docusignFile?.assetId}
+              extracting={extractingPricing}
+              flash={pricingFlash}
+              onClick={extractPricingFromDocusign}
+            />
+          }
+        >
+          <div className="grid grid-cols-2 gap-x-3">
+            <EditField label="📥 Receiving Pricing" value={localClient.receivingPricing} columnId="text_mm5hpark" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, receivingPricing: v }))} />
+            <EditField label="🚛 Floor Loaded Unloading Fee" value={localClient.floorLoadedFee} columnId="text_mm5hxygd" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, floorLoadedFee: v }))} />
+            <EditField label="🗄️ Bin Storage" value={localClient.binStorage} columnId="text_mm5hwtkt" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, binStorage: v }))} />
+            <EditField label="🟫 Pallet Storage" value={localClient.palletStorage} columnId="text_mm5h6606" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, palletStorage: v }))} />
+            <EditField label="🏬 DTC Pick & Pack" value={localClient.dtcPickPackPricing} columnId="text_mm5hc2dg" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, dtcPickPackPricing: v }))} />
+            <EditField label="🏭 B2B Pick & Pack" value={localClient.b2bPickPack} columnId="text_mm5h4938" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, b2bPickPack: v }))} />
+            <EditField label="🚚 Shipping Upcharge" value={localClient.shippingUpcharge} columnId="text_mm5h681j" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, shippingUpcharge: v }))} />
+            <EditField label="🌐 Intl Shipping Upcharge" value={localClient.intlShippingUpcharge} columnId="text_mm5h1w32" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, intlShippingUpcharge: v }))} />
+            <EditField label="↩️ Returns Fee" value={localClient.returnsFee} columnId="text_mm5hzk9n" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, returnsFee: v }))} />
+            <EditField label="👤 Dedicated Account Manager Fee" value={localClient.accountManagerFee} columnId="text_mm5hb9" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, accountManagerFee: v }))} />
+            <EditField label="🧾 Platform Fee" value={localClient.platformFee} columnId="text_mm5hq2xy" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, platformFee: v }))} />
+            <EditField label="📆 Payment Terms" value={localClient.paymentTerms} columnId="text_mm5hgn1k" clientId={id} placeholder="Net 4" onSaved={v => setLocalClient(prev => ({ ...prev, paymentTerms: v }))} />
+          </div>
+          <div className="border-t border-gray-100 mt-1 pt-1">
+            <EditField label="📝 Other Notes / Promotions" value={localClient.otherNotes} columnId="long_text_mm5hy744" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, otherNotes: v }))} />
+          </div>
         </Section>
+
+        {pricingOverwriteDialog}
       </div>
     );
   }
@@ -2244,8 +2386,10 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
                 clientId={onboardingItemId || id}
                 onUploaded={newFile => {
                   setLocalClient(prev => ({ ...prev, docusignFile: newFile }));
-                  // Auto-run billing extraction with the new file's assetId
+                  // Auto-run billing extraction (legal / EIN / address) and the
+                  // pricing extraction (Statement of Work) off the new file.
                   handleExtractBilling(newFile.assetId);
+                  handleDocusignUploaded(newFile);
                 }}
               />
             )}
@@ -2517,6 +2661,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
         </div>
       </section>
 
+      {pricingOverwriteDialog}
     </div>
     </CsModeContext.Provider>
   );
