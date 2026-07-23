@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, Upload, FileText, Paperclip, Pencil, Check, X as XIcon, Eye, Link2, ExternalLink, Trash2 } from 'lucide-react';
 import { FilePreviewModal, type PreviewableFile } from './file-preview-modal';
+import { ConfirmDialog } from './client-header';
 
 interface SectionFile {
   assetId: string;
@@ -59,6 +60,12 @@ export function SectionDocuments({
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [previewFile, setPreviewFile] = useState<PreviewableFile | null>(null);
+  // Delete-confirmation popup (files + links) — holds what's pending removal.
+  const [confirmDelete, setConfirmDelete] = useState<
+    | { type: 'file'; assetId: string; name: string; count: number }
+    | { type: 'link'; id: string; name: string }
+    | null
+  >(null);
   // Add-link inline form (name + URL). Links save to the shared docs
   // long_text column tagged with this section's category, so they
   // show up here AND in the Docs tab list.
@@ -170,9 +177,8 @@ export function SectionDocuments({
     if (!res.ok) throw new Error(body?.error ? `${body.error} (HTTP ${res.status})` : `Save failed (HTTP ${res.status})`);
     setLinks(prev => prev.map(l => (l.id === id ? { ...l, ...patch } : l)));
   }, [clientBoardItemId]);
-  const removeLink = useCallback(async (id: string, name: string) => {
+  const removeLink = useCallback(async (id: string) => {
     if (!clientBoardItemId || removingLinkId) return;
-    if (!window.confirm(`Remove the link “${name}”?`)) return;
     setRemovingLinkId(id);
     setErrorMsg('');
     try {
@@ -361,12 +367,7 @@ export function SectionDocuments({
                     ))}
                     onPreview={() => setPreviewFile({ name: f.name, url: f.url, fileType: f.fileType, assetId: f.assetId })}
                     removing={removingId === f.assetId}
-                    onRemove={() => {
-                      const msg = files.length > 1
-                        ? `Monday removes section documents as a set — this removes all ${files.length} documents in ${label}. Continue?`
-                        : `Remove “${f.name}” from ${label}?`;
-                      if (window.confirm(msg)) void removeFile(f.assetId);
-                    }}
+                    onRemove={() => setConfirmDelete({ type: 'file', assetId: f.assetId, name: f.name, count: files.length })}
                   />
                 ))}
                 {links.map(l => (
@@ -375,7 +376,7 @@ export function SectionDocuments({
                     link={l}
                     removing={removingLinkId === l.id}
                     onSave={patch => editLink(l.id, patch)}
-                    onRemove={() => void removeLink(l.id, l.name)}
+                    onRemove={() => setConfirmDelete({ type: 'link', id: l.id, name: l.name })}
                   />
                 ))}
               </ul>
@@ -429,6 +430,26 @@ export function SectionDocuments({
         </div>
       )}
       <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
+      {confirmDelete && (
+        <ConfirmDialog
+          title={confirmDelete.type === 'link' ? 'Remove this link?' : 'Remove this document?'}
+          description={
+            confirmDelete.type === 'link'
+              ? <>Remove the link “{confirmDelete.name}” from {label}? This can’t be undone.</>
+              : confirmDelete.count > 1
+                ? <>Monday removes section documents as a set — this removes all {confirmDelete.count} documents in {label}. This can’t be undone.</>
+                : <>Remove “{confirmDelete.name}” from {label}? This can’t be undone.</>
+          }
+          confirmLabel="Remove"
+          busy={removingId !== null || removingLinkId !== null}
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={async () => {
+            if (confirmDelete.type === 'file') await removeFile(confirmDelete.assetId);
+            else await removeLink(confirmDelete.id);
+            setConfirmDelete(null);
+          }}
+        />
+      )}
     </section>
   );
 }
