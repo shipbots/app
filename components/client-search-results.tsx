@@ -218,6 +218,18 @@ function ResultRow({
                 </span>
               </>
             )}
+            {entry?.subWarehouse && (
+              <>
+                <span className="text-gray-300 flex-shrink-0">·</span>
+                <span className="flex-shrink-0 text-gray-500">{entry.subWarehouse}</span>
+              </>
+            )}
+            {entry?.portal && (
+              <>
+                <span className="text-gray-300 flex-shrink-0">·</span>
+                <span className="flex-shrink-0 text-gray-500">{entry.portal.replace(/^shipbots\s+/i, '')}</span>
+              </>
+            )}
           </span>
         </span>
         <ArrowRight className="w-4 h-4 text-gray-300 flex-shrink-0" />

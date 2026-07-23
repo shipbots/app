@@ -51,6 +51,7 @@ const COLUMN_IDS = [
   // CS browse-by-client columns (shown in the table, also indexed)
   'dropdown_mktrbeyg', // AppDot / Portal
   'dropdown_mktxaege', // Warehouse Location
+  'dropdown_mm5ftdxb', // Sub Warehouse Location
   'dropdown_mkxx7xv',  // Assigned - Customer Support Agent (Email)
 ];
 
@@ -89,6 +90,7 @@ function entryFromItem(it: Item): ClientIndexEntry {
     contact3Phone: cols['text_mktrw0tb'] ?? '',
     portal:        cols['dropdown_mktrbeyg'] ?? '',
     warehouse:     cols['dropdown_mktxaege'] ?? '',
+    subWarehouse:  cols['dropdown_mm5ftdxb'] ?? '',
     agentEmail:    cols['dropdown_mkxx7xv'] ?? '',
     groupId:       it.group?.id ?? '',
   };
