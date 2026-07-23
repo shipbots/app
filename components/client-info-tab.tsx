@@ -1787,13 +1787,14 @@ function ExtractFromDocusignButton({
 }: {
   hasFile: boolean;
   extracting: boolean;
-  flash: 'ok' | 'none' | 'err' | null;
+  flash: 'ok' | 'none' | 'nofile' | 'err' | null;
   onClick: () => void;
 }) {
   return (
     <div className="flex items-center gap-2 flex-shrink-0">
       {flash === 'ok' && <span className="text-[11px] text-green-600 font-medium">Filled from contract ✓</span>}
       {flash === 'none' && <span className="text-[11px] text-gray-400">No pricing found</span>}
+      {flash === 'nofile' && <span className="text-[11px] text-amber-600">No agreement on file</span>}
       {flash === 'err' && <span className="text-[11px] text-red-500">Extract failed</span>}
       <button
         type="button"
@@ -1893,18 +1894,22 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
   // the signed contract and writes the pricing columns server-side, then merges
   // the saved values into local state so the fields reflect them immediately.
   const [extractingPricing, setExtractingPricing] = useState(false);
-  const [pricingFlash, setPricingFlash] = useState<'ok' | 'none' | 'err' | null>(null);
+  const [pricingFlash, setPricingFlash] = useState<'ok' | 'none' | 'nofile' | 'err' | null>(null);
   const extractPricingFromDocusign = useCallback(async (assetIdOverride?: string) => {
-    const assetId = assetIdOverride || localClient.docusignFile?.assetId;
-    if (!assetId || extractingPricing) return;
+    const assetId = assetIdOverride || localClient.docusignFile?.assetId || '';
+    // Run off the existing on-file agreement: send the assetId when we have it,
+    // otherwise the server resolves it from Monday via the onboarding item.
+    if (!assetId && !onboardingItemId) return;
+    if (extractingPricing) return;
     setExtractingPricing(true);
     setPricingFlash(null);
     try {
       const res = await fetch(`/api/client/${id}/extract-pricing`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assetId }),
+        body: JSON.stringify({ assetId, onboardingItemId }),
       });
+      if (res.status === 404) { setPricingFlash('nofile'); return; }
       if (!res.ok) throw new Error(`${res.status}`);
       const data = await res.json();
       const saved = (data?.saved ?? {}) as Partial<ClientInfo>;
@@ -1921,7 +1926,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
       setExtractingPricing(false);
       setTimeout(() => setPricingFlash(null), 4000);
     }
-  }, [id, localClient.docusignFile?.assetId, extractingPricing]);
+  }, [id, localClient.docusignFile?.assetId, onboardingItemId, extractingPricing]);
 
   // On a NEW DocuSign upload, offer to pull the pricing from it. If the client
   // already has pricing on file, confirm before overwriting; otherwise extract
@@ -2209,10 +2214,10 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
           defaultOpen
           headerAction={
             <ExtractFromDocusignButton
-              hasFile={!!localClient.docusignFile?.assetId}
+              hasFile={!!(localClient.docusignFile?.assetId || onboardingItemId)}
               extracting={extractingPricing}
               flash={pricingFlash}
-              onClick={extractPricingFromDocusign}
+              onClick={() => { void extractPricingFromDocusign(); }}
             />
           }
         >
