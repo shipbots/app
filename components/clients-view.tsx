@@ -572,17 +572,22 @@ function SortHeader({
   );
 }
 
-// ── Account Manager multi-select dropdown ───────────────────────────────────
-function ManagerFilterButton({
-  managers,
-  selected,
-  onChange,
-}: {
-  /** Display name → email (or UNASSIGNED_KEY). Empty email shows as "Unassigned". */
-  managers: string[];
+// ── Multi-facet filter dropdown ──────────────────────────────────────────────
+// One "Filter" button opening a popover with a section per facet (account
+// manager, warehouse, sub warehouse, AppDot / Portal). Each facet is an
+// independent multi-select; a client must match every facet that has any
+// selection (AND across facets, OR within one). The badge counts total picks.
+type FilterFacet = {
+  key: string;
+  label: string;
+  options: string[];
   selected: Set<string>;
   onChange: (next: Set<string>) => void;
-}) {
+  /** Optional display transform for an option value (e.g. subLetter). */
+  display?: (v: string) => string;
+};
+
+function FilterButton({ facets, onClearAll }: { facets: FilterFacet[]; onClearAll: () => void }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const ref = useRef<HTMLDivElement>(null);
@@ -596,24 +601,9 @@ function ManagerFilterButton({
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  const filteredManagers = useMemo(() => {
-    if (!query) return managers;
-    const q = query.toLowerCase();
-    return managers.filter(m => m.toLowerCase().includes(q) || (m === UNASSIGNED_KEY && 'unassigned'.includes(q)));
-  }, [managers, query]);
-
-  const toggle = (m: string) => {
-    const next = new Set(selected);
-    if (next.has(m)) next.delete(m);
-    else next.add(m);
-    onChange(next);
-  };
-
-  const selectAll = () => onChange(new Set(managers));
-  const clearAll = () => onChange(new Set());
-
-  const activeCount = selected.size;
-  const isActive = activeCount > 0 && activeCount < managers.length;
+  const totalActive = facets.reduce((n, f) => n + f.selected.size, 0);
+  const isActive = totalActive > 0;
+  const labelFor = (f: FilterFacet, v: string) => (f.display ? f.display(v) : v);
 
   return (
     <div className="relative" ref={ref}>
@@ -627,10 +617,10 @@ function ManagerFilterButton({
         }`}
       >
         <Filter className="w-3 h-3" />
-        Account Manager
+        Filter
         {isActive && (
           <span className="ml-0.5 text-[10px] font-bold bg-[#015280] text-white rounded-full px-1.5 py-0.5 leading-none">
-            {activeCount}
+            {totalActive}
           </span>
         )}
       </button>
@@ -642,49 +632,60 @@ function ManagerFilterButton({
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
               <input
                 type="text"
-                placeholder="Filter managers…"
+                placeholder="Filter options…"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#43c7ff]"
               />
             </div>
             <div className="flex items-center gap-2 mt-2 text-[11px]">
-              <button type="button" onClick={selectAll} className="text-[#015280] hover:underline font-medium">
-                Select all
-              </button>
-              <span className="text-gray-300">·</span>
-              <button type="button" onClick={clearAll} className="text-gray-500 hover:underline">
-                Clear
-              </button>
-              <span className="ml-auto text-gray-400">{activeCount} of {managers.length}</span>
+              <span className="text-gray-400">{totalActive} selected</span>
+              {isActive && (
+                <button type="button" onClick={onClearAll} className="ml-auto text-gray-500 hover:underline">
+                  Clear all
+                </button>
+              )}
             </div>
           </div>
-          <div className="overflow-y-auto max-h-72">
-            {filteredManagers.length === 0 ? (
-              <p className="px-4 py-3 text-sm text-gray-400 text-center">No managers found</p>
-            ) : (
-              filteredManagers.map(m => {
-                const isSelected = selected.has(m);
-                return (
-                  <label
-                    key={m}
-                    className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer transition-colors"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggle(m)}
-                      className="rounded border-gray-300 text-[#015280] focus:ring-[#43c7ff]"
-                    />
-                    {m === UNASSIGNED_KEY ? (
-                      <span className="text-amber-600 italic">Unassigned</span>
-                    ) : (
-                      <span className="truncate text-gray-700">{m}</span>
+          <div className="overflow-y-auto max-h-[60vh]">
+            {facets.map(f => {
+              const q = query.trim().toLowerCase();
+              const opts = q ? f.options.filter(o => labelFor(f, o).toLowerCase().includes(q)) : f.options;
+              if (opts.length === 0) return null;
+              return (
+                <div key={f.key} className="border-b border-gray-100 last:border-b-0 py-1">
+                  <div className="px-3 pt-1 pb-0.5 flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{f.label}</span>
+                    {f.selected.size > 0 && (
+                      <button type="button" onClick={() => f.onChange(new Set())} className="text-[10px] text-gray-400 hover:text-red-600">
+                        clear
+                      </button>
                     )}
-                  </label>
-                );
-              })
-            )}
+                  </div>
+                  {opts.map(o => {
+                    const isSelected = f.selected.has(o);
+                    return (
+                      <label
+                        key={o}
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 cursor-pointer transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            const next = new Set(f.selected);
+                            if (next.has(o)) next.delete(o); else next.add(o);
+                            f.onChange(next);
+                          }}
+                          className="rounded border-gray-300 text-[#015280] focus:ring-[#43c7ff]"
+                        />
+                        <span className="truncate text-gray-700">{labelFor(f, o)}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -1166,14 +1167,49 @@ export function ClientsView({
   }, [items, agentEmailMap]);
 
   const [selectedManagers, setSelectedManagers] = useState<Set<string>>(new Set());
+  const [selectedWarehouses, setSelectedWarehouses] = useState<Set<string>>(new Set());
+  const [selectedSubWarehouses, setSelectedSubWarehouses] = useState<Set<string>>(new Set());
+  const [selectedPortals, setSelectedPortals] = useState<Set<string>>(new Set());
+
+  // Unique warehouse / sub-warehouse / portal values present in the current
+  // client list — the option lists for the Filter dropdown's facets.
+  const facetOptions = useMemo(() => {
+    const wh = new Set<string>(), sub = new Set<string>(), portal = new Set<string>();
+    for (const i of items) {
+      const id = i.clientBoardItemId;
+      if (!id) continue;
+      const e = searchIndex?.[id];
+      if (e?.warehouse) wh.add(e.warehouse);
+      if (e?.subWarehouse) sub.add(e.subWarehouse);
+      if (e?.portal) portal.add(e.portal);
+    }
+    const sortSet = (s: Set<string>) => Array.from(s).sort((a, b) => a.localeCompare(b));
+    return { warehouses: sortSet(wh), subWarehouses: sortSet(sub), portals: sortSet(portal) };
+  }, [items, searchIndex]);
+
+  const anyFilterActive =
+    selectedManagers.size > 0 || selectedWarehouses.size > 0 ||
+    selectedSubWarehouses.size > 0 || selectedPortals.size > 0;
+  const clearAllFilters = () => {
+    setSelectedManagers(new Set());
+    setSelectedWarehouses(new Set());
+    setSelectedSubWarehouses(new Set());
+    setSelectedPortals(new Set());
+  };
 
   const filteredForAll = useMemo(() => {
-    if (selectedManagers.size === 0) return visibilityFiltered;
+    if (!anyFilterActive) return visibilityFiltered;
     return visibilityFiltered.filter(i => {
-      const email = i.clientBoardItemId ? (agentEmailMap[i.clientBoardItemId] ?? '') : '';
-      return selectedManagers.has(email || UNASSIGNED_KEY);
+      const id = i.clientBoardItemId;
+      const email = id ? (agentEmailMap[id] ?? '') : '';
+      const e = id ? searchIndex?.[id] : undefined;
+      if (selectedManagers.size && !selectedManagers.has(email || UNASSIGNED_KEY)) return false;
+      if (selectedWarehouses.size && !selectedWarehouses.has(e?.warehouse ?? '')) return false;
+      if (selectedSubWarehouses.size && !selectedSubWarehouses.has(e?.subWarehouse ?? '')) return false;
+      if (selectedPortals.size && !selectedPortals.has(e?.portal ?? '')) return false;
+      return true;
     });
-  }, [visibilityFiltered, selectedManagers, agentEmailMap]);
+  }, [visibilityFiltered, anyFilterActive, selectedManagers, selectedWarehouses, selectedSubWarehouses, selectedPortals, agentEmailMap, searchIndex]);
 
   // Active-project count per client (active = status is not "completed"), for
   // the Projects badge column. Mock projects link by client name (no board id
@@ -1349,21 +1385,25 @@ export function ClientsView({
                     </span>
                   )}
                 </button>
-                {selectedManagers.size > 0 && (
+                {anyFilterActive && (
                   <button
                     type="button"
-                    onClick={() => setSelectedManagers(new Set())}
-                    title="Clear manager filter"
+                    onClick={clearAllFilters}
+                    title="Clear all filters"
                     className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-red-600 transition-colors"
                   >
                     <X className="w-3 h-3" />
                     Clear
                   </button>
                 )}
-                <ManagerFilterButton
-                  managers={managers}
-                  selected={selectedManagers}
-                  onChange={setSelectedManagers}
+                <FilterButton
+                  facets={[
+                    { key: 'manager', label: 'Account Manager', options: managers, selected: selectedManagers, onChange: setSelectedManagers, display: (m) => (m === UNASSIGNED_KEY ? 'Unassigned' : m) },
+                    { key: 'warehouse', label: 'Warehouse', options: facetOptions.warehouses, selected: selectedWarehouses, onChange: setSelectedWarehouses },
+                    { key: 'subwarehouse', label: 'Sub Warehouse', options: facetOptions.subWarehouses, selected: selectedSubWarehouses, onChange: setSelectedSubWarehouses, display: subLetter },
+                    { key: 'portal', label: 'AppDot / Portal', options: facetOptions.portals, selected: selectedPortals, onChange: setSelectedPortals },
+                  ]}
+                  onClearAll={clearAllFilters}
                 />
                 {/* Bulk edit trigger — flipping it on reveals a checkbox
                     column and the bulk action bar. Cancel exits and
