@@ -626,7 +626,7 @@ function FilterButton({ facets, onClearAll }: { facets: FilterFacet[]; onClearAl
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-xl shadow-xl w-72 flex flex-col overflow-hidden">
+        <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-xl shadow-xl w-[760px] max-w-[calc(100vw-2rem)] flex flex-col overflow-hidden">
           <div className="p-2 border-b border-gray-100">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -647,42 +647,49 @@ function FilterButton({ facets, onClearAll }: { facets: FilterFacet[]; onClearAl
               )}
             </div>
           </div>
-          <div className="overflow-y-auto max-h-[60vh]">
+          {/* One column per facet so nothing is cut off; each column scrolls
+              independently when its list is long. */}
+          <div className="flex divide-x divide-gray-100 max-h-[60vh]">
             {facets.map(f => {
               const q = query.trim().toLowerCase();
               const opts = q ? f.options.filter(o => labelFor(f, o).toLowerCase().includes(q)) : f.options;
-              if (opts.length === 0) return null;
               return (
-                <div key={f.key} className="border-b border-gray-100 last:border-b-0 py-1">
-                  <div className="px-3 pt-1 pb-0.5 flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{f.label}</span>
+                <div key={f.key} className="flex-1 min-w-0 flex flex-col">
+                  <div className="px-3 pt-2 pb-1 flex items-center justify-between flex-shrink-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 truncate">{f.label}</span>
                     {f.selected.size > 0 && (
-                      <button type="button" onClick={() => f.onChange(new Set())} className="text-[10px] text-gray-400 hover:text-red-600">
+                      <button type="button" onClick={() => f.onChange(new Set())} className="ml-1 flex-shrink-0 text-[10px] text-gray-400 hover:text-red-600">
                         clear
                       </button>
                     )}
                   </div>
-                  {opts.map(o => {
-                    const isSelected = f.selected.has(o);
-                    return (
-                      <label
-                        key={o}
-                        className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 cursor-pointer transition-colors"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => {
-                            const next = new Set(f.selected);
-                            if (next.has(o)) next.delete(o); else next.add(o);
-                            f.onChange(next);
-                          }}
-                          className="rounded border-gray-300 text-[#015280] focus:ring-[#43c7ff]"
-                        />
-                        <span className="truncate text-gray-700">{labelFor(f, o)}</span>
-                      </label>
-                    );
-                  })}
+                  <div className="overflow-y-auto flex-1 pb-1">
+                    {opts.length === 0 ? (
+                      <p className="px-3 py-1.5 text-[11px] text-gray-300 italic">None</p>
+                    ) : (
+                      opts.map(o => {
+                        const isSelected = f.selected.has(o);
+                        return (
+                          <label
+                            key={o}
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 cursor-pointer transition-colors"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                const next = new Set(f.selected);
+                                if (next.has(o)) next.delete(o); else next.add(o);
+                                f.onChange(next);
+                              }}
+                              className="flex-shrink-0 rounded border-gray-300 text-[#015280] focus:ring-[#43c7ff]"
+                            />
+                            <span className="truncate text-gray-700" title={labelFor(f, o)}>{labelFor(f, o)}</span>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -1175,16 +1182,21 @@ export function ClientsView({
   // client list — the option lists for the Filter dropdown's facets.
   const facetOptions = useMemo(() => {
     const wh = new Set<string>(), sub = new Set<string>(), portal = new Set<string>();
+    let whNone = false, subNone = false, portalNone = false;
     for (const i of items) {
-      const id = i.clientBoardItemId;
-      if (!id) continue;
-      const e = searchIndex?.[id];
-      if (e?.warehouse) wh.add(e.warehouse);
-      if (e?.subWarehouse) sub.add(e.subWarehouse);
-      if (e?.portal) portal.add(e.portal);
+      const e = i.clientBoardItemId ? searchIndex?.[i.clientBoardItemId] : undefined;
+      if (e?.warehouse) wh.add(e.warehouse); else whNone = true;
+      if (e?.subWarehouse) sub.add(e.subWarehouse); else subNone = true;
+      if (e?.portal) portal.add(e.portal); else portalNone = true;
     }
-    const sortSet = (s: Set<string>) => Array.from(s).sort((a, b) => a.localeCompare(b));
-    return { warehouses: sortSet(wh), subWarehouses: sortSet(sub), portals: sortSet(portal) };
+    // Append an "Unassigned" bucket (UNASSIGNED_KEY) when any client has no value
+    // for that facet, so reps can filter to the not-yet-set clients.
+    const build = (s: Set<string>, none: boolean) => {
+      const list = Array.from(s).sort((a, b) => a.localeCompare(b));
+      if (none) list.push(UNASSIGNED_KEY);
+      return list;
+    };
+    return { warehouses: build(wh, whNone), subWarehouses: build(sub, subNone), portals: build(portal, portalNone) };
   }, [items, searchIndex]);
 
   const anyFilterActive =
@@ -1204,9 +1216,9 @@ export function ClientsView({
       const email = id ? (agentEmailMap[id] ?? '') : '';
       const e = id ? searchIndex?.[id] : undefined;
       if (selectedManagers.size && !selectedManagers.has(email || UNASSIGNED_KEY)) return false;
-      if (selectedWarehouses.size && !selectedWarehouses.has(e?.warehouse ?? '')) return false;
-      if (selectedSubWarehouses.size && !selectedSubWarehouses.has(e?.subWarehouse ?? '')) return false;
-      if (selectedPortals.size && !selectedPortals.has(e?.portal ?? '')) return false;
+      if (selectedWarehouses.size && !selectedWarehouses.has(e?.warehouse || UNASSIGNED_KEY)) return false;
+      if (selectedSubWarehouses.size && !selectedSubWarehouses.has(e?.subWarehouse || UNASSIGNED_KEY)) return false;
+      if (selectedPortals.size && !selectedPortals.has(e?.portal || UNASSIGNED_KEY)) return false;
       return true;
     });
   }, [visibilityFiltered, anyFilterActive, selectedManagers, selectedWarehouses, selectedSubWarehouses, selectedPortals, agentEmailMap, searchIndex]);
@@ -1399,9 +1411,9 @@ export function ClientsView({
                 <FilterButton
                   facets={[
                     { key: 'manager', label: 'Account Manager', options: managers, selected: selectedManagers, onChange: setSelectedManagers, display: (m) => (m === UNASSIGNED_KEY ? 'Unassigned' : m) },
-                    { key: 'warehouse', label: 'Warehouse', options: facetOptions.warehouses, selected: selectedWarehouses, onChange: setSelectedWarehouses },
-                    { key: 'subwarehouse', label: 'Sub Warehouse', options: facetOptions.subWarehouses, selected: selectedSubWarehouses, onChange: setSelectedSubWarehouses, display: subLetter },
-                    { key: 'portal', label: 'AppDot / Portal', options: facetOptions.portals, selected: selectedPortals, onChange: setSelectedPortals },
+                    { key: 'warehouse', label: 'Warehouse', options: facetOptions.warehouses, selected: selectedWarehouses, onChange: setSelectedWarehouses, display: (v) => (v === UNASSIGNED_KEY ? 'Unassigned' : v) },
+                    { key: 'subwarehouse', label: 'Sub Warehouse', options: facetOptions.subWarehouses, selected: selectedSubWarehouses, onChange: setSelectedSubWarehouses, display: (v) => (v === UNASSIGNED_KEY ? 'Unassigned' : subLetter(v)) },
+                    { key: 'portal', label: 'AppDot / Portal', options: facetOptions.portals, selected: selectedPortals, onChange: setSelectedPortals, display: (v) => (v === UNASSIGNED_KEY ? 'Unassigned' : v) },
                   ]}
                   onClearAll={clearAllFilters}
                 />
