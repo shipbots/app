@@ -49,6 +49,15 @@ export interface ClientIndexEntry {
 /** Clients-board "Exited" group id — a client here reads as inactive. */
 export const CLIENT_GROUP_EXITED_ID = 'group_mkq09z7j';
 
+// A sub-warehouse value like "Gardena-A" collapses to just its trailing letter
+// ("A") for the compact Sub column + search results. Falls back to the raw
+// (uppercased) value when it isn't in the expected "<name>-<letter>" shape.
+export function subLetter(v: string): string {
+  const s = (v || '').trim();
+  const m = s.match(/[-\s]([A-Za-z0-9]{1,2})$/);
+  return (m ? m[1] : s).toUpperCase();
+}
+
 /** High-level classification of which field matched, for display + styling. */
 export type MatchKind = 'name' | 'company' | 'contact' | 'email' | 'phone';
 

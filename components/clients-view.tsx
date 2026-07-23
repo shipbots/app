@@ -29,11 +29,11 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { prefetchCached } from '@/hooks/use-cached-fetch';
 import { useClientSearchIndex } from '@/hooks/use-client-search-index';
 import { usePersistentCollapse } from '@/hooks/use-persistent-collapse';
-import { CLIENT_GROUP_EXITED_ID, type ClientIndexEntry } from '@/lib/client-search';
+import { CLIENT_GROUP_EXITED_ID, subLetter, type ClientIndexEntry } from '@/lib/client-search';
 import { OnboardingItem, SubItem, ClientInfo } from '@/lib/types';
 import type { Project } from '@/lib/projects';
 import { MyProjectsPanel } from './my-projects-panel';
-import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search, ChevronsUpDown, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Filter, X, Eye, EyeOff, ListChecks, Warehouse, UserCog, ArrowUpDown, FolderKanban } from 'lucide-react';
+import { Users, CheckSquare, User, Copy, Check, Mail, Phone, Loader2, Search, ChevronsUpDown, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Filter, X, Eye, EyeOff, ListChecks, Warehouse, Boxes, UserCog, ArrowUpDown, FolderKanban } from 'lucide-react';
 
 // ── Sort config used by both client tables ──────────────────────────────────
 type SortColumn = 'client' | 'manager' | 'contact' | 'portal' | 'warehouse';
@@ -396,6 +396,7 @@ function ClientRow({
   agentEmail,
   portal,
   warehouse,
+  subWarehouse,
   inactive,
   activeProjects = 0,
   onSelect,
@@ -409,6 +410,8 @@ function ClientRow({
   portal: string;
   /** Warehouse Location label; empty when unknown / not on file. */
   warehouse: string;
+  /** Sub Warehouse Location label (e.g. "Gardena-A"); shown as just the letter. */
+  subWarehouse: string;
   /** True when the client is in the "Exited" group on the Clients board. */
   inactive: boolean;
   /** Count of this client's active (not-completed) projects. */
@@ -497,6 +500,15 @@ function ClientRow({
         {warehouse ? (
           <span className="text-sm text-gray-800 truncate max-w-[200px] inline-block" title={warehouse}>
             {warehouse}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-400 italic">—</span>
+        )}
+      </td>
+      <td className="px-4 py-2.5">
+        {subWarehouse ? (
+          <span className="text-sm font-semibold text-gray-800" title={subWarehouse}>
+            {subLetter(subWarehouse)}
           </span>
         ) : (
           <span className="text-xs text-gray-400 italic">—</span>
@@ -745,6 +757,8 @@ function ClientTable({
     clientBoardItemId ? (searchIndex?.[clientBoardItemId]?.portal ?? '') : '';
   const warehouseFor = (clientBoardItemId: string | null) =>
     clientBoardItemId ? (searchIndex?.[clientBoardItemId]?.warehouse ?? '') : '';
+  const subWarehouseFor = (clientBoardItemId: string | null) =>
+    clientBoardItemId ? (searchIndex?.[clientBoardItemId]?.subWarehouse ?? '') : '';
 
   // Map each item to a tuple of sort keys so we don't recompute strings per
   // comparison call.
@@ -813,6 +827,9 @@ function ClientTable({
                 </th>
                 <SortHeader label="AppDot / Portal" column="portal" sort={sort} onChange={onSortChange} />
                 <SortHeader label="Warehouse" column="warehouse" sort={sort} onChange={onSortChange} />
+                <th className="px-4 py-2 text-left">
+                  <span className="uppercase tracking-wider text-[11px] font-semibold text-gray-500">Sub</span>
+                </th>
                 <SortHeader label="Account Manager" column="manager" sort={sort} onChange={onSortChange} />
                 <SortHeader label="Main Contact" column="contact" sort={sort} onChange={onSortChange} />
               </tr>
@@ -825,6 +842,7 @@ function ClientTable({
                   agentEmail={item.clientBoardItemId ? (agentEmailMap[item.clientBoardItemId] ?? '') : ''}
                   portal={portalFor(item.clientBoardItemId)}
                   warehouse={warehouseFor(item.clientBoardItemId)}
+                  subWarehouse={subWarehouseFor(item.clientBoardItemId)}
                   inactive={isInactive(item.clientBoardItemId)}
                   activeProjects={activeProjectsFor?.(item) ?? 0}
                   onSelect={() => onSelectItem(item)}
@@ -1003,7 +1021,7 @@ export function ClientsView({
   // hidden checkboxes don't stay logically checked.
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkAction, setBulkAction] = useState<null | 'deactivate' | 'agent' | 'portal' | 'warehouse'>(null);
+  const [bulkAction, setBulkAction] = useState<null | 'deactivate' | 'agent' | 'portal' | 'warehouse' | 'subwarehouse'>(null);
   const [bulkRunning, setBulkRunning] = useState(false);
   const [bulkError, setBulkError] = useState<string>('');
   const [bulkDoneCount, setBulkDoneCount] = useState(0);
@@ -1436,7 +1454,8 @@ type BulkPayload =
   | { kind: 'deactivate' }
   | { kind: 'agent'; email: string }
   | { kind: 'portal'; value: string }
-  | { kind: 'warehouse'; value: string };
+  | { kind: 'warehouse'; value: string }
+  | { kind: 'subwarehouse'; value: string };
 async function runBulkPatch(clientId: string, payload: BulkPayload): Promise<void> {
   if (payload.kind === 'deactivate') {
     const res = await fetch(`/api/client/${encodeURIComponent(clientId)}/set-active`, {
@@ -1449,9 +1468,10 @@ async function runBulkPatch(clientId: string, payload: BulkPayload): Promise<voi
     return;
   }
   const columnId =
-    payload.kind === 'agent'    ? 'dropdown_mkxx7xv' :
-    payload.kind === 'portal'   ? 'dropdown_mktrbeyg' :
-    /* warehouse */               'dropdown_mktxaege';
+    payload.kind === 'agent'        ? 'dropdown_mkxx7xv' :
+    payload.kind === 'portal'       ? 'dropdown_mktrbeyg' :
+    payload.kind === 'subwarehouse' ? 'dropdown_mm5ftdxb' :
+    /* warehouse */                   'dropdown_mktxaege';
   const value = payload.kind === 'agent' ? payload.email : payload.value;
   const res = await fetch(`/api/client/${encodeURIComponent(clientId)}`, {
     method: 'PATCH',
@@ -1466,7 +1486,7 @@ function BulkActionBar({
   selectedCount, onAction, onCancel, running,
 }: {
   selectedCount: number;
-  onAction: (a: 'deactivate' | 'agent' | 'portal' | 'warehouse') => void;
+  onAction: (a: 'deactivate' | 'agent' | 'portal' | 'warehouse' | 'subwarehouse') => void;
   onCancel: () => void;
   running: boolean;
 }) {
@@ -1502,6 +1522,7 @@ function BulkActionBar({
               <BulkMenuItem icon={<UserCog className="w-3.5 h-3.5" />} label="Assign account manager" onClick={() => { setOpen(false); onAction('agent'); }} />
               <BulkMenuItem icon={<ArrowUpDown className="w-3.5 h-3.5" />} label="Change AppDot / Portal" onClick={() => { setOpen(false); onAction('portal'); }} />
               <BulkMenuItem icon={<Warehouse className="w-3.5 h-3.5" />} label="Change warehouse" onClick={() => { setOpen(false); onAction('warehouse'); }} />
+              <BulkMenuItem icon={<Boxes className="w-3.5 h-3.5" />} label="Change sub warehouse" onClick={() => { setOpen(false); onAction('subwarehouse'); }} />
               <div className="my-1 border-t border-gray-100" />
               <BulkMenuItem icon={<X className="w-3.5 h-3.5 text-red-500" />} label="Deactivate clients" onClick={() => { setOpen(false); onAction('deactivate'); }} danger />
             </div>
@@ -1544,7 +1565,7 @@ function BulkMenuItem({
 function BulkActionModal({
   action, selectedIds, selectedNames, running, error, doneCount, onCancel, onRun,
 }: {
-  action: 'deactivate' | 'agent' | 'portal' | 'warehouse';
+  action: 'deactivate' | 'agent' | 'portal' | 'warehouse' | 'subwarehouse';
   selectedIds: string[];
   selectedNames: string[];
   running: boolean;
@@ -1558,6 +1579,8 @@ function BulkActionModal({
   const [portalTokens, setPortalTokens] = useState<Set<'AppDot' | 'Portal'>>(new Set());
   const [warehouseOptions, setWarehouseOptions] = useState<string[]>([]);
   const [warehousePicks, setWarehousePicks] = useState<Set<string>>(new Set());
+  const [subWarehouseOptions, setSubWarehouseOptions] = useState<string[]>([]);
+  const [subWarehousePicks, setSubWarehousePicks] = useState<Set<string>>(new Set());
 
   // Load option lists as soon as the modal opens.
   useEffect(() => {
@@ -1580,6 +1603,12 @@ function BulkActionModal({
         .then((data: Record<string, string[]>) => setWarehouseOptions(data['dropdown_mktxaege'] ?? []))
         .catch(() => setWarehouseOptions([]));
     }
+    if (action === 'subwarehouse') {
+      fetch('/api/client/column-options')
+        .then(r => r.ok ? r.json() : {})
+        .then((data: Record<string, string[]>) => setSubWarehouseOptions(data['dropdown_mm5ftdxb'] ?? []))
+        .catch(() => setSubWarehouseOptions([]));
+    }
   }, [action]);
 
   const titleMap = {
@@ -1587,6 +1616,7 @@ function BulkActionModal({
     agent:      'Assign account manager',
     portal:     'Change AppDot / Portal',
     warehouse:  'Change warehouse',
+    subwarehouse: 'Change sub warehouse',
   };
 
   const togglePortal = (token: 'AppDot' | 'Portal') => {
@@ -1603,17 +1633,26 @@ function BulkActionModal({
       return next;
     });
   };
+  const toggleSubWarehouse = (opt: string) => {
+    setSubWarehousePicks(prev => {
+      const next = new Set(prev);
+      if (next.has(opt)) next.delete(opt); else next.add(opt);
+      return next;
+    });
+  };
 
   const canRun =
     action === 'deactivate' ? true :
     action === 'agent'      ? !!agentEmail :
     action === 'portal'     ? true :
+    action === 'subwarehouse' ? subWarehousePicks.size > 0 :
     /* warehouse */           warehousePicks.size > 0;
 
   const submit = () => {
     if (action === 'deactivate') onRun({ kind: 'deactivate' });
     else if (action === 'agent') onRun({ kind: 'agent', email: agentEmail });
     else if (action === 'portal') onRun({ kind: 'portal', value: Array.from(portalTokens).join(', ') });
+    else if (action === 'subwarehouse') onRun({ kind: 'subwarehouse', value: Array.from(subWarehousePicks).join(', ') });
     else onRun({ kind: 'warehouse', value: Array.from(warehousePicks).join(', ') });
   };
 
@@ -1691,6 +1730,29 @@ function BulkActionModal({
                       type="checkbox"
                       checked={warehousePicks.has(opt)}
                       onChange={() => toggleWarehouse(opt)}
+                      className="w-3.5 h-3.5 rounded border-gray-300 text-[#015280] focus:ring-[#43c7ff]"
+                    />
+                    {opt}
+                  </label>
+                ))
+              )}
+            </div>
+          )}
+          {action === 'subwarehouse' && (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-600">Pick the sub warehouse. The value replaces whatever&apos;s currently on file.</p>
+              {subWarehouseOptions.length === 0 ? (
+                <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Loading sub warehouses…
+                </div>
+              ) : (
+                subWarehouseOptions.map(opt => (
+                  <label key={opt} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={subWarehousePicks.has(opt)}
+                      onChange={() => toggleSubWarehouse(opt)}
                       className="w-3.5 h-3.5 rounded border-gray-300 text-[#015280] focus:ring-[#43c7ff]"
                     />
                     {opt}

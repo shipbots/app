@@ -266,7 +266,7 @@ function renderResults(results, container, activeIdx) {
       tag.textContent = field.contact === 1 ? 'primary' : `contact ${field.contact}`;
       meta.appendChild(tag);
       if (client.warehouse) addSepSpan('warehouse', client.warehouse);
-      if (client.subWarehouse) addSepSpan('sub-warehouse', client.subWarehouse);
+      if (client.subWarehouse) addSepSpan('sub-warehouse', subLetter(client.subWarehouse));
       if (client.portal) addSepSpan('portal', shortPortal(client.portal));
       if (agentName) addSepSpan('agent', agentName);
     } else {
@@ -274,7 +274,7 @@ function renderResults(results, container, activeIdx) {
       if (client.contactEmail) metaParts.push(escapeHtml(client.contactEmail));
       else if (client.contactName) metaParts.push(escapeHtml(client.contactName));
       if (client.warehouse) metaParts.push(`<span class="warehouse">${escapeHtml(client.warehouse)}</span>`);
-      if (client.subWarehouse) metaParts.push(`<span class="sub-warehouse">${escapeHtml(client.subWarehouse)}</span>`);
+      if (client.subWarehouse) metaParts.push(`<span class="sub-warehouse">${escapeHtml(subLetter(client.subWarehouse))}</span>`);
       if (client.portal) metaParts.push(`<span class="portal">${escapeHtml(shortPortal(client.portal))}</span>`);
       if (agentName) metaParts.push(`<span class="agent">${escapeHtml(agentName)}</span>`);
       if (metaParts.length > 0) meta.innerHTML = metaParts.join(' · ');
@@ -289,6 +289,13 @@ function renderResults(results, container, activeIdx) {
 // compactly in the meta line ("ShipBots Portal" → "Portal"; "AppDot"/"Both" stay).
 function shortPortal(p) {
   return String(p || '').replace(/^shipbots\s+/i, '').trim();
+}
+
+// "Gardena-A" → "A" for the compact sub-warehouse chip in search results.
+function subLetter(v) {
+  const s = String(v || '').trim();
+  const m = s.match(/[-\s]([A-Za-z0-9]{1,2})$/);
+  return (m ? m[1] : s).toUpperCase();
 }
 
 function escapeHtml(s) {

@@ -18,6 +18,7 @@ import { Search, User, Loader2, ArrowRight, Warehouse } from 'lucide-react';
 import type { OnboardingItem } from '@/lib/types';
 import {
   searchClients,
+  subLetter,
   CLIENT_GROUP_EXITED_ID,
   type ClientIndexEntry,
   type ClientSearchHit,
@@ -221,7 +222,7 @@ function ResultRow({
             {entry?.subWarehouse && (
               <>
                 <span className="text-gray-300 flex-shrink-0">·</span>
-                <span className="flex-shrink-0 text-gray-500">{entry.subWarehouse}</span>
+                <span className="flex-shrink-0 text-gray-500">{subLetter(entry.subWarehouse)}</span>
               </>
             )}
             {entry?.portal && (
