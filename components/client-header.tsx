@@ -908,9 +908,9 @@ export function ClientHeader({
             clientId={clientId}
             onSaved={next => onClientChanged({ portalDropdown: next })}
           />
-          {/* Warehouse + Sub Warehouse stacked: the sub-warehouse
-              (Gardena-A/B/C) sits directly beneath the main warehouse. */}
-          <div className="flex flex-col gap-1">
+          {/* Warehouse + Sub Warehouse side by side: the main warehouse
+              (Gardena) sits next to its sub-warehouse (Gardena-A/B/C). */}
+          <div className="flex flex-row items-start gap-1.5">
             <WarehousePill
               value={client.warehouseLocation}
               options={warehouseOptions}
