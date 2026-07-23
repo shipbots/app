@@ -654,7 +654,7 @@ function FilterButton({ facets, onClearAll }: { facets: FilterFacet[]; onClearAl
               const q = query.trim().toLowerCase();
               const opts = q ? f.options.filter(o => labelFor(f, o).toLowerCase().includes(q)) : f.options;
               return (
-                <div key={f.key} className="flex-1 min-w-0 flex flex-col">
+                <div key={f.key} className="flex-1 min-w-0 flex flex-col min-h-0">
                   <div className="px-3 pt-2 pb-1 flex items-center justify-between flex-shrink-0">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 truncate">{f.label}</span>
                     {f.selected.size > 0 && (
@@ -663,7 +663,7 @@ function FilterButton({ facets, onClearAll }: { facets: FilterFacet[]; onClearAl
                       </button>
                     )}
                   </div>
-                  <div className="overflow-y-auto flex-1 pb-1">
+                  <div className="overflow-y-auto flex-1 min-h-0 pb-1">
                     {opts.length === 0 ? (
                       <p className="px-3 py-1.5 text-[11px] text-gray-300 italic">None</p>
                     ) : (
