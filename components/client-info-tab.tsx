@@ -2495,6 +2495,12 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
 
       {/* ── Receiving ── */}
       <Section title="Receiving" attachmentCount={attachmentCounts.receiving}>
+        <SectionDocuments
+          clientBoardItemId={id}
+          category="receiving"
+          label="Receiving Documents"
+          hint="Attach anything the receiving team needs — labels, quality checks, etc. Also appears in the general Docs tab."
+        />
         <DateField
           label="Initial Inventory Est. Delivery Date"
           value={localClient.initialInventoryDate}
@@ -2532,16 +2538,16 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
         <EditField label="🗄️ Initial Inventory Storing Needs" value={localClient.initialInventoryStoringNeeds} columnId="text_mkw2z2tp" clientId={id} />
         <EditField label="📝 Notes on Initial Inventory" value={localClient.notesOnInitialInventory} columnId="long_text_mktqapsv" clientId={id} multiline />
         <EditField label="📝 Notes for Receiving" value={localClient.notesForReceiving} columnId="long_text_mkxecta8" clientId={id} multiline />
-        <SectionDocuments
-          clientBoardItemId={id}
-          category="receiving"
-          label="Receiving Documents"
-          hint="Attach anything the receiving team needs — labels, quality checks, etc. Also appears in the general Docs tab."
-        />
       </Section>
 
       {/* ── Packing & Shipping Requirements ── */}
       <Section title="Packing & Shipping Requirements" attachmentCount={attachmentCounts.packing}>
+        <SectionDocuments
+          clientBoardItemId={id}
+          category="packing"
+          label="Packing Documents"
+          hint="Attach anything the packing team needs — inserts, labels, packaging specs. Also appears in the general Docs tab."
+        />
         <EditField label="🛒 E-Commerce Platforms" value={localClient.ecommercePlatforms} columnId="long_text_mktra0sm" clientId={id} multiline />
         <EditField label="🔢 # of SKUs" value={localClient.skuCount} columnId="text_mktqrstq" clientId={id} />
         <SelectField label="🔄 Current Fulfillment Method" value={localClient.currentFulfillmentMethod} columnId="dropdown_mktq27te" clientId={id} options={colOptions['dropdown_mktq27te'] ?? []} valueType="dropdown" />
@@ -2564,16 +2570,16 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
         <EditField label="📝 Additional Notes" value={localClient.additionalNotes} columnId="long_text_mktran3x" clientId={id} multiline />
         <EditField label="📝 Additional Shipping Requirement Notes" value={localClient.additionalShippingNotes} columnId="long_text_mkwy13zg" clientId={id} multiline />
         <EditField label="📝 Notes for Packing" value={localClient.notesForPacking} columnId="long_text_mkxfv1hr" clientId={id} multiline />
-        <SectionDocuments
-          clientBoardItemId={id}
-          category="packing"
-          label="Packing Documents"
-          hint="Attach anything the packing team needs — inserts, labels, packaging specs. Also appears in the general Docs tab."
-        />
       </Section>
 
       {/* ── Returns Specifications ── */}
       <Section title="Returns Specifications" defaultOpen={false} attachmentCount={attachmentCounts.returns}>
+        <SectionDocuments
+          clientBoardItemId={id}
+          category="returns"
+          label="Returns Reference Documents"
+          hint="Attach anything returns needs — RMAs, quality specs, damage handling. Also appears in the general Docs tab."
+        />
         <SelectField label="⭐ Product Category" value={localClient.productCategory} columnId="color_mktq81r3" clientId={id} options={colOptions['color_mktq81r3'] ?? []} valueType="status" />
         <SelectField label="🔄 Returns Process" value={localClient.returnsProcess} columnId="color_mkxfrgba" clientId={id} options={colOptions['color_mkxfrgba'] ?? []} valueType="status" />
         <EditField label="📝 Notes for Returns" value={localClient.notesForReturns} columnId="long_text_mkxeajq4" clientId={id} multiline />
@@ -2581,12 +2587,6 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
         <SelectField label="💔 Returns - Damaged Condition" value={localClient.returnsDamagedCondition} columnId="color_mkxfa9h5" clientId={id} options={colOptions['color_mkxfa9h5'] ?? []} valueType="status" />
         <SelectField label="✨ Returns - New Condition" value={localClient.returnsNewCondition} columnId="color_mkxfkdyh" clientId={id} options={colOptions['color_mkxfkdyh'] ?? []} valueType="status" />
         <SelectField label="♻️ Returns - Used Condition" value={localClient.returnsUsedCondition} columnId="color_mkxfxdx5" clientId={id} options={colOptions['color_mkxfxdx5'] ?? []} valueType="status" />
-        <SectionDocuments
-          clientBoardItemId={id}
-          category="returns"
-          label="Returns Reference Documents"
-          hint="Attach anything returns needs — RMAs, quality specs, damage handling. Also appears in the general Docs tab."
-        />
       </Section>
 
       {/* ── E-mail notifications ── Sits after Returns; collapsed by default,

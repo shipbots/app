@@ -18,7 +18,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Upload, FileText, Paperclip, Pencil, Check, X as XIcon, Eye, Link2, ExternalLink } from 'lucide-react';
+import { Loader2, Upload, FileText, Paperclip, Pencil, Check, X as XIcon, Eye, Link2, ExternalLink, Trash2 } from 'lucide-react';
 import { FilePreviewModal, type PreviewableFile } from './file-preview-modal';
 
 interface SectionFile {
@@ -130,6 +130,30 @@ export function SectionDocuments({
       setUploading(false);
     }
   }, [clientBoardItemId, category, uploading, load]);
+
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  // Remove documents from this section. Monday only exposes a whole-column
+  // clear for file columns (no reliable per-file primitive), so DELETE clears
+  // the section's file column — for a single-doc section that's exactly "remove
+  // this file"; the caller confirms when more than one file would go.
+  const removeFile = useCallback(async (assetId: string) => {
+    if (!clientBoardItemId || removingId) return;
+    setRemovingId(assetId);
+    setErrorMsg('');
+    try {
+      const res = await fetch(`/api/client/${clientBoardItemId}/section-files/${category}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error ? `${body.error} (HTTP ${res.status})` : `Remove failed (HTTP ${res.status})`);
+      }
+      setFiles([]); // clear_all removed every file in this section
+    } catch (err) {
+      console.error(`[section-docs ${category}] remove failed:`, err);
+      setErrorMsg(err instanceof Error ? err.message : 'Remove failed');
+    } finally {
+      setRemovingId(null);
+    }
+  }, [clientBoardItemId, category, removingId]);
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -301,6 +325,13 @@ export function SectionDocuments({
                       x.assetId === f.assetId ? { ...x, name: newName } : x
                     ))}
                     onPreview={() => setPreviewFile({ name: f.name, url: f.url, fileType: f.fileType, assetId: f.assetId })}
+                    removing={removingId === f.assetId}
+                    onRemove={() => {
+                      const msg = files.length > 1
+                        ? `Monday removes section documents as a set — this removes all ${files.length} documents in ${label}. Continue?`
+                        : `Remove “${f.name}” from ${label}?`;
+                      if (window.confirm(msg)) void removeFile(f.assetId);
+                    }}
                   />
                 ))}
                 {links.map(l => (
@@ -388,11 +419,15 @@ function FileRow({
   clientBoardItemId,
   onRenamed,
   onPreview,
+  onRemove,
+  removing,
 }: {
   file: SectionFile;
   clientBoardItemId: string;
   onRenamed: (newName: string) => void;
   onPreview: () => void;
+  onRemove: () => void;
+  removing: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(file.name);
@@ -497,6 +532,17 @@ function FileRow({
         >
           <Eye className="w-3 h-3" />
           Preview
+        </button>
+      )}
+      {!editing && (
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={removing}
+          className="p-1 rounded text-rose-400 hover:text-rose-600 hover:bg-rose-50 flex-shrink-0 disabled:opacity-50 transition-colors"
+          title="Remove this document"
+        >
+          {removing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
         </button>
       )}
     </li>

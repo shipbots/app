@@ -38,14 +38,15 @@ async function fetchAliases(clientId: string): Promise<Record<string, string>> {
 }
 
 const MONDAY_API_URL = 'https://api.monday.com/v2';
+const CLIENTS_BOARD_ID = '7846251224';
 
-async function mondayGql(query: string): Promise<unknown> {
+async function mondayGql(query: string, variables?: Record<string, unknown>): Promise<unknown> {
   const key = process.env.MONDAY_API_KEY;
   if (!key) throw new Error('MONDAY_API_KEY not set');
   const res = await fetch(MONDAY_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: key },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify(variables ? { query, variables } : { query }),
   });
   const body = await res.json();
   if (body?.errors?.length) throw new Error(String(body.errors[0]?.message || 'Monday error'));
@@ -265,18 +266,36 @@ export async function POST(
 }
 
 // ── DELETE ─────────────────────────────────────────────────────────
-// Not exposed for section files in v1. Monday's `change_column_value`
-// on a file column replaces the whole list (there's no reliable
-// per-file GraphQL primitive we've verified) so a delete would risk
-// nuking the wrong files under a race. Reps who need to remove a
-// file can open the client on Monday directly and delete it there —
-// the next list-fetch here picks it up.
-export function DELETE() {
-  return NextResponse.json(
-    {
-      error: 'Delete not available from this app',
-      hint: 'Open the client on Monday.com and remove the file from the section column there. It will disappear from here on next refresh.',
-    },
-    { status: 501 },
-  );
+// Remove the documents in a section. Monday's file columns expose no reliable
+// per-file remove primitive, so we clear the whole column (clear_all) — for a
+// single-document section that IS "remove this file"; the UI confirms when more
+// than one file would be cleared. Links (the docs long_text column) are
+// untouched — this only clears the section's Monday file column.
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string; category: string }> },
+) {
+  const { id, category } = await params;
+  if (!isDocCategory(category)) {
+    return NextResponse.json({ error: 'Unknown category' }, { status: 400 });
+  }
+  const columnId = getColumnIdFor(category);
+  if (!columnId) {
+    return NextResponse.json(
+      { error: `${CATEGORY_META[category].envVar} not set`, hint: 'Run /api/admin/setup-doc-columns.' },
+      { status: 503 },
+    );
+  }
+  try {
+    await mondayGql(
+      `mutation ($cv: JSON!) {
+        change_multiple_column_values(board_id: ${CLIENTS_BOARD_ID}, item_id: ${id}, column_values: $cv) { id }
+      }`,
+      { cv: JSON.stringify({ [columnId]: { clear_all: true } }) },
+    );
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error(`[section-files DELETE ${category}] failed:`, err);
+    return NextResponse.json({ error: 'Remove failed' }, { status: 502 });
+  }
 }
