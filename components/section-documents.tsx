@@ -155,6 +155,41 @@ export function SectionDocuments({
     }
   }, [clientBoardItemId, category, removingId]);
 
+  // Links are app-managed rows in the docs long_text column, so unlike files
+  // they support true per-item edit (label + URL) and delete.
+  const [removingLinkId, setRemovingLinkId] = useState<string | null>(null);
+  const editLink = useCallback(async (id: string, patch: { name?: string; url?: string }) => {
+    if (!clientBoardItemId) return;
+    setErrorMsg('');
+    const res = await fetch(`/api/documents/${clientBoardItemId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ docId: id, ...patch }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body?.error ? `${body.error} (HTTP ${res.status})` : `Save failed (HTTP ${res.status})`);
+    setLinks(prev => prev.map(l => (l.id === id ? { ...l, ...patch } : l)));
+  }, [clientBoardItemId]);
+  const removeLink = useCallback(async (id: string, name: string) => {
+    if (!clientBoardItemId || removingLinkId) return;
+    if (!window.confirm(`Remove the link “${name}”?`)) return;
+    setRemovingLinkId(id);
+    setErrorMsg('');
+    try {
+      const res = await fetch(`/api/documents/${clientBoardItemId}?docId=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error ? `${body.error} (HTTP ${res.status})` : `Remove failed (HTTP ${res.status})`);
+      }
+      setLinks(prev => prev.filter(l => l.id !== id));
+    } catch (err) {
+      console.error(`[section-docs ${category}] remove link failed:`, err);
+      setErrorMsg(err instanceof Error ? err.message : 'Remove failed');
+    } finally {
+      setRemovingLinkId(null);
+    }
+  }, [clientBoardItemId, category, removingLinkId]);
+
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragActive(false);
@@ -335,21 +370,13 @@ export function SectionDocuments({
                   />
                 ))}
                 {links.map(l => (
-                  <li key={l.id} className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-[#EAF3FA]/70 border border-[#0071BC]/20 border-l-4 border-l-[#0071BC]">
-                    <Link2 className="w-5 h-5 text-[#0071BC] flex-shrink-0" />
-                    <span className="flex-1 min-w-0 text-[13px] font-medium text-gray-900 truncate" title={l.url}>
-                      {l.name}
-                    </span>
-                    <a
-                      href={l.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[11px] text-[#0071BC] hover:underline inline-flex items-center gap-0.5 flex-shrink-0"
-                    >
-                      Open
-                      <ExternalLink className="w-2.5 h-2.5" />
-                    </a>
-                  </li>
+                  <LinkRow
+                    key={l.id}
+                    link={l}
+                    removing={removingLinkId === l.id}
+                    onSave={patch => editLink(l.id, patch)}
+                    onRemove={() => void removeLink(l.id, l.name)}
+                  />
                 ))}
               </ul>
             )}
@@ -544,6 +571,125 @@ function FileRow({
         >
           {removing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
         </button>
+      )}
+    </li>
+  );
+}
+
+// ── LinkRow ────────────────────────────────────────────────────────
+// One row per attached link. Open in a new tab; hover reveals rename +
+// remove. Editing lets a rep fix the label AND the URL (links go stale
+// more often than files). Saves via PATCH /api/documents/[clientId];
+// remove via DELETE. Both act on the single link — links are app-managed
+// rows, not Monday file assets, so per-item edit/delete is exact.
+function LinkRow({
+  link,
+  onSave,
+  onRemove,
+  removing,
+}: {
+  link: SectionLink;
+  onSave: (patch: { name?: string; url?: string }) => Promise<void>;
+  onRemove: () => void;
+  removing: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(link.name);
+  const [url, setUrl] = useState(link.url);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setName(link.name); setUrl(link.url); }, [link.name, link.url]);
+  useEffect(() => { if (editing) setTimeout(() => nameRef.current?.select(), 30); }, [editing]);
+
+  const cancel = () => { setName(link.name); setUrl(link.url); setEditing(false); setErr(''); };
+  const save = async () => {
+    const n = name.trim();
+    const u = url.trim();
+    if ((n === link.name || !n) && (u === link.url || !u)) { setEditing(false); return; }
+    setSaving(true);
+    setErr('');
+    try {
+      const patch: { name?: string; url?: string } = {};
+      if (n && n !== link.name) patch.name = n;
+      if (u && u !== link.url) patch.url = u;
+      await onSave(patch);
+      setEditing(false);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <li className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-[#EAF3FA]/70 border border-[#0071BC]/20 border-l-4 border-l-[#0071BC]">
+      <Link2 className="w-5 h-5 text-[#0071BC] flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        {editing ? (
+          <div className="flex flex-col gap-1">
+            <input
+              ref={nameRef}
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="Label"
+              disabled={saving}
+              onKeyDown={e => { if (e.key === 'Enter') void save(); if (e.key === 'Escape') cancel(); }}
+              className="w-full text-[13px] border border-[#43c7ff] rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] bg-white"
+            />
+            <input
+              value={url}
+              onChange={e => setUrl(e.target.value)}
+              placeholder="https://…"
+              disabled={saving}
+              onKeyDown={e => { if (e.key === 'Enter') void save(); if (e.key === 'Escape') cancel(); }}
+              className="w-full text-[11px] text-gray-600 border border-gray-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] bg-white"
+            />
+            <div className="flex items-center gap-1">
+              <button type="button" onClick={() => void save()} disabled={saving} className="px-2 py-0.5 text-[11px] font-semibold text-white bg-[#015280] hover:bg-[#01416a] rounded inline-flex items-center gap-1 disabled:opacity-60">
+                {saving && <Loader2 className="w-3 h-3 animate-spin" />} Save
+              </button>
+              <button type="button" onClick={cancel} disabled={saving} className="px-2 py-0.5 text-[11px] text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50">Cancel</button>
+            </div>
+            {err && <p className="text-[10px] text-rose-600">{err}</p>}
+          </div>
+        ) : (
+          <div className="group flex items-center gap-1.5 min-w-0">
+            <span className="text-[13px] font-medium text-gray-900 truncate" title={link.url}>{link.name}</span>
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-[#015280] transition-opacity flex-shrink-0"
+              title="Edit link"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+      </div>
+      {!editing && (
+        <>
+          <a
+            href={link.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] text-[#0071BC] hover:underline inline-flex items-center gap-0.5 flex-shrink-0"
+            title={link.url}
+          >
+            Open
+            <ExternalLink className="w-2.5 h-2.5" />
+          </a>
+          <button
+            type="button"
+            onClick={onRemove}
+            disabled={removing}
+            className="p-1 rounded text-rose-400 hover:text-rose-600 hover:bg-rose-50 flex-shrink-0 disabled:opacity-50 transition-colors"
+            title="Remove this link"
+          >
+            {removing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+          </button>
+        </>
       )}
     </li>
   );

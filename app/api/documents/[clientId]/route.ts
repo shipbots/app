@@ -181,7 +181,7 @@ export async function PATCH(
   if (!colId) return notConfiguredResponse();
 
   const { clientId } = await params;
-  let body: { docId?: unknown; name?: unknown };
+  let body: { docId?: unknown; name?: unknown; url?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -190,20 +190,25 @@ export async function PATCH(
 
   const docId = typeof body.docId === 'string' ? body.docId : '';
   const name = typeof body.name === 'string' ? body.name.trim() : '';
-  if (!docId || !name) {
-    return NextResponse.json({ error: 'docId and name required' }, { status: 400 });
+  const url = typeof body.url === 'string' ? body.url.trim() : '';
+  if (!docId || (!name && !url)) {
+    return NextResponse.json({ error: 'docId and a name or url required' }, { status: 400 });
   }
 
   try {
     const docs = await readDocs(clientId, colId);
     const idx = docs.findIndex(d => d.id === docId);
     if (idx === -1) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    docs[idx] = { ...docs[idx], name };
+    const updated = { ...docs[idx] };
+    if (name) updated.name = name;
+    // Changing the URL re-derives the doc icon so the row's glyph stays right.
+    if (url) { updated.url = url; updated.docIcon = detectDocIcon(url); }
+    docs[idx] = updated;
     await writeDocs(clientId, colId, docs);
     return NextResponse.json(docs[idx]);
   } catch (err) {
     console.error('[documents PATCH] failed:', err);
-    return NextResponse.json({ error: 'Failed to rename' }, { status: 502 });
+    return NextResponse.json({ error: 'Failed to update link' }, { status: 502 });
   }
 }
 
