@@ -332,44 +332,51 @@ async function fetchClientFull(id) {
 // type='link' means dd is rendered as <a href={value.url}>{value.text}</a>.
 // type='email' / 'phone' render as mailto:/tel: links.
 // type='multiline' preserves newlines.
+// Section order + field grouping mirrors the Customer-Service app's client
+// info tab (General Account Info · Contact Info · Receiving · Packing &
+// Shipping Requirements · Returns Specifications · E-mail notifications ·
+// Portal Login). Billing address + support agent + HubSpot fold into General
+// Account Info, matching the CS layout; the extension renders them read-only.
 const DETAIL_SECTIONS = [
   {
     id: 'general',
     title: 'General Account Info',
     fields: [
-      { key: 'legalEntity',          label: 'Legal entity' },
-      { key: 'ein',                  label: 'EIN' },
-      { key: 'quickbooksName',       label: 'QuickBooks' },
-      { key: 'shipHeroId',           label: 'ShipHero ID' },
       { key: 'shipHeroName',         label: 'ShipHero name' },
-      { key: 'productCategory',      label: 'Category' },
-      { key: 'productDescription',   label: 'Products' },
-      { key: 'businessHQ',           label: 'HQ' },
+      { key: 'shipHeroId',           label: 'ShipHero ID' },
+      { key: 'paymentOnFile',        label: 'Payment on file' },
+      { key: 'portalDropdown',       label: 'AppDot / Portal' },
+      { key: 'productCategory',      label: 'Product category' },
+      { key: 'productDescription',   label: 'Products', type: 'multiline' },
+      { key: 'warehouseLocation',    label: 'Warehouse' },
+      { key: 'subWarehouse',         label: 'Sub warehouse' },
       { key: 'manufacturingLocation',label: 'Mfg location' },
+      { key: 'clientStatus',         label: 'Client status' },
+      { key: 'timeAsClientDays',     label: 'Time as client (days)' },
+      { key: 'interestInAdditionalServices', label: 'Interested in' },
       { key: 'umbrellaCompany',      label: 'Umbrella co.' },
-      { key: 'clientStatus',         label: 'Status' },
-      { key: 'invoicingEmail',       label: 'Invoicing',  type: 'email' },
-      { key: 'paymentOnFile',        label: 'Payment OF' },
-      { key: 'pricingProposal',      label: 'Pricing',    type: 'link' },
-      { key: 'dateDocusignSigned',   label: 'Signed' },
+      { key: 'pricingProposal',      label: 'Pricing proposal', type: 'link' },
+      { key: 'legalEntity',          label: 'Legal entity' },
+      { key: 'quickbooksName',       label: 'QuickBooks name' },
+      { key: 'invoicingEmail',       label: 'Invoicing email', type: 'email' },
+      { key: 'pickAndPack',          label: 'Pick & Pack' },
+      { key: 'businessHQ',           label: 'Business HQ' },
+      { key: 'billingStreet1',       label: 'Billing street 1' },
+      { key: 'billingStreet2',       label: 'Billing street 2' },
+      { key: 'billingCity',          label: 'Billing city' },
+      { key: 'billingState',         label: 'Billing state' },
+      { key: 'billingZip',           label: 'Billing zip' },
+      { key: 'billingCountry',       label: 'Billing country' },
+      { key: 'ein',                  label: 'EIN' },
+      { key: 'dateDocusignSigned',   label: 'Date DocuSign signed' },
+      { key: 'supportAgentEmail',    label: 'Support agent', type: 'email' },
+      { key: 'hubspotDealLink',      label: 'HubSpot', type: 'rawUrl' },
     ],
   },
   {
     id: 'contacts',
-    title: 'Contacts',
+    title: 'Contact Info',
     custom: 'renderContacts',
-  },
-  {
-    id: 'billing',
-    title: 'Billing Address',
-    fields: [
-      { key: 'billingStreet1', label: 'Street 1' },
-      { key: 'billingStreet2', label: 'Street 2' },
-      { key: 'billingCity',    label: 'City' },
-      { key: 'billingState',   label: 'State' },
-      { key: 'billingZip',     label: 'Zip' },
-      { key: 'billingCountry', label: 'Country' },
-    ],
   },
   {
     id: 'receiving',
@@ -387,7 +394,7 @@ const DETAIL_SECTIONS = [
   },
   {
     id: 'packing',
-    title: 'Packing & Shipping',
+    title: 'Packing & Shipping Requirements',
     fields: [
       { key: 'ecommercePlatforms',         label: 'Platforms' },
       { key: 'skuCount',                   label: 'SKU count' },
@@ -415,7 +422,7 @@ const DETAIL_SECTIONS = [
   },
   {
     id: 'returns',
-    title: 'Returns',
+    title: 'Returns Specifications',
     fields: [
       { key: 'returnsProcess',            label: 'Process' },
       { key: 'returnsIncompleteCondition',label: 'Incomplete' },
@@ -426,22 +433,17 @@ const DETAIL_SECTIONS = [
     ],
   },
   {
-    id: 'portal',
-    title: 'ShipBots Portal Login',
-    fields: [
-      { key: 'portalDropdown',  label: 'Platform' },
-      { key: 'portalEmail',     label: 'Email', type: 'email' },
-      { key: 'portalLogin',     label: 'Username', copy: true },
-      { key: 'portalPassword',  label: 'Password', copy: true },
-    ],
+    id: 'notifications',
+    title: 'E-mail notifications',
+    custom: 'renderNotifications',
   },
   {
-    id: 'support',
-    title: 'Support',
+    id: 'portal',
+    title: 'Portal Login',
     fields: [
-      { key: 'supportAgent',      label: 'Agent' },
-      { key: 'supportAgentEmail', label: 'Agent email', type: 'email' },
-      { key: 'hubspotDealLink',   label: 'HubSpot', type: 'rawUrl' },
+      { key: 'portalEmail',     label: 'Login email / username', type: 'email' },
+      { key: 'portalLogin',     label: 'Username', copy: true },
+      { key: 'portalPassword',  label: 'Password', copy: true },
     ],
   },
 ];
@@ -701,6 +703,8 @@ function buildSection(section, client) {
 
   if (section.custom === 'renderContacts') {
     buildContactsBody(body, client);
+  } else if (section.custom === 'renderNotifications') {
+    buildNotificationsBody(body, client);
   } else {
     let any = false;
     for (const field of section.fields) {
@@ -744,6 +748,43 @@ function buildSection(section, client) {
   wrap.appendChild(header);
   wrap.appendChild(body);
   return wrap;
+}
+
+// The CS app's "E-mail notifications" section, read-only. Shows the Address
+// Hold notification status (green pill when on) + its recipient emails, read
+// from client.notificationColumns (keyed by Monday column id).
+function buildNotificationsBody(body, client) {
+  const cols = client.notificationColumns || {};
+  const enabledRaw = String(cols['dropdown_mm54fvq7'] || '').trim();
+  const emails = String(cols['text_mm54nq8g'] || '').trim();
+  const on = enabledRaw !== '' && !/^(no|off|false|none|disabled)$/i.test(enabledRaw);
+
+  const dt = document.createElement('dt');
+  dt.textContent = 'Address Hold';
+  const dd = document.createElement('dd');
+  const badge = document.createElement('span');
+  badge.style.cssText = 'display:inline-block;font-size:11px;font-weight:600;border-radius:9999px;padding:2px 8px;'
+    + (on ? 'color:#1E7A3E;background:#E7F8ED' : 'color:#6b7280;background:#f3f4f6');
+  badge.textContent = on ? (enabledRaw || 'On') : (enabledRaw || 'Off');
+  dd.appendChild(badge);
+  body.appendChild(dt);
+  body.appendChild(dd);
+
+  if (emails) {
+    const dt2 = document.createElement('dt');
+    dt2.textContent = 'Recipients';
+    const dd2 = document.createElement('dd');
+    dd2.textContent = emails;
+    body.appendChild(dt2);
+    body.appendChild(dd2);
+  }
+
+  if (!enabledRaw && !emails) {
+    const empty = document.createElement('p');
+    empty.style.cssText = 'grid-column:1/-1;color:#9ca3af;font-style:italic;font-size:11px;margin:0';
+    empty.textContent = 'No notifications configured.';
+    body.appendChild(empty);
+  }
 }
 
 function buildContactsBody(body, client) {
