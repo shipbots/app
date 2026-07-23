@@ -181,43 +181,50 @@ export function ClientAchInfo({ clientBoardItemId, clientName }: { clientBoardIt
     } catch { /* best-effort */ } finally { setCreating(false); }
   };
 
+  // Read the current ACH record from Monday (authoritative). Used to poll after
+  // an upload so the record / document / extracted fields show in real time.
+  const fetchAch = async (): Promise<AchData | null> => {
+    const qs = new URLSearchParams();
+    if (clientBoardItemId) qs.set('clientId', clientBoardItemId);
+    if (clientName) qs.set('name', clientName);
+    try {
+      const r = await fetch(`/api/client/ach?${qs.toString()}`, { credentials: 'include', headers: { Accept: 'application/json' } });
+      if (!r.ok) return null;
+      const d = await r.json();
+      return d?.found ? (d as AchData) : null;
+    } catch { return null; }
+  };
+
   // Upload the ACH form. The endpoint creates the record (linked to the client)
-  // if there isn't one, uploads the file, and extracts the fields from it — so
-  // this doubles as "add ACH details from the form".
+  // if there isn't one, uploads the file, and extracts the fields from it. We
+  // poll the read endpoint while it runs so the record, document, and extracted
+  // fields appear in real time — the fields land on the board as extraction
+  // finishes, and this reflects them even if the upload response is slow or the
+  // function times out after writing.
   const uploadDoc = async (file: File) => {
     setUploading(true);
+    const form = new FormData();
+    form.append('file', file);
+    if (data?.itemId) form.append('itemId', data.itemId);
+    form.append('clientId', clientBoardItemId);
+    form.append('clientName', clientName);
+
+    let settled = false;
+    const upload = fetch('/api/client/ach/file', { method: 'POST', body: form })
+      .catch(() => null)
+      .finally(() => { settled = true; });
+
     try {
-      const form = new FormData();
-      form.append('file', file);
-      if (data?.itemId) form.append('itemId', data.itemId);
-      form.append('clientId', clientBoardItemId);
-      form.append('clientName', clientName);
-      const res = await fetch('/api/client/ach/file', { method: 'POST', body: form });
-      if (!res.ok) throw new Error(`${res.status}`);
-      const d = await res.json();
-      const ex: Partial<AchData> = d.extracted || {};
-      setData(prev => {
-        const base: AchData = prev && prev.found ? prev : { found: true };
-        return {
-          ...base,
-          found: true,
-          itemId: d.itemId || base.itemId,
-          // Extraction wrote these to the board — reflect them (fall back to any
-          // existing value when the form didn't yield that field).
-          financialInstitution: ex.financialInstitution || base.financialInstitution || '',
-          accountNumber: ex.accountNumber || base.accountNumber || '',
-          routingNumber: ex.routingNumber || base.routingNumber || '',
-          firstName: ex.firstName || base.firstName || '',
-          lastName: ex.lastName || base.lastName || '',
-          doc: {
-            name: d.name || file.name,
-            url: d.url || '',
-            fileType: (file.name.split('.').pop() || 'pdf').toLowerCase(),
-            assetId: String(d.assetId || ''),
-          },
-        };
-      });
-    } catch { /* best-effort */ } finally {
+      // Poll ~every 3s while the upload+extract runs (cap ~45s).
+      for (let i = 0; i < 15 && !settled; i++) {
+        await new Promise(res => setTimeout(res, 3000));
+        const fresh = await fetchAch();
+        if (fresh) setData(fresh);
+      }
+      await upload;
+      const fresh = await fetchAch(); // final authoritative sync from Monday
+      if (fresh) setData(fresh);
+    } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = '';
     }
@@ -332,7 +339,9 @@ export function ClientAchInfo({ clientBoardItemId, clientName }: { clientBoardIt
         </div>
       </div>
       {uploading && (
-        <p className="px-1 text-[10px] text-gray-400">Uploading &amp; reading the form…</p>
+        <p className="px-1 mt-0.5 text-[11px] text-[#0071BC] inline-flex items-center gap-1.5">
+          <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" /> Reading the form and filling in the fields…
+        </p>
       )}
 
       <FilePreviewModal file={preview} onClose={() => setPreview(null)} />
