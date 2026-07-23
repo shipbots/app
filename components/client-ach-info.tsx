@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Landmark, FileText, Loader2, Eye, Pencil, Check, Upload, Plus } from 'lucide-react';
+import { Landmark, FileText, Loader2, Eye, Pencil, Check, Upload, Plus, Copy } from 'lucide-react';
 import { FilePreviewModal, type PreviewableFile } from './file-preview-modal';
 
 type AchField = 'financialInstitution' | 'accountNumber' | 'routingNumber' | 'firstName' | 'lastName';
@@ -36,6 +36,7 @@ function EditableAchField({
   label,
   value: initial,
   mono,
+  copyable,
   onSaved,
 }: {
   itemId: string;
@@ -43,6 +44,8 @@ function EditableAchField({
   label: string;
   value: string;
   mono?: boolean;
+  /** Show a copy-to-clipboard button on hover (account / routing numbers). */
+  copyable?: boolean;
   onSaved: (value: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -50,8 +53,19 @@ function EditableAchField({
   const [saved, setSaved] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState<'ok' | 'err' | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => { setValue(initial); setSaved(initial); }, [initial]);
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard unavailable */ }
+  };
 
   const commit = async () => {
     setEditing(false);
@@ -101,28 +115,41 @@ function EditableAchField({
   }
 
   return (
-    <button
-      type="button"
-      onClick={() => setEditing(true)}
-      className="w-full text-left px-1 py-1.5 rounded hover:bg-gray-50 transition-colors group flex items-start gap-2"
-    >
-      <div className="min-w-0 flex-1">
+    <div className="group flex items-start gap-2 px-1 py-1.5 rounded hover:bg-gray-50 transition-colors">
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="min-w-0 flex-1 text-left"
+      >
         <p className="text-[11px] leading-none mb-0.5 text-gray-400">{label}</p>
         {value ? (
           <p className={`text-sm text-gray-900 break-words ${mono ? 'font-mono tracking-tight' : ''}`}>{value}</p>
         ) : (
           <p className="text-sm text-gray-400 italic">Not on file — click to add</p>
         )}
+      </button>
+      <div className="flex items-center gap-1 mt-0.5 flex-shrink-0">
+        {copyable && value && (
+          <button
+            type="button"
+            onClick={handleCopy}
+            title={`Copy ${label.replace(/^[^\w]+\s*/, '')}`}
+            className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-[#43c7ff] opacity-0 group-hover:opacity-100 transition-colors"
+          >
+            {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+          </button>
+        )}
+        {saving ? (
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />
+        ) : flash === 'ok' ? (
+          <Check className="w-3.5 h-3.5 text-green-500" />
+        ) : flash === 'err' ? (
+          <span className="text-[11px] text-red-500">!</span>
+        ) : (
+          <Pencil className="w-3 h-3 text-gray-300 group-hover:text-[#43c7ff] opacity-0 group-hover:opacity-100 transition-opacity" />
+        )}
       </div>
-      {saving ? (
-        <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400 mt-0.5 flex-shrink-0" />
-      ) : flash === 'ok' ? (
-        <Check className="w-3.5 h-3.5 text-green-500 mt-0.5 flex-shrink-0" />
-      ) : (
-        <Pencil className="w-3 h-3 text-gray-300 group-hover:text-[#43c7ff] mt-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-      )}
-      {flash === 'err' && <span className="text-[11px] text-red-500 mt-0.5">!</span>}
-    </button>
+    </div>
   );
 }
 
@@ -293,8 +320,8 @@ export function ClientAchInfo({ clientBoardItemId, clientName }: { clientBoardIt
       <div className="grid grid-cols-2 gap-x-3 items-start">
         <div className="min-w-0">
           <EditableAchField itemId={itemId} field="financialInstitution" label="🏦 Financial Institution" value={data.financialInstitution || ''} onSaved={v => setData(p => p ? { ...p, financialInstitution: v } : p)} />
-          <EditableAchField itemId={itemId} field="accountNumber" label="🔢 Account Number" value={data.accountNumber || ''} mono onSaved={v => setData(p => p ? { ...p, accountNumber: v } : p)} />
-          <EditableAchField itemId={itemId} field="routingNumber" label="🔀 Routing Number" value={data.routingNumber || ''} mono onSaved={v => setData(p => p ? { ...p, routingNumber: v } : p)} />
+          <EditableAchField itemId={itemId} field="accountNumber" label="🔢 Account Number" value={data.accountNumber || ''} mono copyable onSaved={v => setData(p => p ? { ...p, accountNumber: v } : p)} />
+          <EditableAchField itemId={itemId} field="routingNumber" label="🔀 Routing Number" value={data.routingNumber || ''} mono copyable onSaved={v => setData(p => p ? { ...p, routingNumber: v } : p)} />
         </div>
         <div className="min-w-0">
           <EditableAchField itemId={itemId} field="firstName" label="✍️ Signer First Name" value={data.firstName || ''} onSaved={v => setData(p => p ? { ...p, firstName: v } : p)} />

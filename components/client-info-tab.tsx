@@ -2168,7 +2168,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
               <EditField label="🔢 EIN" value={localClient.ein} columnId="text_mkxxfg1b" clientId={id} highlight onSaved={v => setLocalClient(prev => ({ ...prev, ein: v }))} />
             )}
             <EditField label="💼 QuickBooks Company Name" value={localClient.quickbooksName} columnId="text_mkx5b9b4" clientId={id} onSaved={v => setLocalClient(prev => ({ ...prev, quickbooksName: v }))} />
-            <EditField label="📧 Email for Invoices" value={localClient.invoicingEmail} columnId="text_mktqjmmm" clientId={id} icon={<Mail className="w-3.5 h-3.5" />} highlight onSaved={v => setLocalClient(prev => ({ ...prev, invoicingEmail: v }))} />
+            <EditField label="📧 Email for Invoices" value={localClient.invoicingEmail} columnId="text_mktqjmmm" clientId={id} icon={<Mail className="w-3.5 h-3.5" />} highlight copyable onSaved={v => setLocalClient(prev => ({ ...prev, invoicingEmail: v }))} />
             <BillingAddressBlock client={localClient} clientId={id} onSaved={patch => setLocalClient(prev => ({ ...prev, ...patch }))} />
             {restrictSensitive ? (
               <OnFileField label="📄 DocuSign Contract" onFile={!!localClient.docusignOnFile} columnId="" clientId={id} noun="DocuSign" icon={<FileText className="w-3.5 h-3.5" />} />
