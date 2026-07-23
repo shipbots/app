@@ -141,6 +141,13 @@ export interface ClientInfo {
   docusignFile: MonFile | null;
   dateDocusignSigned: string;
   pickAndPack: string;
+  // Pricing Info (Billing tab). Free-text rate/terms per 3PL billing category.
+  receivingPricing: string;
+  storagePricing: string;
+  dtcPickPackPricing: string;
+  b2bShippingUpcharge: string;
+  accountManagerFee: string;
+  platformFee: string;
   invoicingEmail: string;
   // Contact Info
   contactName: string;

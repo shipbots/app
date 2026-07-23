@@ -458,6 +458,13 @@ export async function fetchClientInfo(itemId: string, onboardingItemId?: string)
     docusignFile,
     dateDocusignSigned,
     pickAndPack: cols['text_mm1zw2vf'] || '',
+    // Pricing Info (Billing tab) — dedicated pricing columns
+    receivingPricing: cols['text_mm5hpark'] || '',
+    storagePricing: cols['text_mm5hwtkt'] || '',
+    dtcPickPackPricing: cols['text_mm5hc2dg'] || '',
+    b2bShippingUpcharge: cols['text_mm5h4938'] || '',
+    accountManagerFee: cols['text_mm5hb9'] || '',
+    platformFee: cols['text_mm5hq2xy'] || '',
     invoicingEmail: cols['text_mktqjmmm'] || '',
     // Contact Info
     contactName: cols['text_mktqq7h6'] || '',

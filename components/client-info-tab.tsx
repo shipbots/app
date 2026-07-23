@@ -6,10 +6,11 @@ import {
   Mail, Phone, MapPin, ExternalLink, Check, Pencil,
   ChevronDown, ChevronRight, Upload, FileText, Sparkles, Calendar, Plus,
   UserCheck, UserPlus, X, Loader2, ShieldCheck, Users, Copy, KeyRound, LogIn,
-  ArrowUpDown, Paperclip, Receipt, CreditCard, Info, Landmark,
+  ArrowUpDown, Paperclip, Receipt, CreditCard, Info, Landmark, Tag, Eye,
 } from 'lucide-react';
 import { ClientStickyNotesSummary } from './client-sticky-notes-summary';
 import { ClientAchInfo } from './client-ach-info';
+import { FilePreviewModal, type PreviewableFile } from './file-preview-modal';
 import { SectionDocuments } from './section-documents';
 import { ClientProjectsBox } from './client-projects-box';
 import { EmailNotificationsSection } from './email-notifications-section';
@@ -492,11 +493,14 @@ function CopyableEditField({
 // ─── Collapsible Section ────────────────────────────────────────────────────
 function Section({
   title,
+  icon,
   children,
   defaultOpen = false,
   attachmentCount = 0,
 }: {
   title: string;
+  /** Optional leading icon shown between the collapse chevron and the title. */
+  icon?: React.ReactNode;
   children: React.ReactNode;
   defaultOpen?: boolean;
   /**
@@ -534,6 +538,7 @@ function Section({
           <ChevronRight
             className={`w-4 h-4 text-gray-300 flex-shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
           />
+          {icon && <span className="flex-shrink-0 inline-flex items-center">{icon}</span>}
           <span className="text-[13px] font-semibold text-gray-800 tracking-[-0.01em] truncate">{title}</span>
           {attachmentCount > 0 && (
             <span
@@ -1581,6 +1586,7 @@ function FileField({
   const [file, setFile] = useState<MonFile | null>(initialFile);
   const [uploading, setUploading] = useState(false);
   const [flash, setFlash] = useState<'saved' | 'error' | null>(null);
+  const [preview, setPreview] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1607,6 +1613,25 @@ function FileField({
     }
   }, [columnId, clientId, onUploaded]);
 
+  const previewFile: PreviewableFile | null = file
+    ? { name: file.name, url: file.url || '', fileType: file.fileExtension, assetId: file.assetId }
+    : null;
+  // Inline preview modal (PDF / image) — same popup behavior as the Documents
+  // and ACH sections, so reps review the contract in place without a new tab.
+  const modal = <FilePreviewModal file={preview ? previewFile : null} onClose={() => setPreview(false)} />;
+  const fileChip = file ? (
+    <button
+      type="button"
+      onClick={() => setPreview(true)}
+      title={`Preview ${file.name}`}
+      className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-[#43c7ff]/40 bg-[#e6f8ff] text-[#015280] hover:bg-[#d0f2ff] hover:border-[#43c7ff] transition-colors group"
+    >
+      <FileText className="w-4 h-4 flex-shrink-0" />
+      <span className="text-xs font-medium max-w-[140px] truncate">{file.name}</span>
+      <Eye className="w-3.5 h-3.5 flex-shrink-0 opacity-60 group-hover:opacity-100" />
+    </button>
+  ) : null;
+
   const { csMode, editing } = useFieldMode();
   if (csMode && !editing) {
     if (!file) return null;
@@ -1615,17 +1640,9 @@ function FileField({
         <FileText className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-[11px] text-gray-400 leading-none mb-1">{label}</p>
-          <a
-            href={`/api/assets/${file.assetId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={file.name}
-            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border border-[#43c7ff]/40 bg-[#e6f8ff] text-[#015280] hover:bg-[#d0f2ff] hover:border-[#43c7ff] transition-colors"
-          >
-            <FileText className="w-4 h-4 flex-shrink-0" />
-            <span className="text-xs font-medium max-w-[140px] truncate">{file.name}</span>
-          </a>
+          {fileChip}
         </div>
+        {modal}
       </div>
     );
   }
@@ -1636,20 +1653,7 @@ function FileField({
       <div className="flex-1 min-w-0">
         <p className="text-[11px] text-gray-400 leading-none mb-1">{label}</p>
         <div className="flex items-center gap-2 flex-wrap">
-          {file ? (
-            <a
-              href={`/api/assets/${file.assetId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={file.name}
-              className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-[#43c7ff]/40 bg-[#e6f8ff] text-[#015280] hover:bg-[#d0f2ff] hover:border-[#43c7ff] transition-colors group"
-            >
-              <FileText className="w-4 h-4 flex-shrink-0" />
-              <span className="text-xs font-medium max-w-[140px] truncate">{file.name}</span>
-            </a>
-          ) : (
-            <span className="text-sm text-gray-300 italic">No document</span>
-          )}
+          {fileChip ?? <span className="text-sm text-gray-300 italic">No document</span>}
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
@@ -1664,6 +1668,7 @@ function FileField({
         </div>
         <input ref={inputRef} type="file" className="hidden" onChange={handleUpload} />
       </div>
+      {modal}
     </div>
   );
 }
@@ -2028,15 +2033,9 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
   // Rendered directly editable (no CS read/edit toggle): the tab is only shown
   // to DocuSign-access viewers, so EIN + the contract are never redacted here.
   if (billingOnly) {
-    const cardCls = 'rounded-2xl bg-white border border-gray-200/70 shadow-[0_1px_2px_rgba(20,24,40,.04),0_6px_16px_rgba(20,24,40,.04)] overflow-hidden mb-2.5';
     return (
       <div className="p-3 overflow-y-auto h-full bg-[#F2F2F7]">
-        <section className={cardCls}>
-          <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-gray-100">
-            <Receipt className="w-4 h-4 text-[#0071BC] flex-shrink-0" />
-            <span className="text-[13px] font-semibold text-gray-800 tracking-[-0.01em]">Billing Info</span>
-          </div>
-          <div className="px-2 py-1.5">
+        <Section title="General Billing Info" icon={<Receipt className="w-4 h-4 text-[#0071BC]" />} defaultOpen>
             <EditField label="🚢 ShipHero Name" value={localClient.shipHeroName} columnId="text_mkw9n26z" clientId={id} highlight onSaved={v => setLocalClient(prev => ({ ...prev, shipHeroName: v }))} />
             <EditField label="🆔 ShipHero Customer Account ID" value={localClient.shipHeroId} columnId="text_mktmf2yw" clientId={id} highlight onSaved={v => setLocalClient(prev => ({ ...prev, shipHeroId: v }))} />
             <SelectField label="🏢 Umbrella Company" value={localClient.umbrellaCompany} columnId="dropdown_mkyk2va7" clientId={id} options={colOptions['dropdown_mkyk2va7'] ?? []} valueType="dropdown" icon={<Landmark className="w-3.5 h-3.5" />} />
@@ -2073,22 +2072,28 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
                 labelTooltip="This data is accurate as of 07/01/2026. Date the initial inventory arrived to our warehouse."
               />
             )}
-          </div>
-        </section>
+        </Section>
 
         {/* Payment method — ACH is read from the Client Billing Info board
             (matched by client name); card capture is not built yet. */}
-        <section className={cardCls}>
-          <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-gray-100">
-            <CreditCard className="w-4 h-4 text-[#0071BC] flex-shrink-0" />
-            <span className="text-[13px] font-semibold text-gray-800 tracking-[-0.01em]">Payment Method</span>
-          </div>
-          <div className="px-2 py-1.5">
-            <ClientAchInfo clientBoardItemId={id} clientName={localClient.name} />
-            <div className="border-t border-gray-100 my-1.5" />
-            <ComingSoonRow label="Credit Card" icon={<CreditCard className="w-3.5 h-3.5" />} />
-          </div>
-        </section>
+        <Section title="Payment Method" icon={<CreditCard className="w-4 h-4 text-[#0071BC]" />} defaultOpen>
+          <ClientAchInfo clientBoardItemId={id} clientName={localClient.name} />
+          <div className="border-t border-gray-100 my-1.5" />
+          <ComingSoonRow label="Credit Card" icon={<CreditCard className="w-3.5 h-3.5" />} />
+        </Section>
+
+        {/* Pricing Info — negotiated 3PL rates per billing category. Each
+            subsection maps to a dedicated Monday column ("Pick and Pack" reuses
+            the existing billing column). Free-text so reps enter rates + terms. */}
+        <Section title="Pricing Info" icon={<Tag className="w-4 h-4 text-[#0071BC]" />} defaultOpen>
+          <EditField label="📥 Receiving Pricing" value={localClient.receivingPricing} columnId="text_mm5hpark" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, receivingPricing: v }))} />
+          <EditField label="📦 Storage" value={localClient.storagePricing} columnId="text_mm5hwtkt" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, storagePricing: v }))} />
+          <EditField label="🔧 Pick and Pack" value={localClient.pickAndPack} columnId="text_mm1zw2vf" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, pickAndPack: v }))} />
+          <EditField label="🏬 DTC Pick and Pack" value={localClient.dtcPickPackPricing} columnId="text_mm5hc2dg" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, dtcPickPackPricing: v }))} />
+          <EditField label="🚚 B2B Shipping Upcharge" value={localClient.b2bShippingUpcharge} columnId="text_mm5h4938" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, b2bShippingUpcharge: v }))} />
+          <EditField label="👤 Dedicated Account Manager Fee" value={localClient.accountManagerFee} columnId="text_mm5hb9" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, accountManagerFee: v }))} />
+          <EditField label="🧾 Platform Fee" value={localClient.platformFee} columnId="text_mm5hq2xy" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, platformFee: v }))} />
+        </Section>
       </div>
     );
   }
