@@ -85,3 +85,70 @@ export async function extractBillingFromPDF(base64: string): Promise<ExtractedBi
     throw new Error(`Could not parse extraction response: ${rawText.slice(0, 200)}`);
   }
 }
+
+// ─── ACH form extraction (Client Billing Info board) ─────────────────────────
+
+export interface ExtractedACHInfo {
+  financialInstitution: string;
+  accountNumber: string;
+  routingNumber: string;
+  firstName: string;
+  lastName: string;
+}
+
+const ACH_EXTRACTION_PROMPT = `Extract the bank / ACH account details from this document and return ONLY a JSON object with exactly these keys:
+
+- "financialInstitution": the bank / financial institution name (string)
+- "accountNumber": the bank account number (string — digits only, no spaces or dashes)
+- "routingNumber": the ABA routing / transit number (string — 9 digits, digits only)
+- "firstName": the account holder's / signer's first name (string)
+- "lastName": the account holder's / signer's last name (string)
+
+If a field cannot be found in the document, use an empty string "".
+Return ONLY the raw JSON object — no markdown code fences, no explanation text.`;
+
+/**
+ * Extract ACH banking fields from a PDF or image (base64-encoded). Used by the
+ * Billing Info tab's ACH upload to auto-fill the Client Billing Info board.
+ * Throws if SHIPBOTS_ANTHROPIC_KEY isn't set or the API returns an error.
+ */
+export async function extractACHFromFile(base64: string, mediaType: string): Promise<ExtractedACHInfo> {
+  const anthropicKey = process.env.SHIPBOTS_ANTHROPIC_KEY;
+  if (!anthropicKey) {
+    throw new Error('SHIPBOTS_ANTHROPIC_KEY not configured');
+  }
+
+  // PDFs go in a `document` block; scans / photos in an `image` block.
+  const fileBlock = mediaType === 'application/pdf'
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
+    : { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } };
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': anthropicKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: [fileBlock, { type: 'text', text: ACH_EXTRACTION_PROMPT }] }],
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Anthropic API error (${res.status}): ${errText.slice(0, 300)}`);
+  }
+
+  const data = await res.json();
+  const rawText: string = data.content?.[0]?.text || '';
+  try {
+    return JSON.parse(rawText.trim()) as ExtractedACHInfo;
+  } catch {
+    const match = rawText.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]) as ExtractedACHInfo;
+    throw new Error(`Could not parse ACH extraction response: ${rawText.slice(0, 200)}`);
+  }
+}

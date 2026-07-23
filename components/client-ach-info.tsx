@@ -3,12 +3,12 @@
 /**
  * ACH / bank details for the Billing Info tab. Reads from (and writes back to)
  * the "Client Billing Info" Monday board, matched to the client by the board
- * relation. Every field is editable inline — Financial Institution, Account /
- * Routing numbers, the signer's name — plus upload / replace of the ACH
- * document and creation of a record when a client doesn't have one yet.
+ * relation. Every field is editable inline; the ACH document can be uploaded /
+ * replaced, and uploading a PDF (or scan) auto-fills the fields — the server
+ * extracts them from the file and writes them to the board. If a client has no
+ * record yet, it's created (named + linked to the client) on first add / upload.
  *
- * All endpoints are gated to the DocuSign-access group (same as the Billing
- * tab), so this only renders inside a surface those users already see.
+ * All endpoints are gated to the DocuSign-access group (same as the Billing tab).
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -92,7 +92,7 @@ function EditableAchField({
               if (e.key === 'Escape') { setValue(saved); setEditing(false); }
             }}
             onBlur={commit}
-            className={`flex-1 text-sm border border-[#43c7ff] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] ${mono ? 'font-mono tracking-tight' : ''}`}
+            className={`flex-1 min-w-0 text-sm border border-[#43c7ff] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#43c7ff] ${mono ? 'font-mono tracking-tight' : ''}`}
           />
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400 flex-shrink-0" />}
         </div>
@@ -181,30 +181,57 @@ export function ClientAchInfo({ clientBoardItemId, clientName }: { clientBoardIt
     } catch { /* best-effort */ } finally { setCreating(false); }
   };
 
+  // Upload the ACH form. The endpoint creates the record (linked to the client)
+  // if there isn't one, uploads the file, and extracts the fields from it — so
+  // this doubles as "add ACH details from the form".
   const uploadDoc = async (file: File) => {
-    if (!data?.itemId) return;
     setUploading(true);
     try {
       const form = new FormData();
       form.append('file', file);
-      form.append('itemId', data.itemId);
+      if (data?.itemId) form.append('itemId', data.itemId);
+      form.append('clientId', clientBoardItemId);
+      form.append('clientName', clientName);
       const res = await fetch('/api/client/ach/file', { method: 'POST', body: form });
       if (!res.ok) throw new Error(`${res.status}`);
       const d = await res.json();
-      setData(prev => prev ? {
-        ...prev,
-        doc: {
-          name: d.name || file.name,
-          url: d.url || '',
-          fileType: (file.name.split('.').pop() || 'pdf').toLowerCase(),
-          assetId: String(d.assetId || ''),
-        },
-      } : prev);
+      const ex: Partial<AchData> = d.extracted || {};
+      setData(prev => {
+        const base: AchData = prev && prev.found ? prev : { found: true };
+        return {
+          ...base,
+          found: true,
+          itemId: d.itemId || base.itemId,
+          // Extraction wrote these to the board — reflect them (fall back to any
+          // existing value when the form didn't yield that field).
+          financialInstitution: ex.financialInstitution || base.financialInstitution || '',
+          accountNumber: ex.accountNumber || base.accountNumber || '',
+          routingNumber: ex.routingNumber || base.routingNumber || '',
+          firstName: ex.firstName || base.firstName || '',
+          lastName: ex.lastName || base.lastName || '',
+          doc: {
+            name: d.name || file.name,
+            url: d.url || '',
+            fileType: (file.name.split('.').pop() || 'pdf').toLowerCase(),
+            assetId: String(d.assetId || ''),
+          },
+        };
+      });
     } catch { /* best-effort */ } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = '';
     }
   };
+
+  const hiddenFileInput = (
+    <input
+      ref={fileRef}
+      type="file"
+      accept=".pdf,image/*"
+      className="hidden"
+      onChange={e => { const f = e.target.files?.[0]; if (f) void uploadDoc(f); }}
+    />
+  );
 
   if (loading) {
     return (
@@ -217,21 +244,35 @@ export function ClientAchInfo({ clientBoardItemId, clientName }: { clientBoardIt
     );
   }
 
-  // No record yet — offer to create one so its fields can be filled in.
+  // No record yet — offer to add manually or upload the form (which creates the
+  // record, uploads, and auto-fills the fields).
   if (!data?.found || !data.itemId) {
     return (
       <div>
         {header}
         <p className="px-1 py-1.5 text-sm text-gray-400 italic">No ACH information on file for this client.</p>
-        <button
-          type="button"
-          onClick={createRecord}
-          disabled={creating || !clientName}
-          className="ml-1 mt-0.5 inline-flex items-center gap-1.5 text-xs font-semibold text-[#015280] border border-[#43c7ff] bg-[#e6f8ff] hover:bg-[#d6f1ff] px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-        >
-          {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-          Add ACH details
-        </button>
+        {hiddenFileInput}
+        <div className="flex items-center gap-2 ml-1 mt-0.5 flex-wrap">
+          <button
+            type="button"
+            onClick={createRecord}
+            disabled={creating || uploading || !clientName}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#015280] border border-[#43c7ff] bg-[#e6f8ff] hover:bg-[#d6f1ff] px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+            Add ACH details
+          </button>
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading || creating || !clientName}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+            Upload ACH form
+          </button>
+        </div>
+        <p className="ml-1 mt-1 text-[10px] text-gray-400">Uploading a PDF or scan auto-fills the fields from the form.</p>
       </div>
     );
   }
@@ -241,20 +282,22 @@ export function ClientAchInfo({ clientBoardItemId, clientName }: { clientBoardIt
   return (
     <div>
       {header}
-      <EditableAchField itemId={itemId} field="financialInstitution" label="🏦 Financial Institution" value={data.financialInstitution || ''} onSaved={v => setData(p => p ? { ...p, financialInstitution: v } : p)} />
-      <EditableAchField itemId={itemId} field="accountNumber" label="🔢 Account Number" value={data.accountNumber || ''} mono onSaved={v => setData(p => p ? { ...p, accountNumber: v } : p)} />
-      <EditableAchField itemId={itemId} field="routingNumber" label="🔀 Routing Number" value={data.routingNumber || ''} mono onSaved={v => setData(p => p ? { ...p, routingNumber: v } : p)} />
-      <EditableAchField itemId={itemId} field="firstName" label="✍️ Signer First Name" value={data.firstName || ''} onSaved={v => setData(p => p ? { ...p, firstName: v } : p)} />
-      <EditableAchField itemId={itemId} field="lastName" label="✍️ Signer Last Name" value={data.lastName || ''} onSaved={v => setData(p => p ? { ...p, lastName: v } : p)} />
+      {/* Two columns: bank details on the left, signer on the right. */}
+      <div className="grid grid-cols-2 gap-x-3 items-start">
+        <div className="min-w-0">
+          <EditableAchField itemId={itemId} field="financialInstitution" label="🏦 Financial Institution" value={data.financialInstitution || ''} onSaved={v => setData(p => p ? { ...p, financialInstitution: v } : p)} />
+          <EditableAchField itemId={itemId} field="accountNumber" label="🔢 Account Number" value={data.accountNumber || ''} mono onSaved={v => setData(p => p ? { ...p, accountNumber: v } : p)} />
+          <EditableAchField itemId={itemId} field="routingNumber" label="🔀 Routing Number" value={data.routingNumber || ''} mono onSaved={v => setData(p => p ? { ...p, routingNumber: v } : p)} />
+        </div>
+        <div className="min-w-0">
+          <EditableAchField itemId={itemId} field="firstName" label="✍️ Signer First Name" value={data.firstName || ''} onSaved={v => setData(p => p ? { ...p, firstName: v } : p)} />
+          <EditableAchField itemId={itemId} field="lastName" label="✍️ Signer Last Name" value={data.lastName || ''} onSaved={v => setData(p => p ? { ...p, lastName: v } : p)} />
+        </div>
+      </div>
 
-      {/* ACH document — preview + upload / replace */}
-      <input
-        ref={fileRef}
-        type="file"
-        className="hidden"
-        onChange={e => { const f = e.target.files?.[0]; if (f) void uploadDoc(f); }}
-      />
-      <div className="mt-1 flex items-center gap-2 px-1 py-1.5">
+      {/* ACH document — preview + upload / replace (upload re-extracts fields) */}
+      {hiddenFileInput}
+      <div className="mt-1 flex items-center gap-2 px-1 py-1.5 border-t border-gray-100">
         <FileText className="w-3.5 h-3.5 text-[#0071BC] flex-shrink-0" />
         {data.doc ? (
           <button
@@ -288,6 +331,9 @@ export function ClientAchInfo({ clientBoardItemId, clientName }: { clientBoardIt
           </button>
         </div>
       </div>
+      {uploading && (
+        <p className="px-1 text-[10px] text-gray-400">Uploading &amp; reading the form…</p>
+      )}
 
       <FilePreviewModal file={preview} onClose={() => setPreview(null)} />
     </div>
