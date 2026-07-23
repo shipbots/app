@@ -149,7 +149,11 @@ export async function POST(req: Request) {
     const session = await auth();
     authed = !!(session?.user?.email && canUseDocusign(session.user.email));
   }
-  if (!authed) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!authed) {
+    // secretConfigured tells you (without leaking the value) whether
+    // ACH_LINK_SECRET is set on the server — false means set it in Vercel.
+    return NextResponse.json({ error: 'Unauthorized', secretConfigured: !!secret }, { status: 401 });
+  }
 
   const key = process.env.MONDAY_API_KEY;
   if (!key) return NextResponse.json({ error: 'MONDAY_API_KEY not set' }, { status: 500 });
