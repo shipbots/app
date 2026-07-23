@@ -2157,7 +2157,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
   if (billingOnly) {
     return (
       <div className="p-3 overflow-y-auto h-full bg-[#F2F2F7]">
-        <Section title="General Billing Info" icon={<Receipt className="w-4 h-4 text-[#0071BC]" />} defaultOpen>
+        <Section title="General Billing Info" icon={<Receipt className="w-4 h-4 text-[#0071BC]" />}>
             <EditField label="🚢 ShipHero Name" value={localClient.shipHeroName} columnId="text_mkw9n26z" clientId={id} highlight onSaved={v => setLocalClient(prev => ({ ...prev, shipHeroName: v }))} />
             <EditField label="🆔 ShipHero Customer Account ID" value={localClient.shipHeroId} columnId="text_mktmf2yw" clientId={id} highlight onSaved={v => setLocalClient(prev => ({ ...prev, shipHeroId: v }))} />
             <SelectField label="🏢 Umbrella Company" value={localClient.umbrellaCompany} columnId="dropdown_mkyk2va7" clientId={id} options={colOptions['dropdown_mkyk2va7'] ?? []} valueType="dropdown" icon={<Landmark className="w-3.5 h-3.5" />} />
@@ -2198,7 +2198,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
 
         {/* Payment method — ACH is read from the Client Billing Info board
             (matched by client name); card capture is not built yet. */}
-        <Section title="Payment Method" icon={<CreditCard className="w-4 h-4 text-[#0071BC]" />} defaultOpen>
+        <Section title="Payment Method" icon={<CreditCard className="w-4 h-4 text-[#0071BC]" />}>
           <ClientAchInfo clientBoardItemId={id} clientName={localClient.name} />
           <div className="border-t border-gray-100 my-1.5" />
           <ComingSoonRow label="Credit Card" icon={<CreditCard className="w-3.5 h-3.5" />} />
@@ -2211,7 +2211,6 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
         <Section
           title="Pricing Info"
           icon={<Tag className="w-4 h-4 text-[#0071BC]" />}
-          defaultOpen
           headerAction={
             <ExtractFromDocusignButton
               hasFile={!!(localClient.docusignFile?.assetId || onboardingItemId)}
