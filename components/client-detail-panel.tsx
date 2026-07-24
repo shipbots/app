@@ -943,6 +943,12 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
     if (onFullscreenChange) onFullscreenChange(value);
     else setFullscreenLocal(value);
   };
+  // Entering the onboarding expanded view hides the (now redundant) Onboarding
+  // tab — its checklist is in the right column — so bump the left content to
+  // Client Info instead of leaving it on the vanished tab.
+  useEffect(() => {
+    if (fullscreen && !isCustomerService && activeTab === 'onboarding') setActiveTab('info');
+  }, [fullscreen, isCustomerService, activeTab]);
   const [agentEmail, setAgentEmail] = useState(initialAgentEmail || item.supportAgentEmail || '');
   const [currentStatus, setCurrentStatus] = useState(item.status);
   // Local display name — updated immediately when the user renames the client
@@ -1044,10 +1050,16 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
   // BOLs — keep the onboarding-specific tabs hidden so CS reps don't see / edit
   // them. The Billing Info tab is additionally hidden from anyone without
   // DocuSign access, on either surface.
+  // In the onboarding EXPANDED view the checklist lives in the right column,
+  // so the Onboarding tab on the left is redundant — drop it there. It stays in
+  // the compact side-panel (where there's no right-hand checklist).
+  const hideOnboardingTab = fullscreen && !isCustomerService;
   const tabs = (isCustomerService
     ? allTabs.filter(t => CUSTOMER_SERVICE_TABS.includes(t.id))
     : allTabs
-  ).filter(t => t.id !== 'billing' || canViewBilling);
+  )
+    .filter(t => t.id !== 'billing' || canViewBilling)
+    .filter(t => t.id !== 'onboarding' || !hideOnboardingTab);
 
   const panelWidth = fullscreen ? 'w-full' : 'w-full max-w-xl';
 
