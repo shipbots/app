@@ -30,6 +30,9 @@
         <p id="detail-name" class="detail-name"></p>
         <p id="detail-meta" class="detail-meta"></p>
       </div>
+      <button id="detail-onboarding-btn" class="detail-onb-btn" type="button" title="Onboarding checklist (admin)" hidden>
+        📋 Onboarding
+      </button>
       <button id="detail-open" class="detail-open" type="button" title="Open in the full dashboard">
         Edit ↗
       </button>
@@ -67,6 +70,9 @@
           <div id="detail-projects-list" class="detail-projects-list"></div>
         </div>
       </aside>
+      <!-- Admin-only onboarding checklist — replaces the notes/projects column
+           when the Onboarding toggle is on. -->
+      <div id="detail-onboarding" class="detail-onboarding" aria-label="Onboarding checklist" hidden></div>
     </div>
   </section>
 
@@ -81,6 +87,7 @@
         <p class="detail-name">Active Projects</p>
         <p id="projects-view-meta" class="detail-meta"></p>
       </div>
+      <span id="projects-updating" class="view-updating" hidden>Updating…</span>
       <button id="projects-new" class="pv-new-btn" type="button" title="Create a new project">+ New</button>
     </div>
     <div id="projects-view-status" class="detail-status" hidden></div>

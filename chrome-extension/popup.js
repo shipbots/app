@@ -1778,17 +1778,34 @@ async function showProjectsView() {
   document.body.classList.add('projects-open');
 
   const list = document.getElementById('projects-view-list');
-  if (list) list.innerHTML = '';
-  showProjectsViewStatus('Loading projects…', false);
-  try {
-    const [projects, myEmail] = await Promise.all([fetchAllProjects(), fetchCurrentUserEmail()]);
+
+  // 1. Instant paint from the cached payload (previous session or prewarm).
+  const cached = await readViewCache(PROJECTS_CACHE_KEY);
+  let painted = false;
+  if (cached && cached.data && Array.isArray(cached.data.projects)) {
+    renderAllActiveProjects(cached.data.projects, cached.data.email);
     showProjectsViewStatus('', false);
-    renderAllActiveProjects(projects, myEmail);
+    setViewUpdating('projects', true);
+    painted = true;
+  } else {
+    if (list) list.innerHTML = '';
+    showProjectsViewStatus('Loading projects…', false);
+  }
+
+  // 2. Background refresh (shared with the launch prewarm — no double fetch).
+  try {
+    const { projects, email } = await refreshProjectsData();
+    setViewUpdating('projects', false);
+    renderAllActiveProjects(projects, email);
+    showProjectsViewStatus('', false);
   } catch (err) {
-    if (err.code === 'unauthorized') {
-      showProjectsViewStatus('Sign in to the dashboard first, then reopen this popup.', true);
-    } else {
-      showProjectsViewStatus(`Couldn't load projects (${err.message || 'network error'}).`, true);
+    setViewUpdating('projects', false);
+    if (!painted) {
+      if (err.code === 'unauthorized') {
+        showProjectsViewStatus('Sign in to the dashboard first, then reopen this popup.', true);
+      } else {
+        showProjectsViewStatus(`Couldn't load projects (${err.message || 'network error'}).`, true);
+      }
     }
   }
 }
@@ -2033,6 +2050,7 @@ function setTasksFilterMode(mode) {
 // never double-fetch.
 const TASKS_CACHE_KEY = 'tasksCacheV1';
 const CALENDAR_CACHE_KEY = 'calendarCacheV1';
+const PROJECTS_CACHE_KEY = 'projectsCacheV1';
 
 function readViewCache(key) {
   return new Promise(resolve => {
@@ -2050,7 +2068,7 @@ function writeViewCache(key, data) {
 
 // Toggles the small "Updating…" pill in a view header while a refresh runs.
 function setViewUpdating(which, on) {
-  const el = document.getElementById(which === 'tasks' ? 'tasks-updating' : 'calendar-updating');
+  const el = document.getElementById(`${which}-updating`);
   if (el) el.hidden = !on;
 }
 
@@ -2081,7 +2099,20 @@ function refreshCalendarData() {
   return calendarRefreshInFlight;
 }
 
-// Fetch both datasets in the background right after the popup opens so the
+let projectsRefreshInFlight = null;
+function refreshProjectsData() {
+  if (projectsRefreshInFlight) return projectsRefreshInFlight;
+  projectsRefreshInFlight = (async () => {
+    try {
+      const [projects, email] = await Promise.all([fetchAllProjects(), fetchCurrentUserEmail()]);
+      writeViewCache(PROJECTS_CACHE_KEY, { projects, email });
+      return { projects, email };
+    } finally { projectsRefreshInFlight = null; }
+  })();
+  return projectsRefreshInFlight;
+}
+
+// Fetch the view datasets in the background right after the popup opens so the
 // caches are warm ("update in the background as soon as the extension launches").
 function prewarmViewCaches() {
   refreshTasksData()
@@ -2094,6 +2125,12 @@ function prewarmViewCaches() {
     .then(items => {
       const cv = document.getElementById('calendar-view');
       if (cv && !cv.hidden) { calendarItems = items; renderCalendarMonth(); setViewUpdating('calendar', false); }
+    })
+    .catch(() => {});
+  refreshProjectsData()
+    .then(({ projects, email }) => {
+      const pv = document.getElementById('projects-view');
+      if (pv && !pv.hidden) { renderAllActiveProjects(projects, email); setViewUpdating('projects', false); }
     })
     .catch(() => {});
 }
@@ -2543,6 +2580,128 @@ async function submitProjectComposer() {
   }
 }
 
+// ── Onboarding checklist (admin-only, inside the client detail) ─────────────
+// Admins get an "Onboarding" toggle in the detail header that swaps the sticky
+// notes + projects column for this client's onboarding checklist — progress %
+// plus every step's state, so they can see what's still missing without leaving
+// the popup. Data comes from the cached onboarding list (same source the
+// calendar uses), matched to the client by its Clients-board id.
+let isAdminCache = null;   // null = not yet checked
+async function fetchIsAdmin() {
+  if (isAdminCache !== null) return isAdminCache;
+  try {
+    const base = await getBaseUrl();
+    const res = await fetch(`${base}/api/admin/status`, { credentials: 'include', headers: { Accept: 'application/json' } });
+    isAdminCache = res.ok ? !!(await res.json()).isAdmin : false;
+  } catch { isAdminCache = false; }
+  return isAdminCache;
+}
+
+// Minimal mirror of lib/constants.ts getStepState + the special-step flags, so
+// the popup colors steps and counts "missing" exactly like the dashboard. The
+// conditional-N/A steps (TikTok / Lot Code / FBA / Intl) already carry "N/A" in
+// their value server-side, so only these flags are needed here.
+const ONB_CHECKLIST_CFG = {
+  dropdown_mm47xxjv: { anyValueIsDone: true, requiredWhenEmpty: true }, // Retrieved payment info
+  color_mktrmpxj:    { noAlsoDone: true },                             // Enable Inventory Syncing
+};
+function onbStepState(value, invertLogic, cfg) {
+  cfg = cfg || {};
+  if (!value) return cfg.requiredWhenEmpty ? 'missing' : 'not_started';
+  if (cfg.anyValueIsDone) return 'done';
+  const v = String(value).toLowerCase();
+  if (invertLogic) {
+    if (v === 'no') return 'done';
+    if (v === 'yes') return 'pending';
+    return 'not_started';
+  }
+  if (v === 'done' || v === 'yes') return 'done';
+  if (cfg.noAlsoDone && v === 'no') return 'done';
+  if (v === 'pending' || v === 'working on it' || v === 'needs set up' || v.includes('pending')) return 'pending';
+  if (v === 'n/a' || v === 'na' || v === 'not connecting store') return 'na';
+  return 'not_started';
+}
+const ONB_STATE_COLOR = { done: '#00c875', pending: '#fdab3d', missing: '#e2445c', na: '#00c875', not_started: '#c4c4c4' };
+
+async function onboardingItemForClient(clientBoardItemId) {
+  let items = calendarItems;
+  if (!items || !items.length) {
+    const cached = await readViewCache(CALENDAR_CACHE_KEY);
+    if (cached && Array.isArray(cached.data)) items = cached.data;
+    else { try { items = await fetchOnboardingItems(); calendarItems = items; } catch { items = []; } }
+  }
+  return (items || []).find(it => it.clientBoardItemId === clientBoardItemId) || null;
+}
+
+function renderOnboardingChecklist(item) {
+  const wrap = document.getElementById('detail-onboarding');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  if (!item) {
+    const empty = document.createElement('p');
+    empty.className = 'onb-empty';
+    empty.textContent = 'No onboarding record linked to this client.';
+    wrap.appendChild(empty);
+    return;
+  }
+  const steps = Array.isArray(item.checklist) ? item.checklist : [];
+  const stated = steps.map(s => ({ s, state: onbStepState(s.value, s.invertLogic, ONB_CHECKLIST_CFG[s.id]) }));
+  const applicable = stated.filter(x => x.state !== 'na');
+  const doneN = applicable.filter(x => x.state === 'done').length;
+  const pct = typeof item.progress === 'number' ? item.progress
+    : (applicable.length ? Math.round((doneN / applicable.length) * 100) : 0);
+  const remaining = stated.filter(x => x.state !== 'done' && x.state !== 'na').length;
+  const barColor = pct >= 100 ? '#00c875' : pct > 50 ? '#579bfc' : '#fdab3d';
+
+  const head = document.createElement('div');
+  head.className = 'onb-head';
+  head.innerHTML =
+    `<div class="onb-head-row"><span class="onb-title">Onboarding</span>` +
+    `<span class="onb-pct" style="color:${barColor}">${pct}%</span></div>` +
+    `<div class="onb-bar"><span style="width:${pct}%;background:${barColor}"></span></div>` +
+    `<div class="onb-sub">${doneN}/${applicable.length} done · ${remaining} remaining` +
+    `${item.status ? ' · ' + escapeHtml(item.status) : ''}</div>`;
+  wrap.appendChild(head);
+
+  const list = document.createElement('ul');
+  list.className = 'onb-list';
+  for (const { s, state } of stated) {
+    const li = document.createElement('li');
+    li.className = `onb-item onb-${state}`;
+    const dot = document.createElement('span');
+    dot.className = 'onb-dot';
+    dot.style.background = ONB_STATE_COLOR[state] || '#c4c4c4';
+    dot.textContent = (state === 'done' || state === 'na') ? '✓' : state === 'pending' ? '•' : state === 'missing' ? '!' : '';
+    const label = document.createElement('span');
+    label.className = 'onb-label';
+    label.textContent = s.label || s.id;
+    const val = document.createElement('span');
+    val.className = 'onb-val';
+    val.textContent = state === 'na' ? 'N/A' : (s.value || (state === 'missing' ? 'Missing' : 'Not set'));
+    li.appendChild(dot); li.appendChild(label); li.appendChild(val);
+    list.appendChild(li);
+  }
+  wrap.appendChild(list);
+}
+
+async function loadOnboardingChecklist(clientBoardItemId) {
+  const wrap = document.getElementById('detail-onboarding');
+  if (wrap) wrap.innerHTML = '<p class="onb-empty">Loading onboarding…</p>';
+  const item = await onboardingItemForClient(clientBoardItemId);
+  renderOnboardingChecklist(item);
+}
+
+// Swap between the onboarding panel and the sticky-notes/projects column.
+function setOnboardingActive(active) {
+  const aside = document.querySelector('#client-detail .detail-notes');
+  const onb = document.getElementById('detail-onboarding');
+  const btn = document.getElementById('detail-onboarding-btn');
+  if (aside) aside.hidden = active;
+  if (onb) onb.hidden = !active;
+  if (btn) btn.classList.toggle('is-active', active);
+  if (active && activeClientId) void loadOnboardingChecklist(activeClientId);
+}
+
 async function showClientDetail(clientStub, origin) {
   // Remember where we came from so the Back button returns there (search by
   // default; tasks / calendar / projects when opened from those views).
@@ -2615,6 +2774,14 @@ async function showClientDetail(clientStub, origin) {
   // sure it starts closed for each newly opened client.
   activeClientId = clientStub.id;
   resetNoteComposer();
+
+  // Reset the right column to the notes view on each open, and reveal the
+  // admin-only Onboarding toggle if the signed-in user is an admin.
+  setOnboardingActive(false);
+  void fetchIsAdmin().then(admin => {
+    const btn = document.getElementById('detail-onboarding-btn');
+    if (btn) btn.hidden = !admin;
+  });
 
   // Kick off sticky notes + related projects in parallel with the full client
   // info fetch so the right column populates as soon as each source returns.
@@ -2866,6 +3033,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Detail view: Back button returns to search ────────────────────────
   document.getElementById('detail-back').addEventListener('click', backToSearch);
+
+  // Admin-only Onboarding toggle: swaps the notes/projects column for the
+  // onboarding checklist (progress % + what's missing).
+  const onbBtn = document.getElementById('detail-onboarding-btn');
+  if (onbBtn) onbBtn.addEventListener('click', () => {
+    const onb = document.getElementById('detail-onboarding');
+    setOnboardingActive(onb ? onb.hidden : true);
+  });
 
   // ── Sticky-note composer: add a note without leaving the popup ─────────
   const notesAddBtn  = document.getElementById('detail-notes-add');
