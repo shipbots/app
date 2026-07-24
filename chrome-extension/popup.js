@@ -34,6 +34,32 @@ let detailOrigin = 'search';
 // in the popup; assigned inside the popup's init once the index loads.
 let clientIndex = null;
 
+// Remember the client whose detail is open so reopening the popup lands right
+// back on it (chrome.storage.local persists across popup closes). Cleared when
+// the user navigates back to search, so a fresh open starts on the search view.
+const LAST_CLIENT_KEY = 'lastClientV1';
+function saveLastClient(stub) {
+  if (!stub || !stub.id) return;
+  try {
+    chrome.storage.local.set({
+      [LAST_CLIENT_KEY]: { id: stub.id, name: stub.name || '', contactEmail: stub.contactEmail || '', warehouse: stub.warehouse || '' },
+    });
+  } catch { /* ignore */ }
+}
+function clearLastClient() {
+  try { chrome.storage.local.remove(LAST_CLIENT_KEY); } catch { /* ignore */ }
+}
+function readLastClient() {
+  return new Promise(resolve => {
+    try {
+      chrome.storage.local.get([LAST_CLIENT_KEY], r => {
+        if (chrome.runtime.lastError) { resolve(null); return; }
+        resolve(r && r[LAST_CLIENT_KEY] && r[LAST_CLIENT_KEY].id ? r[LAST_CLIENT_KEY] : null);
+      });
+    } catch { resolve(null); }
+  });
+}
+
 function getBaseUrl() {
   return new Promise(resolve => {
     chrome.storage.local.get(['baseUrl'], result => {
@@ -2731,11 +2757,16 @@ function renderOnboardingChecklist(item) {
   head.className = 'onb-head';
   head.innerHTML =
     `<div class="onb-head-row"><span class="onb-title">Onboarding</span>` +
+    `<button id="onb-open-app" class="onb-open-app" type="button" title="Open this client in the Onboarding app">Onboarding app ↗</button>` +
     `<span class="onb-pct" style="color:${barColor}">${pct}%</span></div>` +
     `<div class="onb-bar"><span style="width:${pct}%;background:${barColor}"></span></div>` +
     `<div class="onb-sub">${doneN}/${applicable.length} done · ${remaining} remaining` +
     `${item.status ? ' · ' + escapeHtml(item.status) : ''}</div>`;
   wrap.appendChild(head);
+  const openAppBtn = head.querySelector('#onb-open-app');
+  // Deep-link into the Onboarding app for this client (the ?clientId param
+  // accepts the onboarding-board item id and &expanded=1 opens it full-view).
+  if (openAppBtn) openAppBtn.addEventListener('click', () => void openPath(`/onboarding?clientId=${encodeURIComponent(item.id)}&expanded=1`));
 
   // Editable onboarding status (Monday "estado" column). Admin-only panel, so
   // it's always interactive here.
@@ -2882,6 +2913,8 @@ async function showClientDetail(clientStub, origin) {
   // sure it starts closed for each newly opened client.
   activeClientId = clientStub.id;
   resetNoteComposer();
+  // Remember this client so closing + reopening the popup lands back here.
+  saveLastClient(clientStub);
 
   // Reset the right column to the notes view on each open, and reveal the
   // admin-only Onboarding toggle if the signed-in user is an admin.
@@ -2913,6 +2946,7 @@ async function showClientDetail(clientStub, origin) {
 function backToSearch() {
   activeClientId = null;
   resetNoteComposer();
+  clearLastClient(); // leaving the client → don't auto-restore it next open
   document.getElementById('client-detail').hidden = true;
   document.body.classList.remove('detail-open');
   // Return to whichever view opened this client.
@@ -3219,6 +3253,47 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Warm the Tasks + Calendar caches in the background as soon as the popup
   // opens, so those views paint instantly (and stay fresh) when clicked.
   prewarmViewCaches();
+
+  // If a client detail was open when the popup last closed, reopen it so the
+  // user lands right back where they were instead of the search screen.
+  void readLastClient().then(stub => { if (stub) void showClientDetail(stub, 'search'); });
+
+  // ── Detail-header search: switch to another client without going back ──
+  const detailSearchInput = document.getElementById('detail-search-input');
+  const detailSearchResults = document.getElementById('detail-search-results');
+  if (detailSearchInput && detailSearchResults) {
+    let dsResults = [];
+    const closeDetailSearch = () => { detailSearchResults.hidden = true; detailSearchResults.innerHTML = ''; };
+    detailSearchInput.addEventListener('input', () => {
+      const q = detailSearchInput.value.trim();
+      if (!q || !clientIndex) { closeDetailSearch(); return; }
+      dsResults = filterClients(clientIndex, q, 6);
+      detailSearchResults.innerHTML = '';
+      for (const r of dsResults) {
+        const li = document.createElement('li');
+        li.className = 'detail-search-item';
+        li.textContent = r.c.name || '(unnamed)';
+        li.title = r.c.contactEmail || r.c.name || '';
+        li.addEventListener('click', () => {
+          detailSearchInput.value = '';
+          closeDetailSearch();
+          void showClientDetail(r.c, 'search');
+        });
+        detailSearchResults.appendChild(li);
+      }
+      detailSearchResults.hidden = dsResults.length === 0;
+    });
+    detailSearchInput.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { detailSearchInput.value = ''; closeDetailSearch(); }
+      else if (e.key === 'Enter' && dsResults[0]) {
+        detailSearchInput.value = '';
+        closeDetailSearch();
+        void showClientDetail(dsResults[0].c, 'search');
+      }
+    });
+    // Close the dropdown on outside click.
+    document.addEventListener('click', e => { if (!e.target.closest('.detail-search')) closeDetailSearch(); });
+  }
 
   // Tasks Outstanding/Done toggle.
   document.getElementById('tasks-tab-open').addEventListener('click', () => setTasksFilterMode('open'));
