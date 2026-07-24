@@ -894,21 +894,31 @@ body.projects-open {
 .detail-section-header {
   display: flex;
   align-items: center;
+  gap: 4px;
+  width: 100%;
+  background: #fff;
+  transition: background .08s;
+}
+.detail-section-header:hover { background: #f9fafb; }
+/* Expanded row: shaded + a divider under the header. */
+.detail-section-header:has(.detail-section-toggle[aria-expanded="true"]) {
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+/* Collapse toggle takes the bulk of the row (title + chevron). */
+.detail-section-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
-  width: 100%;
   padding: 10px 12px;
-  background: #fff;
+  background: transparent;
   border: none;
   cursor: pointer;
   font: inherit;
   text-align: left;
-  transition: background .08s;
-}
-.detail-section-header:hover { background: #f9fafb; }
-.detail-section-header[aria-expanded="true"] {
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
 }
 .detail-section-title {
   font-size: 11px;
@@ -922,8 +932,29 @@ body.projects-open {
   font-size: 12px;
   transition: transform .15s;
 }
-.detail-section-header[aria-expanded="true"] .detail-section-chev {
+.detail-section-toggle[aria-expanded="true"] .detail-section-chev {
   transform: rotate(90deg);
+}
+/* Per-section Edit toggle — reveals empty fields + turns on inline editing. */
+.detail-section-edit {
+  flex-shrink: 0;
+  margin-right: 8px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #015280;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.detail-section-edit:hover { background: #f0fbff; border-color: #43c7ff; }
+.detail-section-edit.is-active {
+  background: #015280;
+  color: #fff;
+  border-color: #015280;
 }
 .detail-section-body {
   padding: 10px 12px 12px;

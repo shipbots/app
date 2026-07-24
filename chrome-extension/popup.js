@@ -691,38 +691,47 @@ function buildSection(section, client) {
   const wrap = document.createElement('div');
   wrap.className = 'detail-section';
 
-  const header = document.createElement('button');
+  // Header row = a collapse toggle (title + chevron) plus, for sections that
+  // have editable fields, an "Edit" button. Read mode shows only completed
+  // fields so the panel stays clean to scan; clicking Edit reveals the empty
+  // editable fields (an "Add…" affordance) and turns on inline editing so reps
+  // can fill gaps or fix values without leaving the popup.
+  const header = document.createElement('div');
   header.className = 'detail-section-header';
-  header.type = 'button';
-  header.setAttribute('aria-expanded', 'false');
+
+  const toggle = document.createElement('button');
+  toggle.className = 'detail-section-toggle';
+  toggle.type = 'button';
+  toggle.setAttribute('aria-expanded', 'false');
   const title = document.createElement('span');
   title.className = 'detail-section-title';
   title.textContent = section.title;
   const chev = document.createElement('span');
   chev.className = 'detail-section-chev';
   chev.textContent = '›';
-  header.appendChild(title);
-  header.appendChild(chev);
+  toggle.appendChild(title);
+  toggle.appendChild(chev);
+  header.appendChild(toggle);
 
   const body = document.createElement('dl');
   body.className = 'detail-section-body';
   body.hidden = true;
 
-  if (section.custom === 'renderContacts') {
-    buildContactsBody(body, client);
-  } else if (section.custom === 'renderNotifications') {
-    buildNotificationsBody(body, client);
-  } else {
+  const isCustom = section.custom === 'renderContacts' || section.custom === 'renderNotifications';
+  const hasEditable = !isCustom && (section.fields || []).some(f => EDITABLE_KEYS[f.key]);
+  let editing = false;
+
+  function renderBody() {
+    body.innerHTML = '';
+    if (section.custom === 'renderContacts') { buildContactsBody(body, client); return; }
+    if (section.custom === 'renderNotifications') { buildNotificationsBody(body, client); return; }
     let any = false;
     for (const field of section.fields) {
       const editSpec = EDITABLE_KEYS[field.key];
       const hasValue = fieldHasValue(client, field);
-      // Read-only fields: skip when empty for clean scanning. Editable
-      // fields (mapped in EDITABLE_KEYS): always show — even when empty —
-      // so reps can edit existing values or fill in gaps inline without
-      // leaving the popup. Inline edits PATCH Monday via /api/client/[id];
-      // the dashboard panel still owns dropdown / date / color columns.
-      if (!hasValue && !editSpec) continue;
+      // Read mode: only completed fields. Edit mode: also reveal empty editable
+      // fields so they can be filled in. Non-editable empties stay hidden.
+      if (!hasValue && !(editing && editSpec)) continue;
       const dt = document.createElement('dt');
       dt.textContent = field.label;
       const dd = document.createElement('dd');
@@ -739,7 +748,8 @@ function buildSection(section, client) {
         add.textContent = 'Add…';
         dd.appendChild(add);
       }
-      if (editSpec) attachInlineEdit(dd, client, field, editSpec);
+      // Inline editing is gated behind Edit mode — read mode stays click-safe.
+      if (editing && editSpec) attachInlineEdit(dd, client, field, editSpec);
       body.appendChild(dt);
       body.appendChild(dd);
       any = true;
@@ -751,14 +761,37 @@ function buildSection(section, client) {
       empty.style.fontStyle = 'italic';
       empty.style.fontSize = '11px';
       empty.style.margin = '0';
-      empty.textContent = 'No data on file.';
+      empty.textContent = editing ? 'Nothing else to add.' : 'No data on file.';
       body.appendChild(empty);
     }
   }
+  renderBody();
 
-  header.addEventListener('click', () => {
-    const expanded = header.getAttribute('aria-expanded') === 'true';
-    header.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+  // Edit toggle — only for sections that actually have editable fields.
+  if (hasEditable) {
+    const editBtn = document.createElement('button');
+    editBtn.className = 'detail-section-edit';
+    editBtn.type = 'button';
+    editBtn.textContent = 'Edit';
+    editBtn.title = 'Edit or add information in this section';
+    editBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      editing = !editing;
+      editBtn.textContent = editing ? 'Done' : 'Edit';
+      editBtn.classList.toggle('is-active', editing);
+      // Entering edit mode expands the section if it was collapsed.
+      if (editing && body.hidden) {
+        toggle.setAttribute('aria-expanded', 'true');
+        body.hidden = false;
+      }
+      renderBody();
+    });
+    header.appendChild(editBtn);
+  }
+
+  toggle.addEventListener('click', () => {
+    const expanded = toggle.getAttribute('aria-expanded') === 'true';
+    toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
     body.hidden = expanded;
   });
 
