@@ -64,11 +64,17 @@ type ChecklistStepConfig = {
    * information" mirrors the "Payment on File?" dropdown on Clients.
    */
   board?: 'onboarding' | 'clients';
+  /** Any non-empty answer counts as resolved/done (green) — e.g. "Retrieved
+   *  payment information", where a deliberate "No" (not required) is fine. */
+  anyValueIsDone?: boolean;
+  /** When empty, render a red "missing" state instead of the neutral grey
+   *  "not set" — flags an important field that hasn't been addressed yet. */
+  requiredWhenEmpty?: boolean;
 };
 
 export const CHECKLIST_STEPS: readonly ChecklistStepConfig[] = [
   { id: 'color_mktr9afd',  label: 'Sign Contract',                       shortLabel: 'Contract',    options: ['Done', 'Pending'] },
-  { id: 'dropdown_mm47xxjv', label: 'Retrieved payment information',     shortLabel: 'Payment Info', options: ['Yes', 'No'], board: 'clients' },
+  { id: 'dropdown_mm47xxjv', label: 'Retrieved payment information',     shortLabel: 'Payment Info', options: ['Yes', 'No'], board: 'clients', anyValueIsDone: true, requiredWhenEmpty: true },
   { id: 'color_mktp5834',  label: 'Book Onboarding Call',                shortLabel: 'Book Call',   options: ['Done'] },
   { id: 'color_mktrpzz5',  label: 'Connect Your Store',                  shortLabel: 'Store',       options: ['Done', 'Working on it', 'Stuck', 'Not connecting Store'] },
   { id: 'color_mktrf23d',  label: 'Configure Shopify Settings',          shortLabel: 'Shopify',     options: ['Done', 'N/A'] },
@@ -91,8 +97,16 @@ export const CHECKLIST_STEPS: readonly ChecklistStepConfig[] = [
 
 // Status value to visual state mapping
 // invertLogic: when true, "No" is the desired/done state (e.g. "Additional Call Required")
-export function getStepState(value: string | null, invertLogic = false): 'done' | 'pending' | 'na' | 'not_started' {
-  if (!value) return 'not_started';
+export function getStepState(
+  value: string | null,
+  invertLogic = false,
+  opts?: { anyValueIsDone?: boolean; requiredWhenEmpty?: boolean },
+): 'done' | 'pending' | 'na' | 'not_started' | 'missing' {
+  // Empty: a required field flags as "missing" (red); others stay neutral grey.
+  if (!value) return opts?.requiredWhenEmpty ? 'missing' : 'not_started';
+  // Any deliberate answer resolves the step (e.g. payment info: Yes = got it,
+  // No = not required — both fine).
+  if (opts?.anyValueIsDone) return 'done';
   const v = value.toLowerCase();
   if (invertLogic) {
     if (v === 'no') return 'done';
@@ -105,12 +119,13 @@ export function getStepState(value: string | null, invertLogic = false): 'done' 
   return 'not_started';
 }
 
-export function getStepColor(state: 'done' | 'pending' | 'na' | 'not_started'): string {
+export function getStepColor(state: 'done' | 'pending' | 'na' | 'not_started' | 'missing'): string {
   switch (state) {
     case 'done': return '#00c875';
     case 'pending': return '#fdab3d';
     case 'na': return '#c4c4c4';
     case 'not_started': return '#e0e0e0';
+    case 'missing': return '#e2445c';
   }
 }
 

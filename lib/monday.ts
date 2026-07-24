@@ -131,8 +131,8 @@ export async function fetchOnboardingItems(): Promise<OnboardingItem[]> {
         invertLogic: step.invertLogic,
       }));
 
-      const doneCount = checklist.filter(s => getStepState(s.value, s.invertLogic) === 'done').length;
-      const applicableCount = checklist.filter(s => getStepState(s.value, s.invertLogic) !== 'na').length;
+      const doneCount = checklist.filter(s => getStepState(s.value, s.invertLogic, CHECKLIST_STEPS.find(c => c.id === s.id)) === 'done').length;
+      const applicableCount = checklist.filter(s => getStepState(s.value, s.invertLogic, CHECKLIST_STEPS.find(c => c.id === s.id)) !== 'na').length;
       const progress = applicableCount > 0 ? Math.round((doneCount / applicableCount) * 100) : 0;
 
       // Parse connected board item via BoardRelationValue fragment
@@ -213,8 +213,8 @@ export async function fetchOnboardingItems(): Promise<OnboardingItem[]> {
         }
 
         // Recompute progress now that client-board steps have real values.
-        const doneCount = item.checklist.filter(s => getStepState(s.value, s.invertLogic) === 'done').length;
-        const applicableCount = item.checklist.filter(s => getStepState(s.value, s.invertLogic) !== 'na').length;
+        const doneCount = item.checklist.filter(s => getStepState(s.value, s.invertLogic, CHECKLIST_STEPS.find(c => c.id === s.id)) === 'done').length;
+        const applicableCount = item.checklist.filter(s => getStepState(s.value, s.invertLogic, CHECKLIST_STEPS.find(c => c.id === s.id)) !== 'na').length;
         item.progress = applicableCount > 0 ? Math.round((doneCount / applicableCount) * 100) : 0;
       }
     } catch (err) {

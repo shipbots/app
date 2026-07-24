@@ -1,7 +1,7 @@
 'use client';
 
 import { ChecklistStep } from '@/lib/types';
-import { getStepState, getStepColor } from '@/lib/constants';
+import { getStepState, getStepColor, CHECKLIST_STEPS } from '@/lib/constants';
 
 interface ChecklistBarProps {
   steps: ChecklistStep[];
@@ -12,7 +12,7 @@ export function ChecklistBar({ steps, compact = false }: ChecklistBarProps) {
   return (
     <div className="flex items-center gap-0.5 w-full">
       {steps.map((step) => {
-        const state = getStepState(step.value, step.invertLogic);
+        const state = getStepState(step.value, step.invertLogic, CHECKLIST_STEPS.find(c => c.id === step.id));
         const color = getStepColor(state);
 
         return (

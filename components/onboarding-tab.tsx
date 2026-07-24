@@ -77,11 +77,12 @@ const STEP_ICON: Record<string, React.ReactNode> = {
   color_mm28ht8:  <Tag className="w-3.5 h-3.5" />,
 };
 
-function StateIcon({ state }: { state: 'done' | 'pending' | 'na' | 'not_started' }) {
+function StateIcon({ state }: { state: 'done' | 'pending' | 'na' | 'not_started' | 'missing' }) {
   switch (state) {
     case 'done':        return <Check className="w-3 h-3 text-white" />;
     case 'pending':     return <Clock className="w-3 h-3 text-white" />;
     case 'na':          return <Minus className="w-3 h-3 text-white" />;
+    case 'missing':     return <span className="text-white text-[9px] font-bold leading-none">!</span>;
     case 'not_started': return null;
   }
 }
@@ -112,7 +113,7 @@ function EditableStep({
   const [saveError, setSaveError] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const state = forcedNa ? 'na' : getStepState(value, step.invertLogic);
+  const state = forcedNa ? 'na' : getStepState(value, step.invertLogic, CHECKLIST_STEPS.find(s => s.id === step.id));
   const color = getStepColor(state);
   const icon = STEP_ICON[step.id];
 
@@ -169,6 +170,7 @@ function EditableStep({
     <div className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-colors ${
       state === 'done'      ? 'bg-green-50'
       : state === 'pending' ? 'bg-orange-50'
+      : state === 'missing' ? 'bg-red-50'
       : state === 'na'      ? 'bg-gray-50 opacity-50'
       : 'hover:bg-gray-50'
     }`}>
@@ -692,8 +694,8 @@ export function OnboardingTab({
   const shippingSubLabel = shippingDetails.trim() || undefined;
 
   // Progress uses effectiveSteps so forced-N/A steps are excluded from the denominator
-  const doneCount = effectiveSteps.filter(s => getStepState(s.value, s.invertLogic) === 'done').length;
-  const applicableCount = effectiveSteps.filter(s => getStepState(s.value, s.invertLogic) !== 'na').length;
+  const doneCount = effectiveSteps.filter(s => getStepState(s.value, s.invertLogic, CHECKLIST_STEPS.find(c => c.id === s.id)) === 'done').length;
+  const applicableCount = effectiveSteps.filter(s => getStepState(s.value, s.invertLogic, CHECKLIST_STEPS.find(c => c.id === s.id)) !== 'na').length;
   const progress = applicableCount > 0 ? Math.round((doneCount / applicableCount) * 100) : initialProgress;
 
   const handleSaved = (stepId: string, newValue: string | null) => {
