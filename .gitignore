@@ -45,3 +45,7 @@ next-env.d.ts
 # guarantees /install serves the current build even if the Vercel build step
 # doesn't run the prebuild hook. Regenerate + commit it whenever the extension
 # changes (npm run zip:extension).
+
+# Store-upload zips are build artifacts (rebuilt via `npm run pack:store`), not
+# versioned — same rule as docs/store-listing/zips/.gitignore.
+/docs/store-listing/*.zip
