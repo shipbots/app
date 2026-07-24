@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type ComponentProps } from 'react';
 import { useSession } from 'next-auth/react';
 import { useCachedFetch } from '@/hooks/use-cached-fetch';
 import { OnboardingItem, ClientInfo, FirefliesMeeting, GmailThread } from '@/lib/types';
@@ -1080,39 +1080,42 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
     </div>
   );
 
+  // Shared OnboardingTab props — reused by the left "Onboarding" tab (single
+  // column) and, in the onboarding expanded view, the right-hand checklist
+  // panel (multi-column grid). Hoisted so the two stay in lockstep.
+  const onboardingTabProps: ComponentProps<typeof OnboardingTab> = {
+    steps: item.checklist,
+    progress: item.progress,
+    status: item.status,
+    kickoffDate: item.kickoffDate,
+    inventoryDelivered: item.inventoryDelivered,
+    itemId: item.id,
+    onboarder: item.onboarder,
+    internationalFulfillment: clientInfo?.internationalFulfillment,
+    internationalShippingDDUDDP: clientInfo?.internationalShippingDDUDDP,
+    amazonFBA: clientInfo?.amazonFBA,
+    ecommercePlatforms: clientInfo?.ecommercePlatforms,
+    shipHeroName: clientInfo?.shipHeroName || item.name,
+    shippingDetails: item.shippingDetails,
+    clientBoardItemId: item.clientBoardItemId ?? undefined,
+    contactEmail: clientInfo?.contactEmail,
+    contacts: [
+      { name: clientInfo?.contactName ?? '', email: clientInfo?.contactEmail ?? '' },
+      { name: clientInfo?.contact2Name ?? '', email: clientInfo?.contact2Email ?? '' },
+      { name: clientInfo?.contact3Name ?? '', email: clientInfo?.contact3Email ?? '' },
+    ],
+    clientName: item.name,
+    tikTokShop: clientInfo?.tikTokShop,
+    lotCodeExpiration: clientInfo?.lotCodeExpiration,
+    onKickoffDateSaved: (newValue) => onItemUpdate?.(item.id, { kickoffDate: newValue || null }),
+    onChecklistChange: (checklist) => onItemUpdate?.(item.id, { checklist }),
+    onShippingDetailsSaved: (value) => onItemUpdate?.(item.id, { shippingDetails: value }),
+  };
+
   const tabContentJsx = (
     <>
       {activeTab === 'onboarding' && (
-        <OnboardingTab
-          steps={item.checklist}
-          progress={item.progress}
-          status={item.status}
-          kickoffDate={item.kickoffDate}
-          inventoryDelivered={item.inventoryDelivered}
-          itemId={item.id}
-          onboarder={item.onboarder}
-          internationalFulfillment={clientInfo?.internationalFulfillment}
-          internationalShippingDDUDDP={clientInfo?.internationalShippingDDUDDP}
-          amazonFBA={clientInfo?.amazonFBA}
-          ecommercePlatforms={clientInfo?.ecommercePlatforms}
-          shipHeroName={clientInfo?.shipHeroName || item.name}
-          shippingDetails={item.shippingDetails}
-          clientBoardItemId={item.clientBoardItemId ?? undefined}
-          contactEmail={clientInfo?.contactEmail}
-          contacts={[
-            { name: clientInfo?.contactName ?? '', email: clientInfo?.contactEmail ?? '' },
-            { name: clientInfo?.contact2Name ?? '', email: clientInfo?.contact2Email ?? '' },
-            { name: clientInfo?.contact3Name ?? '', email: clientInfo?.contact3Email ?? '' },
-          ]}
-          clientName={item.name}
-          tikTokShop={clientInfo?.tikTokShop}
-          lotCodeExpiration={clientInfo?.lotCodeExpiration}
-          onKickoffDateSaved={(newValue) =>
-            onItemUpdate?.(item.id, { kickoffDate: newValue || null })
-          }
-          onChecklistChange={(checklist) => onItemUpdate?.(item.id, { checklist })}
-          onShippingDetailsSaved={(value) => onItemUpdate?.(item.id, { shippingDetails: value })}
-        />
+        <OnboardingTab {...onboardingTabProps} />
       )}
       <div className={activeTab !== 'info' ? 'hidden' : 'h-full overflow-hidden'}>
         {loadingClient ? (
@@ -1457,23 +1460,39 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
             />
           )}
 
-          <section className="bg-white rounded-2xl border border-gray-200/70 shadow-[0_1px_2px_rgba(20,24,40,.04),0_6px_16px_rgba(20,24,40,.04)] flex flex-col overflow-hidden flex-1 min-h-[160px]">
-            <header className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 flex-shrink-0">
-              <BarChart3 className="w-4 h-4 text-[#0071BC]" />
-              <h2 className="text-sm font-semibold text-gray-900">Client Performance Metrics</h2>
-              <span className="ml-auto text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">
-                Coming soon
-              </span>
-            </header>
-            <div className="flex-1 flex flex-col items-center justify-center text-center px-8 py-10 text-gray-400">
-              <BarChart3 className="w-8 h-8 mb-3 opacity-50" />
-              <p className="text-sm font-medium">Metrics aren&apos;t wired up yet</p>
-              <p className="text-xs mt-1 max-w-sm leading-relaxed">
-                ShipHero shipment volumes, on-time rates, returns, and SLAs will surface
-                here once the data source is connected.
-              </p>
-            </div>
-          </section>
+          {isCustomerService ? (
+            /* Customer Service keeps the performance-metrics placeholder. */
+            <section className="bg-white rounded-2xl border border-gray-200/70 shadow-[0_1px_2px_rgba(20,24,40,.04),0_6px_16px_rgba(20,24,40,.04)] flex flex-col overflow-hidden flex-1 min-h-[160px]">
+              <header className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 flex-shrink-0">
+                <BarChart3 className="w-4 h-4 text-[#0071BC]" />
+                <h2 className="text-sm font-semibold text-gray-900">Client Performance Metrics</h2>
+                <span className="ml-auto text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">
+                  Coming soon
+                </span>
+              </header>
+              <div className="flex-1 flex flex-col items-center justify-center text-center px-8 py-10 text-gray-400">
+                <BarChart3 className="w-8 h-8 mb-3 opacity-50" />
+                <p className="text-sm font-medium">Metrics aren&apos;t wired up yet</p>
+                <p className="text-xs mt-1 max-w-sm leading-relaxed">
+                  ShipHero shipment volumes, on-time rates, returns, and SLAs will surface
+                  here once the data source is connected.
+                </p>
+              </div>
+            </section>
+          ) : (
+            /* Onboarding: the full checklist lives here (right of the client
+               info), laid out in three columns so everything reads at a glance
+               in one space. Same component + behavior as the Onboarding tab. */
+            <section className="bg-white rounded-2xl border border-gray-200/70 shadow-[0_1px_2px_rgba(20,24,40,.04),0_6px_16px_rgba(20,24,40,.04)] flex flex-col overflow-hidden flex-1 min-h-[160px]">
+              <header className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 flex-shrink-0">
+                <ClipboardList className="w-4 h-4 text-[#0071BC]" />
+                <h2 className="text-sm font-semibold text-gray-900">Onboarding Checklist</h2>
+              </header>
+              <div className="flex-1 min-h-0">
+                <OnboardingTab {...onboardingTabProps} checklistColumns={3} />
+              </div>
+            </section>
+          )}
         </div>
         </div>
       </div>

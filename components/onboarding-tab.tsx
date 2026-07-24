@@ -52,6 +52,10 @@ interface OnboardingTabProps {
   onChecklistChange?: (steps: ChecklistStep[]) => void;
   /** Called after the shipping methods (text_mkw94440) save. */
   onShippingDetailsSaved?: (value: string) => void;
+  /** When set (3 or 4), the checklist renders as a multi-column grid instead
+   *  of a single vertical list — used to consolidate every step into one space
+   *  next to the client info in the expanded onboarding view. */
+  checklistColumns?: number;
 }
 
 // Per-step icons keyed by Monday column ID
@@ -559,6 +563,7 @@ export function OnboardingTab({
   onKickoffDateSaved,
   onChecklistChange,
   onShippingDetailsSaved,
+  checklistColumns,
 }: OnboardingTabProps) {
   const [steps, setSteps] = useState<ChecklistStep[]>(initialSteps);
   const [shippingDetails, setShippingDetails] = useState(initialShippingDetails);
@@ -808,8 +813,16 @@ export function OnboardingTab({
         )}
       </div>
 
-      {/* Compact checklist */}
-      <div className="space-y-0.5">
+      {/* Compact checklist — single vertical list by default, or a multi-column
+          grid when checklistColumns is set (expanded onboarding view). Grid
+          classes are spelled out statically so Tailwind keeps them. */}
+      <div className={
+        checklistColumns === 4
+          ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-x-3 gap-y-0.5 items-start'
+          : checklistColumns === 3
+            ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-x-3 gap-y-0.5 items-start'
+            : 'space-y-0.5'
+      }>
         {effectiveSteps.map(step => (
           <EditableStep
             key={step.id}
