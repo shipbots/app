@@ -2178,7 +2178,14 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
                 file={localClient.docusignFile}
                 columnId="files"
                 clientId={onboardingItemId || id}
-                onUploaded={newFile => { setLocalClient(prev => ({ ...prev, docusignFile: newFile })); handleDocusignUploaded(newFile); }}
+                onUploaded={newFile => {
+                  setLocalClient(prev => ({ ...prev, docusignFile: newFile }));
+                  // Uploading here runs BOTH extractions — general/legal info
+                  // and pricing — just like the Client Info section, so a
+                  // DocuSign dropped in either place fills everything.
+                  handleExtractBilling(newFile.assetId);
+                  handleDocusignUploaded(newFile);
+                }}
               />
             )}
             <DateField label="🖊️ Date DocuSign Signed" value={localClient.dateDocusignSigned} columnId="date_mkw2fhte" clientId={id} icon={<Calendar className="w-3.5 h-3.5" />} />
