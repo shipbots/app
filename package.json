@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run zip:extension && next build",
     "start": "next start",
     "lint": "eslint",
     "zip:extension": "rm -f public/chrome-extension.zip && cd chrome-extension && zip -qr ../public/chrome-extension.zip . -x '*.DS_Store' && cd ..",
