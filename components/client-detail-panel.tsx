@@ -1489,7 +1489,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
                 <h2 className="text-sm font-semibold text-gray-900">Onboarding Checklist</h2>
               </header>
               <div className="flex-1 min-h-0">
-                <OnboardingTab {...onboardingTabProps} checklistColumns={3} />
+                <OnboardingTab {...onboardingTabProps} checklistColumns={2} />
               </div>
             </section>
           )}

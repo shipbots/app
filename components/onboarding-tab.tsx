@@ -99,6 +99,7 @@ function EditableStep({
   subLabel,
   forcedNa = false,
   actionButton,
+  dense = false,
 }: {
   step: ChecklistStep;
   itemId: string;
@@ -110,6 +111,9 @@ function EditableStep({
   subLabel?: string;
   forcedNa?: boolean;
   actionButton?: React.ReactNode;
+  /** Compact single-row layout for the multi-column grid — no wrapping,
+   *  smaller text, tighter padding (keeps each item to one short row). */
+  dense?: boolean;
 }) {
   const [value, setValue] = useState(step.value);
   const [open, setOpen] = useState(false);
@@ -171,7 +175,9 @@ function EditableStep({
   };
 
   return (
-    <div className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-colors ${
+    <div className={`flex items-center rounded-lg transition-colors ${
+      dense ? 'gap-2 px-2 py-1 min-w-0 overflow-hidden' : 'gap-2.5 px-2 py-1.5'
+    } ${
       state === 'done'      ? 'bg-green-50'
       : state === 'pending' ? 'bg-orange-50'
       : state === 'missing' ? 'bg-red-50'
@@ -247,12 +253,14 @@ function EditableStep({
       </span>
 
       {/* ── Label + optional sub-label badge ── */}
-      <span className={`flex-1 text-xs leading-tight min-w-0 flex items-center gap-1.5 flex-wrap ${
-        'text-gray-700'
+      <span className={`flex-1 min-w-0 flex items-center gap-1.5 text-gray-700 ${
+        dense ? 'text-[11px]' : 'text-xs leading-tight flex-wrap'
       }`}>
-        {step.label}
+        <span className={dense ? 'truncate' : ''}>{step.label}</span>
         {subLabel && (
-          <span className="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 no-underline not-italic leading-none">
+          <span className={`inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 no-underline not-italic leading-none ${
+            dense ? 'flex-shrink-0 max-w-[45%] truncate' : ''
+          }`}>
             {subLabel}
           </span>
         )}
@@ -821,7 +829,9 @@ export function OnboardingTab({
           ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-x-3 gap-y-0.5 items-start'
           : checklistColumns === 3
             ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-x-3 gap-y-0.5 items-start'
-            : 'space-y-0.5'
+            : checklistColumns === 2
+              ? 'grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-0.5 items-start'
+              : 'space-y-0.5'
       }>
         {effectiveSteps.map(step => (
           <EditableStep
@@ -830,6 +840,7 @@ export function OnboardingTab({
             itemId={itemId}
             clientBoardItemId={clientBoardItemId}
             onSaved={handleSaved}
+            dense={!!checklistColumns}
             subLabel={
               step.id === 'color_mktv3dek'  ? intlSubLabel :
               step.id === 'color_mktrpzz5'  ? storeSubLabel :
