@@ -1624,3 +1624,21 @@ body.calendar-open { width: 760px; }
   font-size: 10px; color: #6b7280; white-space: nowrap;
   flex-shrink: 0; max-width: 96px; overflow: hidden; text-overflow: ellipsis;
 }
+
+/* Editable onboarding status + per-step selects (admin panel). */
+.onb-status-row { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; }
+.onb-status-lbl {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: #6b7280; flex-shrink: 0;
+}
+.onb-status-sel {
+  flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: #111827;
+  border: 1px solid #d1d5db; border-radius: 6px; padding: 4px 6px; background: #fff; cursor: pointer;
+}
+.onb-status-sel:focus { outline: none; border-color: #43c7ff; box-shadow: 0 0 0 2px rgba(67, 199, 255, .2); }
+.onb-step-sel {
+  justify-self: end; max-width: 116px; font-size: 11px; color: #374151;
+  border: 1px solid transparent; border-radius: 5px; padding: 2px 4px; background: transparent; cursor: pointer;
+}
+.onb-step-sel:hover { border-color: #d1d5db; background: #fff; }
+.onb-step-sel:focus { outline: none; border-color: #43c7ff; background: #fff; }

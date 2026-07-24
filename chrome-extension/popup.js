@@ -2623,6 +2623,76 @@ function onbStepState(value, invertLogic, cfg) {
 }
 const ONB_STATE_COLOR = { done: '#00c875', pending: '#fdab3d', missing: '#e2445c', na: '#00c875', not_started: '#c4c4c4' };
 
+// Onboarding status labels (Monday "estado" column) admins can pick from.
+const ONB_STATUSES = ['Not Started', 'In Progress', 'Onboarded, Awaiting Inventory', 'Completed', 'Inventory never arrived', 'Abandoned', 'N/A', 'ZAP ERROR'];
+
+// Recompute item.progress from the current checklist values (so the % updates
+// live as an admin toggles steps), matching the server's done/applicable math.
+function recomputeItemProgress(item) {
+  const steps = Array.isArray(item.checklist) ? item.checklist : [];
+  const states = steps.map(s => onbStepState(s.value, s.invertLogic, ONB_CHECKLIST_CFG[s.id]));
+  const applicable = states.filter(x => x !== 'na');
+  const done = applicable.filter(x => x === 'done').length;
+  item.progress = applicable.length ? Math.round((done / applicable.length) * 100) : 0;
+}
+
+// Persist + re-render helper: mutate the item optimistically, re-render (keeping
+// scroll), PATCH Monday, and revert on failure. Used for both checklist steps
+// and the onboarding status.
+async function onbPatchAndRerender(item, apply, revert, url, columnId, value) {
+  const wrap = document.getElementById('detail-onboarding');
+  const scroll = wrap ? wrap.scrollTop : 0;
+  apply();
+  renderOnboardingChecklist(item);
+  if (wrap) wrap.scrollTop = scroll;
+  try {
+    const res = await fetch(url, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ columnId, value }),
+    });
+    if (!res.ok) throw new Error(String(res.status));
+  } catch (err) {
+    console.error('[onboarding] update failed', err);
+    revert();
+    const w = document.getElementById('detail-onboarding');
+    const s = w ? w.scrollTop : 0;
+    renderOnboardingChecklist(item);
+    if (w) w.scrollTop = s;
+  }
+}
+
+async function changeStepValue(item, step, newValue) {
+  const s = item.checklist.find(x => x.id === step.id);
+  if (!s) return;
+  const prev = s.value;
+  // "Retrieved payment information" lives on the Clients board; everything else
+  // is an Onboarding-board column.
+  const isClientsStep = step.id === 'dropdown_mm47xxjv';
+  const base = await getBaseUrl();
+  const url = isClientsStep
+    ? `${base}/api/client/${encodeURIComponent(activeClientId)}`
+    : `${base}/api/onboarding/${encodeURIComponent(item.id)}`;
+  await onbPatchAndRerender(
+    item,
+    () => { s.value = newValue || null; recomputeItemProgress(item); },
+    () => { s.value = prev; recomputeItemProgress(item); },
+    url, step.id, newValue,
+  );
+}
+
+async function changeOnboardingStatus(item, newStatus) {
+  const prev = item.status;
+  const base = await getBaseUrl();
+  await onbPatchAndRerender(
+    item,
+    () => { item.status = newStatus; },
+    () => { item.status = prev; },
+    `${base}/api/onboarding/${encodeURIComponent(item.id)}`, 'estado', newStatus,
+  );
+}
+
 async function onboardingItemForClient(clientBoardItemId) {
   let items = calendarItems;
   if (!items || !items.length) {
@@ -2663,6 +2733,28 @@ function renderOnboardingChecklist(item) {
     `${item.status ? ' · ' + escapeHtml(item.status) : ''}</div>`;
   wrap.appendChild(head);
 
+  // Editable onboarding status (Monday "estado" column). Admin-only panel, so
+  // it's always interactive here.
+  const statusRow = document.createElement('div');
+  statusRow.className = 'onb-status-row';
+  const statusLbl = document.createElement('span');
+  statusLbl.className = 'onb-status-lbl';
+  statusLbl.textContent = 'Onboarding status';
+  const statusSel = document.createElement('select');
+  statusSel.className = 'onb-status-sel';
+  const statusOpts = ONB_STATUSES.slice();
+  if (item.status && !statusOpts.includes(item.status)) statusOpts.unshift(item.status);
+  for (const st of statusOpts) {
+    const o = document.createElement('option');
+    o.value = st; o.textContent = st;
+    if ((item.status || '') === st) o.selected = true;
+    statusSel.appendChild(o);
+  }
+  statusSel.addEventListener('change', () => void changeOnboardingStatus(item, statusSel.value));
+  statusRow.appendChild(statusLbl);
+  statusRow.appendChild(statusSel);
+  wrap.appendChild(statusRow);
+
   const list = document.createElement('ul');
   list.className = 'onb-list';
   for (const { s, state } of stated) {
@@ -2675,10 +2767,22 @@ function renderOnboardingChecklist(item) {
     const label = document.createElement('span');
     label.className = 'onb-label';
     label.textContent = s.label || s.id;
-    const val = document.createElement('span');
-    val.className = 'onb-val';
-    val.textContent = state === 'na' ? 'N/A' : (s.value || (state === 'missing' ? 'Missing' : 'Not set'));
-    li.appendChild(dot); li.appendChild(label); li.appendChild(val);
+    label.title = s.label || s.id;
+    // Editable value dropdown — the step's Monday options + a clear ("—").
+    const sel = document.createElement('select');
+    sel.className = 'onb-step-sel';
+    const cur = s.value || '';
+    const opts = [''].concat(Array.isArray(s.options) ? s.options.slice() : []);
+    if (cur && !opts.includes(cur)) opts.push(cur); // keep a non-standard current value visible
+    for (const opt of opts) {
+      const o = document.createElement('option');
+      o.value = opt;
+      o.textContent = opt === '' ? '—' : opt;
+      if (opt === cur) o.selected = true;
+      sel.appendChild(o);
+    }
+    sel.addEventListener('change', () => void changeStepValue(item, s, sel.value));
+    li.appendChild(dot); li.appendChild(label); li.appendChild(sel);
     list.appendChild(li);
   }
   wrap.appendChild(list);
