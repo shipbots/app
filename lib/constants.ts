@@ -70,6 +70,11 @@ type ChecklistStepConfig = {
   /** When empty, render a red "missing" state instead of the neutral grey
    *  "not set" — flags an important field that hasn't been addressed yet. */
   requiredWhenEmpty?: boolean;
+  /** "No" also counts as done (green), not just "Yes"/"Done" — e.g. "Enable
+   *  Inventory Syncing", where a confirmed "No" means there's nothing left to
+   *  do. Unlike anyValueIsDone, other answers (e.g. "Pending") keep their
+   *  normal state. */
+  noAlsoDone?: boolean;
 };
 
 export const CHECKLIST_STEPS: readonly ChecklistStepConfig[] = [
@@ -79,7 +84,7 @@ export const CHECKLIST_STEPS: readonly ChecklistStepConfig[] = [
   { id: 'color_mktrpzz5',  label: 'Connect Your Store',                  shortLabel: 'Store',       options: ['Done', 'Working on it', 'Stuck', 'Not connecting Store'] },
   { id: 'color_mktrf23d',  label: 'Configure Shopify Settings',          shortLabel: 'Shopify',     options: ['Done', 'N/A'] },
   { id: 'color_mkys5ys0',  label: 'Email ShipHero for Pallet Creation',  shortLabel: 'Pallet Email', options: ['Done', 'N/A'] },
-  { id: 'color_mktrmpxj',  label: 'Enable Inventory Syncing',            shortLabel: 'Inv Sync',    options: ['Yes', 'Pending', 'No'] },
+  { id: 'color_mktrmpxj',  label: 'Enable Inventory Syncing',            shortLabel: 'Inv Sync',    options: ['Yes', 'Pending', 'No'], noAlsoDone: true },
   { id: 'color_mktra6z8',  label: 'Map Shipping Methods',                shortLabel: 'Shipping',    options: ['Done', 'Pending'] },
   { id: 'color_mktrhdny',  label: 'Apply Discount to Customs Value',     shortLabel: 'Customs',     options: ['Done', 'N/A'] },
   { id: 'color_mktrykq',   label: 'Review Billing FAQ',                  shortLabel: 'Billing',     options: ['Done'] },
@@ -100,7 +105,7 @@ export const CHECKLIST_STEPS: readonly ChecklistStepConfig[] = [
 export function getStepState(
   value: string | null,
   invertLogic = false,
-  opts?: { anyValueIsDone?: boolean; requiredWhenEmpty?: boolean },
+  opts?: { anyValueIsDone?: boolean; requiredWhenEmpty?: boolean; noAlsoDone?: boolean },
 ): 'done' | 'pending' | 'na' | 'not_started' | 'missing' {
   // Empty: a required field flags as "missing" (red); others stay neutral grey.
   if (!value) return opts?.requiredWhenEmpty ? 'missing' : 'not_started';
@@ -114,6 +119,8 @@ export function getStepState(
     return 'not_started';
   }
   if (v === 'done' || v === 'yes') return 'done';
+  // Steps where a confirmed "No" also means "nothing left to do".
+  if (opts?.noAlsoDone && v === 'no') return 'done';
   if (v === 'pending' || v === 'working on it' || v === 'needs set up' || v.includes('pending')) return 'pending';
   if (v === 'n/a' || v === 'na' || v === 'not connecting store') return 'na';
   return 'not_started';
