@@ -1159,3 +1159,205 @@ body.projects-open {
   white-space: nowrap;
 }
 
+/* ── Projects view "+ New" button ─────────────────────────────────────────── */
+.pv-new-btn {
+  flex-shrink: 0;
+  border: 1px solid #43c7ff;
+  background: #f0fbff;
+  color: #015280;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .12s;
+}
+.pv-new-btn:hover { background: #e0f6ff; }
+
+/* ── Tasks view: Outstanding/Done toggle ──────────────────────────────────── */
+.tv-toggle {
+  display: flex;
+  flex-shrink: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f3f4f6;
+}
+.tv-toggle-btn {
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.tv-toggle-btn + .tv-toggle-btn { border-left: 1px solid #e5e7eb; }
+.tv-toggle-btn:hover { color: #111827; }
+.tv-toggle-btn.is-active {
+  background: #fff;
+  color: #015280;
+  font-weight: 700;
+}
+
+/* ── Task rows: due date + Done button ────────────────────────────────────── */
+.tv-row-due {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  white-space: nowrap;
+}
+.tv-row-due.overdue { color: #e0245e; }
+.tv-done-btn {
+  border-color: #6ee7b7;
+  background: #ecfdf5;
+  color: #047857;
+}
+.tv-done-btn:hover { background: #d1fae5; }
+.tv-done-btn.tv-done-err {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+/* ── Calendar agenda ──────────────────────────────────────────────────────── */
+.pv-group-label.overdue { color: #e0245e; }
+.cal-badge {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.cal-badge.kickoff   { background: #fff1e6; color: #c2410c; }
+.cal-badge.delivery  { background: #e6f8ff; color: #015280; }
+.cal-badge.delivered { background: #ecfdf5; color: #047857; }
+.cal-badge.overdue   { background: #fee2e2; color: #b91c1c; }
+.cal-row-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  white-space: nowrap;
+}
+.cal-row-time.overdue { color: #e0245e; }
+
+/* ── Create-project composer modal ────────────────────────────────────────── */
+.pc-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(17, 24, 39, .45);
+}
+.pc-overlay[hidden] { display: none; }
+.pc-modal {
+  width: 100%;
+  max-width: 340px;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .28);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.pc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: #015280;
+  color: #fff;
+}
+.pc-title { font-size: 14px; font-weight: 700; }
+.pc-close {
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, .8);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  transition: color .12s;
+}
+.pc-close:hover { color: #fff; }
+.pc-body {
+  padding: 14px 16px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pc-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #374151;
+  margin-top: 8px;
+}
+.pc-label:first-child { margin-top: 0; }
+.pc-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 13px;
+  color: #111827;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: #fff;
+  transition: border-color .12s, box-shadow .12s;
+}
+.pc-input:focus {
+  outline: none;
+  border-color: #43c7ff;
+  box-shadow: 0 0 0 2px rgba(67, 199, 255, .25);
+}
+.pc-textarea { resize: vertical; min-height: 56px; line-height: 1.4; }
+.pc-input.pc-readonly {
+  background: #f3f4f6;
+  color: #6b7280;
+  cursor: not-allowed;
+}
+.pc-status {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 8px;
+  line-height: 1.4;
+}
+.pc-status.error { color: #b91c1c; }
+.pc-status a { color: #015280; font-weight: 600; }
+.pc-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 16px 16px;
+}
+.pc-btn {
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 16px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background .12s, opacity .12s;
+}
+.pc-btn:disabled { opacity: .6; cursor: default; }
+.pc-btn-ghost {
+  background: #fff;
+  border-color: #d1d5db;
+  color: #374151;
+}
+.pc-btn-ghost:hover { background: #f9fafb; }
+.pc-btn-primary {
+  background: #015280;
+  color: #fff;
+}
+.pc-btn-primary:hover { background: #013f63; }
+

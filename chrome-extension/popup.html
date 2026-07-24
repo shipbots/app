@@ -81,10 +81,45 @@
         <p class="detail-name">Active Projects</p>
         <p id="projects-view-meta" class="detail-meta"></p>
       </div>
-      <span class="detail-projects-badge">Preview</span>
+      <button id="projects-new" class="pv-new-btn" type="button" title="Create a new project">+ New</button>
     </div>
     <div id="projects-view-status" class="detail-status" hidden></div>
     <div id="projects-view-list" class="projects-view-list"></div>
+  </section>
+
+  <!-- Tasks view: opened from the "Tasks" quick-launch button. Lists the
+       Monday subtasks assigned to the signed-in user, defaulting to the
+       outstanding ones with an Outstanding/Done toggle. "Done ✓" flips a
+       task's status to Done in place. -->
+  <section id="tasks-view" class="projects-view" tabindex="-1" hidden>
+    <div class="detail-header">
+      <button id="tasks-back" class="detail-back" type="button" aria-label="Back to search">←</button>
+      <div class="detail-title">
+        <p class="detail-name">My Tasks</p>
+        <p id="tasks-view-meta" class="detail-meta"></p>
+      </div>
+      <div class="tv-toggle" role="tablist" aria-label="Filter tasks">
+        <button id="tasks-tab-open" class="tv-toggle-btn is-active" type="button" role="tab">Outstanding</button>
+        <button id="tasks-tab-done" class="tv-toggle-btn" type="button" role="tab">Done</button>
+      </div>
+    </div>
+    <div id="tasks-view-status" class="detail-status" hidden></div>
+    <div id="tasks-view-list" class="projects-view-list"></div>
+  </section>
+
+  <!-- Calendar view: opened from the "Calendar" quick-launch button. A compact
+       agenda of upcoming onboarding calls + estimated / actual deliveries,
+       with past-due deliveries surfaced first. Rows open the client. -->
+  <section id="calendar-view" class="projects-view" tabindex="-1" hidden>
+    <div class="detail-header">
+      <button id="calendar-back" class="detail-back" type="button" aria-label="Back to search">←</button>
+      <div class="detail-title">
+        <p class="detail-name">Calendar</p>
+        <p id="calendar-view-meta" class="detail-meta"></p>
+      </div>
+    </div>
+    <div id="calendar-view-status" class="detail-status" hidden></div>
+    <div id="calendar-view-list" class="projects-view-list"></div>
   </section>
 
   <main id="search-view" class="body">
@@ -171,6 +206,33 @@
     </div>
 
   </main>
+
+  <!-- Create-project composer. Opened from the client detail's "+ New" and the
+       Projects view header; POSTs straight to /api/projects so a rep never
+       leaves the popup. Hidden until openProjectComposer() shows it. -->
+  <div id="project-composer" class="pc-overlay" tabindex="-1" hidden>
+    <div class="pc-modal" role="dialog" aria-modal="true" aria-labelledby="pc-title">
+      <div class="pc-head">
+        <span id="pc-title" class="pc-title">New Project</span>
+        <button id="pc-close" class="pc-close" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="pc-body">
+        <label class="pc-label" for="pc-name">Project name</label>
+        <input id="pc-name" class="pc-input" type="text" placeholder="e.g. Q3 rate renegotiation" />
+        <label class="pc-label" for="pc-client">Client</label>
+        <input id="pc-client" class="pc-input" type="text" placeholder="Client name" />
+        <label class="pc-label" for="pc-owner">Responsible (email)</label>
+        <input id="pc-owner" class="pc-input" type="email" placeholder="you@shipbots.com" />
+        <label class="pc-label" for="pc-note">Description</label>
+        <textarea id="pc-note" class="pc-input pc-textarea" rows="3" placeholder="What is this project about?"></textarea>
+        <div id="pc-status" class="pc-status" hidden></div>
+      </div>
+      <div class="pc-actions">
+        <button id="pc-cancel" class="pc-btn pc-btn-ghost" type="button">Cancel</button>
+        <button id="pc-create" class="pc-btn pc-btn-primary" type="button">Create project</button>
+      </div>
+    </div>
+  </div>
 
   <script src="popup.js"></script>
 </body>

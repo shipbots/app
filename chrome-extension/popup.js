@@ -715,21 +715,31 @@ function buildSection(section, client) {
   } else {
     let any = false;
     for (const field of section.fields) {
+      const editSpec = EDITABLE_KEYS[field.key];
       const hasValue = fieldHasValue(client, field);
-      // Read-only display: skip empty fields entirely. Editing happens
-      // in the dashboard (Edit ↗ button in the detail header); the
-      // extension shows only what's on file, no inline edit affordances
-      // or "+ Add" placeholders. Cleaner scanning, no accidental
-      // overwrites from within the popup.
-      if (!hasValue) continue;
+      // Read-only fields: skip when empty for clean scanning. Editable
+      // fields (mapped in EDITABLE_KEYS): always show — even when empty —
+      // so reps can edit existing values or fill in gaps inline without
+      // leaving the popup. Inline edits PATCH Monday via /api/client/[id];
+      // the dashboard panel still owns dropdown / date / color columns.
+      if (!hasValue && !editSpec) continue;
       const dt = document.createElement('dt');
       dt.textContent = field.label;
       const dd = document.createElement('dd');
-      dd.appendChild(renderField(client, field));
-      // Emails, phones, and portal credentials get a one-click copy button.
-      if (field.type === 'email' || field.type === 'phone' || field.copy) {
-        dd.appendChild(copyIconButton(String(client[field.key] ?? '')));
+      if (hasValue) {
+        dd.appendChild(renderField(client, field));
+        // Emails, phones, and portal credentials get a one-click copy button.
+        if (field.type === 'email' || field.type === 'phone' || field.copy) {
+          dd.appendChild(copyIconButton(String(client[field.key] ?? '')));
+        }
+      } else {
+        // Empty but editable → an "Add…" affordance that opens the editor.
+        const add = document.createElement('span');
+        add.className = 'edit-empty';
+        add.textContent = 'Add…';
+        dd.appendChild(add);
       }
+      if (editSpec) attachInlineEdit(dd, client, field, editSpec);
       body.appendChild(dt);
       body.appendChild(dd);
       any = true;
@@ -1677,6 +1687,573 @@ async function showProjectsView() {
   }
 }
 
+// ── Shared date helpers (tasks + calendar) ──────────────────────────────────
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const WEEKDAYS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function todayYMD() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function parseYMDLocal(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd || ''));
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+function isValidYMD(s) { return !!parseYMDLocal(s); }
+function shortMonthDay(ymd) {
+  const d = parseYMDLocal(ymd);
+  return d ? `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}` : (ymd || '');
+}
+function ymdPlusDays(ymd, n) {
+  const d = parseYMDLocal(ymd);
+  if (!d) return ymd;
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+// "2026-07-24" → "Today · Jul 24" / "Tomorrow · Jul 25" / "Thu · Jul 24"
+function formatAgendaHeader(ymd) {
+  const d = parseYMDLocal(ymd);
+  if (!d) return ymd || '';
+  const t = todayYMD();
+  const label = `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`;
+  if (ymd === t) return `Today · ${label}`;
+  if (ymd === ymdPlusDays(t, 1)) return `Tomorrow · ${label}`;
+  return `${WEEKDAYS_SHORT[d.getDay()]} · ${label}`;
+}
+// "14:30:00" → "2:30 PM"
+function formatTimeHM(hms) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(hms || ''));
+  if (!m) return '';
+  let h = Number(m[1]);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${m[2]} ${ampm}`;
+}
+
+// ── My Tasks view (Monday subitems assigned to the signed-in user) ───────────
+// Opened from the "Tasks" quick-launch button. Pulls every subitem via
+// /api/subitems, keeps the ones assigned to me (assigneeEmails / assignee),
+// and shows them one per line. Defaults to OUTSTANDING; a toggle flips to DONE.
+// "Done ✓" PATCHes the subitem's status to the board's Done option in place.
+let tasksBoardInfo = null;             // { boardId, statusColumnId, statusOptions, … }
+let myTasksCache = null;               // SubItem[] assigned to me (open + done)
+let tasksFilterMode = 'open';          // 'open' | 'done'
+const locallyCompletedTaskIds = new Set();
+
+const isDoneTaskStatus = s => /(done|complete|finished)/i.test(String(s || ''));
+
+async function fetchAllSubitems() {
+  const base = await getBaseUrl();
+  const res = await fetch(`${base}/api/subitems`, {
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+  });
+  if (res.status === 401) { const e = new Error('Not signed in'); e.code = 'unauthorized'; throw e; }
+  if (!res.ok) throw new Error(`tasks failed (${res.status})`);
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+async function fetchSubitemBoardInfo() {
+  if (tasksBoardInfo) return tasksBoardInfo;
+  try {
+    const base = await getBaseUrl();
+    const res = await fetch(`${base}/api/subitems/board-info`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    });
+    if (res.ok) tasksBoardInfo = await res.json();
+  } catch { /* leave null → mark-complete stays disabled */ }
+  return tasksBoardInfo;
+}
+
+function backFromTasks() {
+  document.getElementById('tasks-view').hidden = true;
+  document.getElementById('search-view').hidden = false;
+  document.body.classList.remove('projects-open');
+  const input = document.getElementById('search-input');
+  if (input) input.focus();
+}
+
+function showTasksViewStatus(message, isError) {
+  const el = document.getElementById('tasks-view-status');
+  if (!el) return;
+  el.hidden = !message;
+  el.textContent = message || '';
+  el.classList.toggle('error', !!isError);
+}
+
+function tasksForMode() {
+  const all = Array.isArray(myTasksCache) ? myTasksCache : [];
+  if (tasksFilterMode === 'done') {
+    return all.filter(t => isDoneTaskStatus(t.status) || locallyCompletedTaskIds.has(t.id));
+  }
+  return all.filter(t => !isDoneTaskStatus(t.status) && !locallyCompletedTaskIds.has(t.id));
+}
+
+// Single-line task row: name (flexes), status pill, client, due date, and — in
+// the outstanding view — a "Done ✓" complete button. The row opens the client.
+function taskRowEl(t) {
+  const row = document.createElement('div');
+  row.className = 'pv-row';
+  row.title = 'Open this client in the dashboard';
+  const openClient = () => {
+    if (t.parentItemId) void openPath(`/customer-service?clientId=${encodeURIComponent(t.parentItemId)}&expanded=1`);
+  };
+  row.addEventListener('click', openClient);
+
+  const name = document.createElement('span');
+  name.className = 'pv-row-name';
+  name.textContent = t.name || '(untitled task)';
+  name.title = t.name || '';
+  row.appendChild(name);
+
+  if (t.status) {
+    const status = document.createElement('span');
+    status.className = 'pv-row-status';
+    status.textContent = t.status;
+    const color = isDoneTaskStatus(t.status) ? '#00c875' : '#fdab3d';
+    status.style.color = color;
+    status.style.borderColor = `${color}66`;
+    status.style.background = `${color}1a`;
+    row.appendChild(status);
+  }
+
+  const client = document.createElement('span');
+  client.className = 'pv-row-client';
+  client.textContent = t.parentItemName || '—';
+  client.title = t.parentItemName || '';
+  row.appendChild(client);
+
+  if (t.dueDate) {
+    const due = document.createElement('span');
+    due.className = 'tv-row-due';
+    due.textContent = shortMonthDay(t.dueDate);
+    if (tasksFilterMode === 'open' && t.dueDate < todayYMD()) due.classList.add('overdue');
+    row.appendChild(due);
+  }
+
+  // Complete button — only in the outstanding view, and only when we know the
+  // board's status column (so the PATCH has a target).
+  if (tasksFilterMode === 'open' && tasksBoardInfo && tasksBoardInfo.statusColumnId) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pv-row-btn tv-done-btn';
+    btn.textContent = 'Done ✓';
+    btn.title = 'Mark this task done';
+    btn.addEventListener('click', e => { e.stopPropagation(); void markTaskComplete(t, btn); });
+    row.appendChild(btn);
+  }
+
+  return row;
+}
+
+async function markTaskComplete(t, btn) {
+  if (!tasksBoardInfo || !tasksBoardInfo.statusColumnId) return;
+  const doneOption = (tasksBoardInfo.statusOptions || []).find(isDoneTaskStatus) || 'Done';
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try {
+    const base = await getBaseUrl();
+    const res = await fetch(`${base}/api/subitems/${encodeURIComponent(t.id)}`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        boardId: tasksBoardInfo.boardId,
+        status: doneOption,
+        statusColumnId: tasksBoardInfo.statusColumnId,
+      }),
+    });
+    if (!res.ok) throw new Error(String(res.status));
+    // Reflect locally so it drops out of the outstanding list immediately.
+    t.status = doneOption;
+    locallyCompletedTaskIds.add(t.id);
+    renderMyTasks();
+  } catch (err) {
+    console.error('[tasks] mark complete failed', err);
+    btn.disabled = false;
+    btn.textContent = prev;
+    btn.classList.add('tv-done-err');
+    setTimeout(() => btn.classList.remove('tv-done-err'), 1500);
+  }
+}
+
+function renderMyTasks() {
+  const list = document.getElementById('tasks-view-list');
+  const metaEl = document.getElementById('tasks-view-meta');
+  if (!list) return;
+  list.innerHTML = '';
+
+  if (metaEl) {
+    const all = Array.isArray(myTasksCache) ? myTasksCache : [];
+    const openN = all.filter(t => !isDoneTaskStatus(t.status) && !locallyCompletedTaskIds.has(t.id)).length;
+    metaEl.textContent = `${openN} outstanding`;
+  }
+
+  const rows = tasksForMode().slice().sort((a, b) => {
+    const da = a.dueDate || '9999-99-99';
+    const db = b.dueDate || '9999-99-99';
+    return da < db ? -1 : da > db ? 1 : 0;
+  });
+
+  if (rows.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'projects-view-empty';
+    empty.textContent = tasksFilterMode === 'done'
+      ? 'No completed tasks assigned to you.'
+      : 'No outstanding tasks assigned to you. 🎉';
+    list.appendChild(empty);
+    return;
+  }
+  rows.forEach(t => list.appendChild(taskRowEl(t)));
+}
+
+function setTasksFilterMode(mode) {
+  tasksFilterMode = mode === 'done' ? 'done' : 'open';
+  const openTab = document.getElementById('tasks-tab-open');
+  const doneTab = document.getElementById('tasks-tab-done');
+  if (openTab) openTab.classList.toggle('is-active', tasksFilterMode === 'open');
+  if (doneTab) doneTab.classList.toggle('is-active', tasksFilterMode === 'done');
+  renderMyTasks();
+}
+
+async function showTasksView() {
+  const searchView = document.getElementById('search-view');
+  const detailView = document.getElementById('client-detail');
+  const projectsView = document.getElementById('projects-view');
+  const calendarView = document.getElementById('calendar-view');
+  const tasksView = document.getElementById('tasks-view');
+  if (detailView) detailView.hidden = true;
+  if (searchView) searchView.hidden = true;
+  if (projectsView) projectsView.hidden = true;
+  if (calendarView) calendarView.hidden = true;
+  tasksView.hidden = false;
+
+  const backBtn = document.getElementById('tasks-back');
+  (backBtn || tasksView).focus({ preventScroll: true });
+  document.body.classList.remove('detail-open');
+  document.body.classList.add('projects-open');
+
+  setTasksFilterMode('open');
+  const list = document.getElementById('tasks-view-list');
+  if (list) list.innerHTML = '';
+  showTasksViewStatus('Loading your tasks…', false);
+
+  try {
+    const [subitems, myEmail] = await Promise.all([fetchAllSubitems(), fetchCurrentUserEmail()]);
+    await fetchSubitemBoardInfo();     // best-effort → enables the Done button
+    showTasksViewStatus('', false);
+
+    const email = String(myEmail || '').toLowerCase();
+    if (!email) {
+      showTasksViewStatus('Sign in to the dashboard first, then reopen this popup.', true);
+      return;
+    }
+    myTasksCache = subitems.filter(t => {
+      const emails = Array.isArray(t.assigneeEmails) ? t.assigneeEmails : [];
+      return emails.some(e => String(e).toLowerCase() === email)
+        || String(t.assignee || '').toLowerCase().includes(email);
+    });
+    locallyCompletedTaskIds.clear();
+    renderMyTasks();
+  } catch (err) {
+    if (err.code === 'unauthorized') {
+      showTasksViewStatus('Sign in to the dashboard first, then reopen this popup.', true);
+    } else {
+      showTasksViewStatus(`Couldn't load tasks (${err.message || 'network error'}).`, true);
+    }
+  }
+}
+
+// ── Calendar view (agenda of upcoming kickoffs + deliveries) ─────────────────
+// Opened from the "Calendar" quick-launch button. Pulls the onboarding list via
+// /api/onboarding-items and renders a compact agenda: past-due deliveries first,
+// then everything from today forward grouped by date. Mirrors the dashboard
+// CalendarView's event model (kickoff / delivered / estimated delivery).
+async function fetchOnboardingItems() {
+  const base = await getBaseUrl();
+  const res = await fetch(`${base}/api/onboarding-items`, {
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+  });
+  if (res.status === 401) { const e = new Error('Not signed in'); e.code = 'unauthorized'; throw e; }
+  if (!res.ok) throw new Error(`calendar failed (${res.status})`);
+  const data = await res.json();
+  return Array.isArray(data.items) ? data.items : [];
+}
+
+function buildCalendarEvents(items) {
+  const events = [];
+  for (const item of items) {
+    if (isValidYMD(item.kickoffDate)) {
+      events.push({ id: `${item.id}-k`, type: 'kickoff', date: item.kickoffDate, time: item.kickoffTime || '', item });
+    }
+    // Once received we plot the real Delivered Date; otherwise fall back to the
+    // Initial Inventory Est. Delivery Date. Only one of the two ever shows.
+    if (isValidYMD(item.deliveredDate)) {
+      events.push({ id: `${item.id}-dd`, type: 'delivered', date: item.deliveredDate, time: item.deliveredTime || '', item });
+    } else if (isValidYMD(item.estimatedDeliveryDate)) {
+      events.push({ id: `${item.id}-ed`, type: 'delivery', date: item.estimatedDeliveryDate, time: item.estimatedDeliveryTime || '', item });
+    }
+  }
+  return events;
+}
+
+function calBadgeEl(kind) {
+  const b = document.createElement('span');
+  b.className = 'cal-badge';
+  if (kind === 'kickoff') { b.classList.add('kickoff'); b.textContent = 'Call'; }
+  else if (kind === 'delivered') { b.classList.add('delivered'); b.textContent = 'Delivered'; }
+  else if (kind === 'overdue') { b.classList.add('overdue'); b.textContent = 'Past-due'; }
+  else { b.classList.add('delivery'); b.textContent = 'Delivery'; }
+  return b;
+}
+
+function calRowEl(ev, overdue) {
+  const row = document.createElement('div');
+  row.className = 'pv-row';
+  row.title = 'Open this client in the dashboard';
+  row.addEventListener('click', () => {
+    const cid = ev.item.clientBoardItemId;
+    if (cid) void openPath(`/customer-service?clientId=${encodeURIComponent(cid)}&expanded=1`);
+  });
+
+  row.appendChild(calBadgeEl(overdue ? 'overdue' : ev.type));
+
+  const name = document.createElement('span');
+  name.className = 'pv-row-name';
+  name.textContent = ev.item.name || '(unnamed)';
+  name.title = ev.item.name || '';
+  row.appendChild(name);
+
+  const t = formatTimeHM(ev.time);
+  if (t) {
+    const time = document.createElement('span');
+    time.className = 'cal-row-time';
+    time.textContent = t;
+    row.appendChild(time);
+  } else if (overdue) {
+    const exp = document.createElement('span');
+    exp.className = 'cal-row-time overdue';
+    exp.textContent = `Exp ${shortMonthDay(ev.date)}`;
+    row.appendChild(exp);
+  }
+  return row;
+}
+
+function renderCalendarAgenda(items) {
+  const list = document.getElementById('calendar-view-list');
+  const metaEl = document.getElementById('calendar-view-meta');
+  if (!list) return;
+  list.innerHTML = '';
+
+  const events = buildCalendarEvents(items);
+  const t = todayYMD();
+  const byDateTime = (a, b) => (a.date === b.date ? (a.time || '').localeCompare(b.time || '') : (a.date < b.date ? -1 : 1));
+
+  // Past-due: expected deliveries whose date passed with no Delivered Date yet.
+  const overdue = events.filter(e => e.type === 'delivery' && e.date < t).sort(byDateTime);
+  const upcoming = events.filter(e => e.date >= t).sort(byDateTime);
+
+  if (metaEl) metaEl.textContent = upcoming.length ? `${upcoming.length} upcoming` : '';
+
+  if (overdue.length === 0 && upcoming.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'projects-view-empty';
+    empty.textContent = 'No upcoming kickoffs or deliveries.';
+    list.appendChild(empty);
+    return;
+  }
+
+  if (overdue.length) {
+    const lbl = document.createElement('div');
+    lbl.className = 'pv-group-label overdue';
+    lbl.textContent = `${overdue.length} past-due deliver${overdue.length === 1 ? 'y' : 'ies'}`;
+    list.appendChild(lbl);
+    overdue.forEach(ev => list.appendChild(calRowEl(ev, true)));
+  }
+
+  let lastDate = null;
+  for (const ev of upcoming) {
+    if (ev.date !== lastDate) {
+      lastDate = ev.date;
+      const lbl = document.createElement('div');
+      lbl.className = 'pv-group-label';
+      lbl.textContent = formatAgendaHeader(ev.date);
+      list.appendChild(lbl);
+    }
+    list.appendChild(calRowEl(ev, false));
+  }
+}
+
+function backFromCalendar() {
+  document.getElementById('calendar-view').hidden = true;
+  document.getElementById('search-view').hidden = false;
+  document.body.classList.remove('projects-open');
+  const input = document.getElementById('search-input');
+  if (input) input.focus();
+}
+
+function showCalendarViewStatus(message, isError) {
+  const el = document.getElementById('calendar-view-status');
+  if (!el) return;
+  el.hidden = !message;
+  el.textContent = message || '';
+  el.classList.toggle('error', !!isError);
+}
+
+async function showCalendarView() {
+  const searchView = document.getElementById('search-view');
+  const detailView = document.getElementById('client-detail');
+  const projectsView = document.getElementById('projects-view');
+  const tasksView = document.getElementById('tasks-view');
+  const calendarView = document.getElementById('calendar-view');
+  if (detailView) detailView.hidden = true;
+  if (searchView) searchView.hidden = true;
+  if (projectsView) projectsView.hidden = true;
+  if (tasksView) tasksView.hidden = true;
+  calendarView.hidden = false;
+
+  const backBtn = document.getElementById('calendar-back');
+  (backBtn || calendarView).focus({ preventScroll: true });
+  document.body.classList.remove('detail-open');
+  document.body.classList.add('projects-open');
+
+  const list = document.getElementById('calendar-view-list');
+  if (list) list.innerHTML = '';
+  showCalendarViewStatus('Loading calendar…', false);
+  try {
+    const items = await fetchOnboardingItems();
+    showCalendarViewStatus('', false);
+    renderCalendarAgenda(items);
+  } catch (err) {
+    if (err.code === 'unauthorized') {
+      showCalendarViewStatus('Sign in to the dashboard first, then reopen this popup.', true);
+    } else {
+      showCalendarViewStatus(`Couldn't load the calendar (${err.message || 'network error'}).`, true);
+    }
+  }
+}
+
+// ── Create-project composer ─────────────────────────────────────────────────
+// A lightweight modal that POSTs a fully-formed Project to /api/projects so
+// reps create a project without leaving the popup. Mirrors the dashboard's
+// makeBlankProject shape. When the projects DB isn't provisioned the API
+// returns 503 and we surface a friendly note + a dashboard deep-link fallback.
+let composerState = { clientBoardItemId: null, clientName: '', lockClient: false, onCreated: null };
+
+function newLocalId(prefix) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function showProjectComposerStatus(msg, isError, html) {
+  const el = document.getElementById('pc-status');
+  if (!el) return;
+  el.hidden = !msg && !html;
+  el.classList.toggle('error', !!isError);
+  if (html) el.innerHTML = html;
+  else el.textContent = msg || '';
+}
+
+async function openProjectComposer(prefill) {
+  const email = await fetchCurrentUserEmail();
+  composerState = {
+    clientBoardItemId: (prefill && prefill.clientBoardItemId) || null,
+    clientName: (prefill && prefill.clientName) || '',
+    lockClient: !!(prefill && prefill.lockClient),
+    onCreated: prefill && typeof prefill.onCreated === 'function' ? prefill.onCreated : null,
+  };
+  const overlay = document.getElementById('project-composer');
+  const nameEl = document.getElementById('pc-name');
+  const clientEl = document.getElementById('pc-client');
+  const ownerEl = document.getElementById('pc-owner');
+  const noteEl = document.getElementById('pc-note');
+  nameEl.value = '';
+  noteEl.value = '';
+  clientEl.value = composerState.clientName;
+  clientEl.readOnly = composerState.lockClient;
+  clientEl.classList.toggle('pc-readonly', composerState.lockClient);
+  ownerEl.value = email || '';
+  showProjectComposerStatus('', false);
+  overlay.hidden = false;
+  setTimeout(() => nameEl.focus(), 0);
+}
+
+function closeProjectComposer() {
+  const overlay = document.getElementById('project-composer');
+  if (overlay) overlay.hidden = true;
+}
+
+async function submitProjectComposer() {
+  const nameEl = document.getElementById('pc-name');
+  const clientEl = document.getElementById('pc-client');
+  const ownerEl = document.getElementById('pc-owner');
+  const noteEl = document.getElementById('pc-note');
+  const createBtn = document.getElementById('pc-create');
+
+  const name = nameEl.value.trim();
+  if (!name) { showProjectComposerStatus('Give the project a name.', true); nameEl.focus(); return; }
+
+  const email = ownerEl.value.trim() || (await fetchCurrentUserEmail()) || '';
+  const nowIso = new Date().toISOString();
+  const body = {
+    id: newLocalId('proj'),
+    name,
+    clientBoardItemId: composerState.clientBoardItemId,
+    clientName: clientEl.value.trim(),
+    status: { id: 'opened', label: 'Opened', kind: 'opened', color: '#94a3b8' },
+    ownerEmail: email,
+    note: noteEl.value.trim(),
+    dueDate: null,
+    subtasks: [],
+    documents: [],
+    comments: [],
+    adhocCreated: false,
+    createdByEmail: email,
+    createdAt: nowIso,
+    activity: [{ id: newLocalId('act'), kind: 'created', actorEmail: email, at: nowIso, summary: 'created the project' }],
+  };
+
+  createBtn.disabled = true;
+  const prevLabel = createBtn.textContent;
+  createBtn.textContent = 'Creating…';
+  showProjectComposerStatus('', false);
+  try {
+    const base = await getBaseUrl();
+    const res = await fetch(`${base}/api/projects`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.status === 503) {
+      // DB not provisioned — offer the dashboard as a fallback path.
+      const params = new URLSearchParams({ view: 'projects' });
+      if (composerState.clientBoardItemId) params.set('newProjectClientId', composerState.clientBoardItemId);
+      if (body.clientName) params.set('newProjectClientName', body.clientName);
+      showProjectComposerStatus('', true,
+        'Projects aren’t set up in the database yet. <a href="#" id="pc-dash-link">Create it in the dashboard →</a>');
+      const link = document.getElementById('pc-dash-link');
+      if (link) link.addEventListener('click', e => { e.preventDefault(); openPath(`/customer-service?${params.toString()}`); });
+      return;
+    }
+    if (res.status === 401) { showProjectComposerStatus('Sign in to the dashboard first, then try again.', true); return; }
+    if (!res.ok) throw new Error(String(res.status));
+    closeProjectComposer();
+    if (composerState.onCreated) { try { await composerState.onCreated(); } catch { /* refresh best-effort */ } }
+  } catch (err) {
+    console.error('[projects] create failed', err);
+    showProjectComposerStatus(`Couldn't create the project (${err.message || 'error'}).`, true);
+  } finally {
+    createBtn.disabled = false;
+    createBtn.textContent = prevLabel;
+  }
+}
+
 async function showClientDetail(clientStub) {
   const searchView = document.getElementById('search-view');
   const detailView = document.getElementById('client-detail');
@@ -1716,16 +2293,19 @@ async function showClientDetail(clientStub) {
   // view (all sections + sticky notes), not the narrow side panel.
   openBtn.onclick = () => openPath(`/customer-service?clientId=${encodeURIComponent(clientStub.id)}&expanded=1`);
 
-  // "+ New" under the projects list deep-links into the dashboard's Projects
-  // view with this client pre-filled, so the rep lands on a blank project
-  // form that already knows the customer (see pipeline-board's mount effect).
+  // "+ New" opens the in-popup project composer, pre-filled with (and locked
+  // to) this client, so the rep creates a project without leaving the popup.
+  // On success the client's projects list refreshes in place. If the projects
+  // DB isn't provisioned the composer falls back to the dashboard deep-link.
   const addProjectBtn = document.getElementById('detail-projects-add');
   if (addProjectBtn) {
     addProjectBtn.onclick = () => {
-      const params = new URLSearchParams({ view: 'projects' });
-      if (clientStub.id) params.set('newProjectClientId', clientStub.id);
-      if (clientStub.name) params.set('newProjectClientName', clientStub.name);
-      openPath(`/customer-service?${params.toString()}`);
+      void openProjectComposer({
+        clientBoardItemId: clientStub.id || null,
+        clientName: clientStub.name || '',
+        lockClient: true,
+        onCreated: () => loadClientProjects(clientStub.id, clientStub.name),
+      });
     };
   }
 
@@ -2031,12 +2611,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // ── Quick-launch buttons
-  document.getElementById('open-calendar').addEventListener('click', () => openPath('/customer-service?view=calendar'));
-  document.getElementById('open-tasks').addEventListener('click', () => openPath('/customer-service?view=tasks'));
-  // Projects opens an in-popup list of every active project (no new tab).
+  // ── Quick-launch buttons. Calendar, Tasks, and Projects all open in-popup
+  // views (no new tab) — a compact agenda, the signed-in user's assigned
+  // subtasks, and every active project respectively.
+  document.getElementById('open-calendar').addEventListener('click', () => { void showCalendarView(); });
+  document.getElementById('open-tasks').addEventListener('click', () => { void showTasksView(); });
   document.getElementById('open-projects').addEventListener('click', () => { void showProjectsView(); });
   document.getElementById('projects-back').addEventListener('click', backFromProjects);
+  document.getElementById('tasks-back').addEventListener('click', backFromTasks);
+  document.getElementById('calendar-back').addEventListener('click', backFromCalendar);
+
+  // Tasks Outstanding/Done toggle.
+  document.getElementById('tasks-tab-open').addEventListener('click', () => setTasksFilterMode('open'));
+  document.getElementById('tasks-tab-done').addEventListener('click', () => setTasksFilterMode('done'));
+
+  // "+ New" in the Projects view header opens the composer with an editable
+  // client field; on success the active-projects list reloads.
+  const projectsNewBtn = document.getElementById('projects-new');
+  if (projectsNewBtn) {
+    projectsNewBtn.addEventListener('click', () => {
+      void openProjectComposer({ lockClient: false, onCreated: () => showProjectsView() });
+    });
+  }
+
+  // ── Project composer modal wiring ─────────────────────────────────────
+  const pcOverlay = document.getElementById('project-composer');
+  document.getElementById('pc-close').addEventListener('click', closeProjectComposer);
+  document.getElementById('pc-cancel').addEventListener('click', closeProjectComposer);
+  document.getElementById('pc-create').addEventListener('click', () => { void submitProjectComposer(); });
+  // Click the dimmed backdrop (but not the modal card) to dismiss.
+  pcOverlay.addEventListener('click', e => { if (e.target === pcOverlay) closeProjectComposer(); });
+  // Enter in the name field submits; Escape anywhere in the modal closes it.
+  document.getElementById('pc-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); void submitProjectComposer(); }
+  });
+  pcOverlay.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); closeProjectComposer(); }
+  });
 
   // ── Mini Apps tiles. Each .tile carries data-app pointing at a
   // MINI_APPS registry entry. External tiles open their URL directly,
