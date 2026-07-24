@@ -88,7 +88,7 @@ function AttentionBox({
         }`}>{items.length}</span>
       </div>
       {headerExtra}
-      <div className="overflow-y-auto max-h-72 min-h-[3rem]">
+      <div className="overflow-y-auto max-h-52 min-h-[3rem]">
         {items.length === 0 ? (
           <p className="px-3.5 py-6 text-center text-xs text-gray-400">{emptyText}</p>
         ) : (
@@ -217,7 +217,7 @@ function TasksBox({
           mine.length ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-400'
         }`}>{mine.length}</span>
       </div>
-      <div className="overflow-y-auto max-h-80 min-h-[3rem]">
+      <div className="overflow-y-auto max-h-[24rem] min-h-[3rem]">
         {loading ? (
           <div className="px-3.5 py-6 flex items-center justify-center gap-2 text-xs text-gray-400">
             <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading tasks…
@@ -297,58 +297,45 @@ function InProgressList({
         <span className="text-[13px] font-semibold text-gray-800 flex-1">Clients in Progress</span>
         <span className="text-xs text-gray-500 font-medium">{items.length}</span>
       </div>
-      <div className="overflow-x-auto">
+      <div className="overflow-y-auto max-h-[24rem] min-h-[3rem]">
         {sorted.length === 0 ? (
           <p className="px-3.5 py-8 text-center text-sm text-gray-400">No clients are currently in progress.</p>
         ) : (
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-gray-100 bg-gray-50/60">
-              <tr className="text-[11px] uppercase tracking-wider text-gray-500">
-                <th className="px-4 py-2 font-semibold">Client</th>
-                <th className="px-4 py-2 font-semibold">Status</th>
-                <th className="px-4 py-2 font-semibold">Agent</th>
-                <th className="px-4 py-2 font-semibold">Progress</th>
-                <th className="px-4 py-2 font-semibold">Est. Delivery</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map(item => {
-                const st = statusStyle(item.status);
-                const agent = agentFor(item);
-                return (
-                  <tr
-                    key={item.id}
+          <ul className="divide-y divide-gray-50">
+            {sorted.map(item => {
+              const st = statusStyle(item.status);
+              const agent = agentFor(item);
+              return (
+                <li key={item.id}>
+                  <button
+                    type="button"
                     onClick={() => onSelectItem(item)}
-                    className="border-b border-gray-100 cursor-pointer hover:bg-[#f0fbff] transition-colors"
+                    className="w-full text-left px-3.5 py-2 flex items-center gap-2 hover:bg-[#f0fbff] transition-colors group"
                   >
-                    <td className="px-4 py-2.5 font-medium text-gray-900">{item.name || '(unnamed)'}</td>
-                    <td className="px-4 py-2.5">
-                      <span
-                        className="inline-flex items-center text-[11px] font-semibold rounded-full px-2 py-0.5"
-                        style={{ color: st.color, backgroundColor: st.bg }}
-                      >
-                        {item.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5">
-                      {agent
-                        ? <span className="text-xs text-gray-700">{agentNameFromEmail(agent)}</span>
-                        : <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">Unassigned</span>}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="w-16 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                          <span className="block h-full rounded-full bg-[#00c875]" style={{ width: `${item.progress}%` }} />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-[13px] font-medium text-gray-900 truncate">{item.name || '(unnamed)'}</span>
+                        <span
+                          className="inline-flex items-center text-[10px] font-semibold rounded-full px-1.5 py-0.5 flex-shrink-0"
+                          style={{ color: st.color, backgroundColor: st.bg }}
+                        >
+                          {item.status}
                         </span>
-                        <span className="text-xs text-gray-500 tabular-nums">{item.progress}%</span>
                       </span>
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-600">{formatDate(item.estimatedDeliveryDate) || '—'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      <span className="block text-[11px] text-gray-400 truncate">
+                        {agent ? agentNameFromEmail(agent) : 'Unassigned'} · {item.progress}%
+                        {item.estimatedDeliveryDate ? ` · ETA ${formatDate(item.estimatedDeliveryDate)}` : ''}
+                      </span>
+                    </span>
+                    <span className="hidden sm:block w-14 h-1.5 rounded-full bg-gray-100 overflow-hidden flex-shrink-0">
+                      <span className="block h-full rounded-full bg-[#00c875]" style={{ width: `${item.progress}%` }} />
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-[#0071BC] flex-shrink-0" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </div>
     </section>
@@ -390,7 +377,8 @@ export function OnboardingHome({
 
   return (
     <div className="p-4 overflow-y-auto h-full bg-[#F2F2F7] space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Four attention boxes in one row (smaller) so they fit a single screen. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <AttentionBox
           title="No Agent Assigned"
           icon={<UserX className="w-4 h-4" />}
@@ -418,15 +406,17 @@ export function OnboardingHome({
         <CustomChecklistBox activeItems={active} onSelectItem={onSelectItem} />
       </div>
 
-      <TasksBox
-        tasks={tasks}
-        loading={loadingTasks}
-        currentUserEmail={currentUserEmail}
-        itemsById={itemsById}
-        onSelectItem={onSelectItem}
-      />
-
-      <InProgressList items={active} agentEmailMap={agentEmailMap} onSelectItem={onSelectItem} />
+      {/* Outstanding tasks + clients in progress, side by side. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        <TasksBox
+          tasks={tasks}
+          loading={loadingTasks}
+          currentUserEmail={currentUserEmail}
+          itemsById={itemsById}
+          onSelectItem={onSelectItem}
+        />
+        <InProgressList items={active} agentEmailMap={agentEmailMap} onSelectItem={onSelectItem} />
+      </div>
     </div>
   );
 }
