@@ -371,8 +371,9 @@ function InProgressList({
     setSortDir(k === 'progress' ? 'desc' : 'asc'); // progress reads best high→low
   };
 
-  // Shared column template so header + rows line up.
-  const GRID = 'grid items-center gap-3 grid-cols-[minmax(0,1fr)_128px_150px_104px]';
+  // Shared column template so header + rows line up. Compact so the four
+  // columns fit the half-width card (side by side with the Tasks box).
+  const GRID = 'grid items-center gap-2 grid-cols-[minmax(0,1fr)_auto_84px_60px]';
 
   const SortHead = ({ label, k, extra }: { label: string; k: SortKey; extra?: string }) => (
     <button
@@ -455,14 +456,14 @@ function InProgressList({
                       </span>
                     </span>
                     {/* Completeness */}
-                    <span className="flex items-center gap-2">
+                    <span className="flex items-center gap-1.5">
                       <span className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
                         <span
                           className="block h-full rounded-full"
                           style={{ width: `${pct}%`, backgroundColor: pct >= 100 ? '#00c875' : pct >= 50 ? '#579bfc' : '#fdab3d' }}
                         />
                       </span>
-                      <span className="text-[11px] font-semibold text-gray-600 tabular-nums w-8 text-right">{pct}%</span>
+                      <span className="text-[11px] font-semibold text-gray-600 tabular-nums w-7 text-right">{pct}%</span>
                     </span>
                     {/* Est. Delivery */}
                     <span className={`text-[11px] text-right tabular-nums ${overdue ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
@@ -543,10 +544,9 @@ export function OnboardingHome({
         <CustomChecklistBox activeItems={active} onSelectItem={onSelectItem} />
       </div>
 
-      {/* Outstanding tasks, then the full-width Clients-in-Progress table
-          (needs the room for its sortable Status / Completeness / Est.
-          Delivery columns + filters). */}
-      <div className="space-y-4">
+      {/* Outstanding tasks (bottom-left) + the sortable/filterable
+          Clients-in-Progress table (bottom-right), side by side. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         <TasksBox
           tasks={tasks}
           loading={loadingTasks}
