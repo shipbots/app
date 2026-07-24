@@ -1043,13 +1043,6 @@ function renderClientDetail(client) {
   pills.appendChild(agentPill);
   if (pills.childElementCount > 0) sectionsEl.appendChild(pills);
 
-  // Attach the Documents section BEFORE the field sections so reps
-  // spot uploaded files without scrolling. Injects an empty
-  // collapsible placeholder immediately, then fires a background
-  // fetch that populates or removes it based on the response.
-  const docsWrap = buildDocumentsSectionShell();
-  sectionsEl.appendChild(docsWrap);
-
   const fieldSections = [];
   for (const section of DETAIL_SECTIONS) {
     const wrap = buildSection(section, client);
@@ -1057,13 +1050,15 @@ function renderClientDetail(client) {
     sectionsEl.appendChild(wrap);
   }
 
-  // Fetch files + links once, distribute them into their owning
-  // sections (Receiving / Packing / Returns get their docs at the top
-  // of their own section body + a 📎 badge), and keep only general /
-  // uncategorized docs in the top "Documents" section. DocuSign never
-  // appears here — it lives on the onboarding board's files column,
-  // which none of these endpoints read.
-  void loadClientDocs(docsWrap, client.id, fieldSections);
+  // Fetch files + links once, distribute them into their owning sections
+  // (Receiving / Packing / Returns get their docs right under the section
+  // header + a 📎 badge, always visible even while the fields stay collapsed),
+  // and put only general / uncategorized docs in a top "Documents" section —
+  // which is created ONLY if such docs exist, so there's no empty flash.
+  // DocuSign never appears here — it lives on the onboarding board's files
+  // column, which none of these endpoints read.
+  const firstSectionWrap = fieldSections.length ? fieldSections[0].wrap : null;
+  void loadClientDocs(sectionsEl, firstSectionWrap, client.id, fieldSections);
 }
 
 // Field-section ids from DETAIL_SECTIONS that own a doc category.
@@ -1097,7 +1092,11 @@ function stampAttachmentBadge(sectionWrap, count) {
 // hides itself when empty. Storage-unconfigured / auth errors hide
 // everything silently — the popup never nags about backend state.
 
-function buildDocumentsSectionShell() {
+// Build the top "Documents" section, already populated with the general /
+// uncategorized docs. Only called when there ARE such docs, so it never shows
+// an empty "Loading…" placeholder that flashes then vanishes. Expanded by
+// default since it only appears when there's something to show.
+function buildDocumentsSection(items, clientId) {
   const wrap = document.createElement('div');
   wrap.className = 'detail-section';
   const header = document.createElement('button');
@@ -1106,7 +1105,7 @@ function buildDocumentsSectionShell() {
   header.setAttribute('aria-expanded', 'true');
   const title = document.createElement('span');
   title.className = 'detail-section-title';
-  title.textContent = 'Documents';
+  title.textContent = `Documents (${items.length})`;
   const chev = document.createElement('span');
   chev.className = 'detail-section-chev';
   chev.textContent = '›';
@@ -1116,11 +1115,7 @@ function buildDocumentsSectionShell() {
   const body = document.createElement('div');
   body.className = 'detail-section-body detail-docs-body';
   body.hidden = false;
-  // Loading pip so the section doesn't appear empty during fetch.
-  const loading = document.createElement('p');
-  loading.className = 'detail-docs-loading';
-  loading.textContent = 'Loading documents…';
-  body.appendChild(loading);
+  body.appendChild(renderDocsList(items, clientId));
 
   header.addEventListener('click', () => {
     const expanded = header.getAttribute('aria-expanded') === 'true';
@@ -1130,9 +1125,6 @@ function buildDocumentsSectionShell() {
 
   wrap.appendChild(header);
   wrap.appendChild(body);
-  // Stash header + count node so the loader can update the title later.
-  wrap._docsHeader = title;
-  wrap._docsBody = body;
   return wrap;
 }
 
@@ -1188,9 +1180,8 @@ function renderDocsList(items, clientBoardItemId) {
   return list;
 }
 
-async function loadClientDocs(wrap, clientBoardItemId, fieldSections) {
-  if (!clientBoardItemId) { wrap.remove(); return; }
-  const body = wrap._docsBody;
+async function loadClientDocs(sectionsEl, beforeNode, clientBoardItemId, fieldSections) {
+  if (!clientBoardItemId || !sectionsEl) return;
   try {
     const base = await getBaseUrl();
     const enc = encodeURIComponent(clientBoardItemId);
@@ -1202,7 +1193,7 @@ async function loadClientDocs(wrap, clientBoardItemId, fieldSections) {
         .then(r => r.ok ? r.json() : [])
         .catch(() => []),
     ]);
-    if (fileRes.status === 401) { wrap.remove(); return; }
+    if (fileRes.status === 401) return;
     const files = fileRes.ok ? await fileRes.json() : [];
 
     // Bucket everything by category. Files default to 'documents';
@@ -1218,34 +1209,34 @@ async function loadClientDocs(wrap, clientBoardItemId, fieldSections) {
       byCat[cat].push({ name: l.name, url: l.url, kind: 'link' });
     }
 
-    // Per-section injection: docs render at the top of their own
-    // section's body (span the full dt/dd grid width) + 📎 badge on
-    // the collapsed header.
+    // Per-section docs render directly UNDER the section header (between the
+    // header and the collapsible field body) so they stay visible even when
+    // the fields are collapsed, and survive the Edit-mode re-render (which only
+    // rewrites the field body). A 📎 badge on the header shows the count too.
     if (Array.isArray(fieldSections)) {
       for (const { section, wrap: sectionWrap } of fieldSections) {
         const items = SECTION_DOC_CATEGORIES.has(section.id) ? byCat[section.id] : [];
         if (!items.length) continue;
         stampAttachmentBadge(sectionWrap, items.length);
         const sectionBody = sectionWrap.querySelector('.detail-section-body');
-        if (!sectionBody) continue;
         const holder = document.createElement('div');
         holder.className = 'detail-docs-inline';
-        holder.style.gridColumn = '1 / -1';
         holder.appendChild(renderDocsList(items, clientBoardItemId));
-        sectionBody.insertBefore(holder, sectionBody.firstChild);
+        if (sectionBody) sectionWrap.insertBefore(holder, sectionBody);
+        else sectionWrap.appendChild(holder);
       }
     }
 
-    // Top Documents section: general docs only. Empty → hide.
+    // Top "Documents" section — built ONLY when there are general /
+    // uncategorized docs, so nothing flashes when there are none.
     const general = byCat.documents;
-    if (!general.length) { wrap.remove(); return; }
-    wrap._docsHeader.textContent = `Documents (${general.length})`;
-    body.innerHTML = '';
-    body.appendChild(renderDocsList(general, clientBoardItemId));
+    if (general.length) {
+      const topWrap = buildDocumentsSection(general, clientBoardItemId);
+      sectionsEl.insertBefore(topWrap, beforeNode || null);
+    }
   } catch (err) {
     console.error('[client-docs] load failed', err);
     // Silent fail — read-only surface. The dashboard covers the case.
-    wrap.remove();
   }
 }
 

@@ -1162,10 +1162,12 @@ body.projects-open {
 }
 /* Docs list injected at the top of a field section's dt/dd grid —
    spans the full width and separates itself from the fields below. */
+/* Per-section documents, rendered between the section header and its
+   collapsible field body so they stay visible even when the fields are
+   collapsed. Top border separates them from the header. */
 .detail-docs-inline {
-  margin-bottom: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 8px 10px;
+  border-top: 1px solid #eef0f2;
 }
 .detail-docs-name {
   flex: 1;
