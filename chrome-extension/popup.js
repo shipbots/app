@@ -1088,9 +1088,13 @@ function stampAttachmentBadge(sectionWrap, count) {
   badge.className = 'detail-attach-badge';
   badge.title = `${count} attached document${count === 1 ? '' : 's'}`;
   badge.textContent = `📎 ${count}`;
-  // Insert before the chevron so title + badge sit on the left group.
+  // Insert before the chevron so title + badge sit together. The chevron lives
+  // inside the .detail-section-toggle button (a grandchild of the header), so we
+  // insert relative to the chevron itself (chev.before) — NOT header.insertBefore,
+  // which would throw NotFoundError since chev isn't a direct child of header.
   const chev = header.querySelector('.detail-section-chev');
-  if (chev) header.insertBefore(badge, chev); else header.appendChild(badge);
+  if (chev && typeof chev.before === 'function') chev.before(badge);
+  else header.appendChild(badge);
 }
 
 // ── Client documents ────────────────────────────────────────────────
@@ -1204,11 +1208,6 @@ async function loadClientDocs(sectionsEl, beforeNode, clientBoardItemId, fieldSe
     safeJson(fetch(`${base}/api/client/${enc}/section-files/all`, { credentials: 'include' })),
     safeJson(fetch(`${base}/api/documents/${enc}`, { credentials: 'include' })),
   ]);
-  console.log('[client-docs] fetch', {
-    base, clientBoardItemId, files: files.length, links: links.length,
-    firstFileCat: files[0] ? files[0].category : null,
-    firstLinkCat: links[0] ? links[0].category : null,
-  });
 
   // Bucket by category. Files default to 'documents'; links count as section
   // docs only when they carry a known section category.
@@ -1221,10 +1220,6 @@ async function loadClientDocs(sectionsEl, beforeNode, clientBoardItemId, fieldSe
     const cat = SECTION_DOC_CATEGORIES.has(l?.category) ? l.category : 'documents';
     byCat[cat].push({ name: l.name, url: l.url, kind: 'link' });
   }
-  console.log('[client-docs] byCat', {
-    documents: byCat.documents.length, receiving: byCat.receiving.length,
-    packing: byCat.packing.length, returns: byCat.returns.length,
-  });
 
   // Per-section docs render right under the section header. header.after() is
   // used (not insertBefore against a queried body) so a stale/mismatched
