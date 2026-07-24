@@ -816,6 +816,16 @@ function buildSection(section, client) {
     }
   });
 
+  // Programmatic expand — the docs loader calls this to auto-open any section
+  // that has attached documents, so its files/links are visible on load
+  // (matches the old version where the doc-bearing section was open).
+  wrap._expand = () => {
+    if (toggle.getAttribute('aria-expanded') === 'true') return;
+    toggle.setAttribute('aria-expanded', 'true');
+    body.hidden = false;
+    if (editBtn) editBtn.hidden = false;
+  };
+
   wrap.appendChild(header);
   wrap.appendChild(body);
   return wrap;
@@ -1224,6 +1234,8 @@ async function loadClientDocs(sectionsEl, beforeNode, clientBoardItemId, fieldSe
         holder.appendChild(renderDocsList(items, clientBoardItemId));
         if (sectionBody) sectionWrap.insertBefore(holder, sectionBody);
         else sectionWrap.appendChild(holder);
+        // Auto-open the section so its documents are visible on load.
+        if (typeof sectionWrap._expand === 'function') sectionWrap._expand();
       }
     }
 
