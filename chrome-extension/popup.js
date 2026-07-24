@@ -25,6 +25,15 @@ function firstNameFromEmail(email) {
 // used by the sticky-note composer so it knows which client to post to.
 let activeClientId = null;
 
+// Which view opened the current client detail ('search' | 'tasks' | 'calendar'
+// | 'projects'), so the Back button returns there.
+let detailOrigin = 'search';
+
+// The loaded client search index (Clients-board id + name + fields). Hoisted to
+// module scope so task/calendar rows can resolve a client by name and open it
+// in the popup; assigned inside the popup's init once the index loads.
+let clientIndex = null;
+
 function getBaseUrl() {
   return new Promise(resolve => {
     chrome.storage.local.get(['baseUrl'], result => {
@@ -1831,11 +1840,8 @@ function tasksForMode() {
 function taskRowEl(t) {
   const row = document.createElement('div');
   row.className = 'pv-row';
-  row.title = 'Open this client in the dashboard';
-  const openClient = () => {
-    if (t.parentItemId) void openPath(`/customer-service?clientId=${encodeURIComponent(t.parentItemId)}&expanded=1`);
-  };
-  row.addEventListener('click', openClient);
+  row.title = 'Open this client';
+  row.addEventListener('click', () => { void openTaskClient(t); });
 
   const name = document.createElement('span');
   name.className = 'pv-row-name';
@@ -2039,6 +2045,37 @@ function applyTasksData(subitems, boardInfo, email) {
   renderMyTasks();
 }
 
+// ── Open a client in the popup (not the CS app) from tasks/calendar ─────────
+// showClientDetail needs the Clients-board item id. Calendar events carry it
+// directly; task subitems only carry the onboarding item id, so we resolve it
+// via the cached onboarding list (prewarmed on launch), then the search index
+// by name, and only fall back to the CS app if neither resolves.
+async function clientForOnboardingId(onbId) {
+  if (!onbId) return null;
+  let items = calendarItems;
+  if (!items || !items.length) {
+    const cached = await readViewCache(CALENDAR_CACHE_KEY);
+    if (cached && Array.isArray(cached.data)) items = cached.data;
+  }
+  const it = (items || []).find(x => x.id === onbId);
+  return it && it.clientBoardItemId ? { id: it.clientBoardItemId, name: it.name || '' } : null;
+}
+function clientStubByName(name) {
+  const n = String(name || '').trim().toLowerCase();
+  if (!n || !clientIndex) return null;
+  const hit = clientIndex.find(c => String(c.name || '').trim().toLowerCase() === n);
+  return hit ? { id: hit.id, name: hit.name } : null;
+}
+async function openTaskClient(t) {
+  const byOnb = await clientForOnboardingId(t.parentItemId);
+  if (byOnb) { void showClientDetail(byOnb, 'tasks'); return; }
+  const byName = clientStubByName(t.parentItemName);
+  if (byName) { void showClientDetail(byName, 'tasks'); return; }
+  // Last resort — the id we have is an onboarding item id, so send it to the
+  // dashboard which knows how to resolve it.
+  if (t.parentItemId) void openPath(`/customer-service?clientId=${encodeURIComponent(t.parentItemId)}&expanded=1`);
+}
+
 async function showTasksView() {
   const searchView = document.getElementById('search-view');
   const detailView = document.getElementById('client-detail');
@@ -2171,7 +2208,8 @@ function calChip(ev, overdue) {
   chip.addEventListener('click', e => {
     e.stopPropagation();
     const cid = ev.item.clientBoardItemId;
-    if (cid) void openPath(`/customer-service?clientId=${encodeURIComponent(cid)}&expanded=1`);
+    // Open the client in the popup (calendar events carry the Clients-board id).
+    if (cid) void showClientDetail({ id: cid, name: ev.item.name || '' }, 'calendar');
   });
   return chip;
 }
@@ -2441,14 +2479,26 @@ async function submitProjectComposer() {
   }
 }
 
-async function showClientDetail(clientStub) {
+async function showClientDetail(clientStub, origin) {
+  // Remember where we came from so the Back button returns there (search by
+  // default; tasks / calendar / projects when opened from those views).
+  detailOrigin = origin || 'search';
+
   const searchView = document.getElementById('search-view');
   const detailView = document.getElementById('client-detail');
   const statusEl = document.getElementById('detail-status');
   const sectionsEl = document.getElementById('detail-sections');
   const openBtn = document.getElementById('detail-open');
 
+  // Hide every other full-popup view so opening a client from tasks, calendar,
+  // projects, or search all resolve to the same detail panel.
   searchView.hidden = true;
+  const projectsView = document.getElementById('projects-view');
+  const tasksViewEl = document.getElementById('tasks-view');
+  const calendarViewEl = document.getElementById('calendar-view');
+  if (projectsView) projectsView.hidden = true;
+  if (tasksViewEl) tasksViewEl.hidden = true;
+  if (calendarViewEl) calendarViewEl.hidden = true;
   detailView.hidden = false;
 
   // Park focus on a real control BEFORE widening. Two reasons:
@@ -2464,6 +2514,7 @@ async function showClientDetail(clientStub) {
 
   // Widen the popup (animated via the body width transition) so the
   // sticky-notes column has room next to the detail sections.
+  document.body.classList.remove('projects-open', 'calendar-open');
   document.body.classList.add('detail-open');
 
   // Header placeholders fill from search-index right away so the user sees
@@ -2524,8 +2575,12 @@ function backToSearch() {
   activeClientId = null;
   resetNoteComposer();
   document.getElementById('client-detail').hidden = true;
-  document.getElementById('search-view').hidden = false;
   document.body.classList.remove('detail-open');
+  // Return to whichever view opened this client.
+  if (detailOrigin === 'tasks') { void showTasksView(); return; }
+  if (detailOrigin === 'calendar') { void showCalendarView(); return; }
+  if (detailOrigin === 'projects') { void showProjectsView(); return; }
+  document.getElementById('search-view').hidden = false;
   document.getElementById('search-input').focus();
 }
 
@@ -2566,8 +2621,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const searchResults = document.getElementById('search-results');
   const searchStatus = document.getElementById('search-status');
 
-  // Lazy-loaded once per popup open. Null = not yet attempted.
-  let clientIndex = null;
+  // Lazy-loaded once per popup open. Null = not yet attempted. Declared at
+  // module scope (see top) so task/calendar rows can resolve clients by name.
+  clientIndex = null;
   let indexError = null;
   let activeResults = [];
   let activeIdx = -1;
