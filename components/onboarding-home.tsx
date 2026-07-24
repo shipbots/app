@@ -17,7 +17,7 @@ import {
 } from '@/lib/constants';
 import {
   UserX, CalendarClock, MailX, ListChecks, ChevronRight, Loader2, Check,
-  User, ClipboardList, Plus,
+  User, ClipboardList, Plus, ArrowUpDown,
 } from 'lucide-react';
 import { CreateTaskModal } from './tasks-view';
 
@@ -300,6 +300,18 @@ function TasksBox({
 }
 
 // ─── Bottom: all in-progress clients + status (list view) ────────────────────
+// Progress buckets for the completeness filter.
+const PROGRESS_BUCKETS: { value: string; label: string; test: (p: number) => boolean }[] = [
+  { value: 'all',      label: 'All completeness', test: () => true },
+  { value: 'lt25',     label: 'Under 25%',        test: p => p < 25 },
+  { value: '25to49',   label: '25–49%',           test: p => p >= 25 && p < 50 },
+  { value: '50to74',   label: '50–74%',           test: p => p >= 50 && p < 75 },
+  { value: '75to99',   label: '75–99%',           test: p => p >= 75 && p < 100 },
+  { value: 'complete', label: '100%',             test: p => p >= 100 },
+];
+
+type SortKey = 'name' | 'status' | 'progress' | 'eta';
+
 function InProgressList({
   items, agentEmailMap, onSelectItem,
 }: {
@@ -307,60 +319,155 @@ function InProgressList({
   agentEmailMap: Record<string, string>;
   onSelectItem: (item: OnboardingItem) => void;
 }) {
+  const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
   const stageOrder = useMemo(() => {
     const o: Record<string, number> = {};
     PIPELINE_STAGES.forEach((s, i) => { o[s.status] = i; });
     return o;
   }, []);
-  const sorted = useMemo(() =>
-    [...items].sort((a, b) =>
-      (stageOrder[a.status] ?? 99) - (stageOrder[b.status] ?? 99)
-      || (a.name || '').localeCompare(b.name || '')),
-    [items, stageOrder],
-  );
   const agentFor = (i: OnboardingItem) => (i.clientBoardItemId ? (agentEmailMap[i.clientBoardItemId] ?? '') : '');
+
+  const [sortKey, setSortKey] = useState<SortKey>('status');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [bucket, setBucket] = useState('all');
+
+  // Statuses actually present, ordered by pipeline stage — powers the filter.
+  const statuses = useMemo(() => {
+    const present = Array.from(new Set(items.map(i => i.status).filter(Boolean)));
+    return present.sort((a, b) => (stageOrder[a] ?? 99) - (stageOrder[b] ?? 99));
+  }, [items, stageOrder]);
+
+  const filtered = useMemo(() => {
+    const b = PROGRESS_BUCKETS.find(x => x.value === bucket) ?? PROGRESS_BUCKETS[0];
+    return items.filter(i =>
+      (statusFilter === 'all' || i.status === statusFilter) && b.test(i.progress ?? 0),
+    );
+  }, [items, statusFilter, bucket]);
+
+  const sorted = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === 'name') cmp = (a.name || '').localeCompare(b.name || '');
+      else if (sortKey === 'status') cmp = (stageOrder[a.status] ?? 99) - (stageOrder[b.status] ?? 99);
+      else if (sortKey === 'progress') cmp = (a.progress ?? 0) - (b.progress ?? 0);
+      else if (sortKey === 'eta') {
+        const da = a.estimatedDeliveryDate || '', db = b.estimatedDeliveryDate || '';
+        // Undated rows always sort to the bottom, regardless of direction.
+        if (!da && !db) cmp = 0;
+        else if (!da) return 1;
+        else if (!db) return -1;
+        else cmp = da < db ? -1 : da > db ? 1 : 0;
+      }
+      if (cmp === 0) cmp = (a.name || '').localeCompare(b.name || '');
+      return cmp * dir;
+    });
+  }, [filtered, sortKey, sortDir, stageOrder]);
+
+  const toggleSort = (k: SortKey) => {
+    if (sortKey === k) { setSortDir(d => (d === 'asc' ? 'desc' : 'asc')); return; }
+    setSortKey(k);
+    setSortDir(k === 'progress' ? 'desc' : 'asc'); // progress reads best high→low
+  };
+
+  // Shared column template so header + rows line up.
+  const GRID = 'grid items-center gap-3 grid-cols-[minmax(0,1fr)_128px_150px_104px]';
+
+  const SortHead = ({ label, k, extra }: { label: string; k: SortKey; extra?: string }) => (
+    <button
+      type="button"
+      onClick={() => toggleSort(k)}
+      className={`flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-800 transition-colors ${extra ?? ''}`}
+    >
+      {label}
+      <ArrowUpDown className={`w-3 h-3 ${sortKey === k ? 'text-[#0071BC]' : 'text-gray-300'}`} />
+      {sortKey === k && <span className="text-[#0071BC] text-[9px] leading-none">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+    </button>
+  );
 
   return (
     <section className={CARD}>
-      <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-gray-100">
+      <div className="flex flex-wrap items-center gap-2 px-3.5 py-2.5 border-b border-gray-100">
         <User className="w-4 h-4 text-[#0071BC] flex-shrink-0" />
-        <span className="text-[13px] font-semibold text-gray-800 flex-1">Clients in Progress</span>
-        <span className="text-xs text-gray-500 font-medium">{items.length}</span>
+        <span className="text-[13px] font-semibold text-gray-800">Clients in Progress</span>
+        <span className="text-xs text-gray-500 font-medium">{filtered.length}{filtered.length !== items.length ? ` / ${items.length}` : ''}</span>
+        <div className="ml-auto flex items-center gap-2">
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+            className="text-[11px] border border-gray-200 rounded-md px-2 py-1 text-gray-600 bg-white focus:outline-none focus:ring-1 focus:ring-[#43c7ff] max-w-[150px]"
+          >
+            <option value="all">All statuses</option>
+            {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <select
+            value={bucket}
+            onChange={e => setBucket(e.target.value)}
+            className="text-[11px] border border-gray-200 rounded-md px-2 py-1 text-gray-600 bg-white focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
+          >
+            {PROGRESS_BUCKETS.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
+          </select>
+        </div>
       </div>
-      <div className="overflow-y-auto max-h-[24rem] min-h-[3rem]">
+
+      {/* Column headers */}
+      <div className={`${GRID} px-3.5 py-2 border-b border-gray-100 bg-gray-50/60`}>
+        <SortHead label="Client" k="name" />
+        <SortHead label="Status" k="status" />
+        <SortHead label="Completeness" k="progress" />
+        <SortHead label="Est. Delivery" k="eta" extra="justify-end" />
+      </div>
+
+      <div className="overflow-y-auto max-h-[26rem] min-h-[3rem]">
         {sorted.length === 0 ? (
-          <p className="px-3.5 py-8 text-center text-sm text-gray-400">No clients are currently in progress.</p>
+          <p className="px-3.5 py-8 text-center text-sm text-gray-400">
+            {items.length === 0 ? 'No clients are currently in progress.' : 'No clients match these filters.'}
+          </p>
         ) : (
           <ul className="divide-y divide-gray-50">
             {sorted.map(item => {
               const st = statusStyle(item.status);
               const agent = agentFor(item);
+              const eta = item.estimatedDeliveryDate;
+              const etaDate = parseYMD(eta);
+              const overdue = !!etaDate && etaDate < today && !inventoryReceived(item);
+              const pct = item.progress ?? 0;
               return (
                 <li key={item.id}>
                   <button
                     type="button"
                     onClick={() => onSelectItem(item)}
-                    className="w-full text-left px-3.5 py-2 flex items-center gap-2 hover:bg-[#f0fbff] transition-colors group"
+                    className={`${GRID} w-full text-left px-3.5 py-2 hover:bg-[#f0fbff] transition-colors`}
                   >
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-[13px] font-medium text-gray-900 truncate">{item.name || '(unnamed)'}</span>
+                    {/* Client + agent */}
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-medium text-gray-900 truncate">{item.name || '(unnamed)'}</span>
+                      <span className="block text-[11px] text-gray-400 truncate">{agent ? agentNameFromEmail(agent) : 'Unassigned'}</span>
+                    </span>
+                    {/* Status */}
+                    <span>
+                      <span
+                        className="inline-flex items-center text-[10px] font-semibold rounded-full px-1.5 py-0.5"
+                        style={{ color: st.color, backgroundColor: st.bg }}
+                      >
+                        {item.status}
+                      </span>
+                    </span>
+                    {/* Completeness */}
+                    <span className="flex items-center gap-2">
+                      <span className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
                         <span
-                          className="inline-flex items-center text-[10px] font-semibold rounded-full px-1.5 py-0.5 flex-shrink-0"
-                          style={{ color: st.color, backgroundColor: st.bg }}
-                        >
-                          {item.status}
-                        </span>
+                          className="block h-full rounded-full"
+                          style={{ width: `${pct}%`, backgroundColor: pct >= 100 ? '#00c875' : pct >= 50 ? '#579bfc' : '#fdab3d' }}
+                        />
                       </span>
-                      <span className="block text-[11px] text-gray-400 truncate">
-                        {agent ? agentNameFromEmail(agent) : 'Unassigned'} · {item.progress}%
-                        {item.estimatedDeliveryDate ? ` · ETA ${formatDate(item.estimatedDeliveryDate)}` : ''}
-                      </span>
+                      <span className="text-[11px] font-semibold text-gray-600 tabular-nums w-8 text-right">{pct}%</span>
                     </span>
-                    <span className="hidden sm:block w-14 h-1.5 rounded-full bg-gray-100 overflow-hidden flex-shrink-0">
-                      <span className="block h-full rounded-full bg-[#00c875]" style={{ width: `${item.progress}%` }} />
+                    {/* Est. Delivery */}
+                    <span className={`text-[11px] text-right tabular-nums ${overdue ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
+                      {eta ? formatDate(eta) : '—'}
                     </span>
-                    <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-[#0071BC] flex-shrink-0" />
                   </button>
                 </li>
               );
@@ -436,8 +543,10 @@ export function OnboardingHome({
         <CustomChecklistBox activeItems={active} onSelectItem={onSelectItem} />
       </div>
 
-      {/* Outstanding tasks + clients in progress, side by side. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+      {/* Outstanding tasks, then the full-width Clients-in-Progress table
+          (needs the room for its sortable Status / Completeness / Est.
+          Delivery columns + filters). */}
+      <div className="space-y-4">
         <TasksBox
           tasks={tasks}
           loading={loadingTasks}
