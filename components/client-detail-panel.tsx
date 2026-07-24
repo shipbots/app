@@ -1120,7 +1120,8 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
     tikTokShop: clientInfo?.tikTokShop,
     lotCodeExpiration: clientInfo?.lotCodeExpiration,
     onKickoffDateSaved: (newValue) => onItemUpdate?.(item.id, { kickoffDate: newValue || null }),
-    onChecklistChange: (checklist) => onItemUpdate?.(item.id, { checklist }),
+    onChecklistChange: (checklist, progress) =>
+      onItemUpdate?.(item.id, typeof progress === 'number' ? { checklist, progress } : { checklist }),
     onShippingDetailsSaved: (value) => onItemUpdate?.(item.id, { shippingDetails: value }),
   };
 
@@ -1716,7 +1717,8 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
               onKickoffDateSaved={(newValue) =>
                 onItemUpdate?.(item.id, { kickoffDate: newValue || null })
               }
-              onChecklistChange={(checklist) => onItemUpdate?.(item.id, { checklist })}
+              onChecklistChange={(checklist, progress) =>
+                onItemUpdate?.(item.id, typeof progress === 'number' ? { checklist, progress } : { checklist })}
               onShippingDetailsSaved={(value) => onItemUpdate?.(item.id, { shippingDetails: value })}
             />
           )}

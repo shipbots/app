@@ -50,7 +50,7 @@ interface OnboardingTabProps {
    *  The parent writes this back onto the source OnboardingItem.checklist so the
    *  change survives tab switches / reopen (this tab re-seeds from that prop on
    *  remount) and keeps the kanban progress in sync. */
-  onChecklistChange?: (steps: ChecklistStep[]) => void;
+  onChecklistChange?: (steps: ChecklistStep[], progress?: number) => void;
   /** Called after the shipping methods (text_mkw94440) save. */
   onShippingDetailsSaved?: (value: string) => void;
   /** When set (3 or 4), the checklist renders as a multi-column grid instead
@@ -684,6 +684,18 @@ export function OnboardingTab({
     [internationalFulfillment, amazonFBA, tikTokShop, lotCodeExpiration],
   );
 
+  // Completion %, computed exactly like the server (lib/monday.ts): forced-N/A
+  // steps drop out of the denominator, everything else counts toward "done".
+  // Drives the live progress bar here AND is pushed up with every edit so the
+  // kanban card's % badge (and its coloured dots) move in real time.
+  const computeProgress = (list: ChecklistStep[]) => {
+    const cfg = (id: string) => CHECKLIST_STEPS.find(c => c.id === id);
+    const eff = list.map(s => (forcedNaIds.has(s.id) ? { ...s, value: 'N/A' } : s));
+    const done = eff.filter(s => getStepState(s.value, s.invertLogic, cfg(s.id)) === 'done').length;
+    const applicable = eff.filter(s => getStepState(s.value, s.invertLogic, cfg(s.id)) !== 'na').length;
+    return applicable > 0 ? Math.round((done / applicable) * 100) : initialProgress;
+  };
+
   // Silently write N/A to Monday.com the first time a condition is detected
   // so the checklist stays in sync with client-info data.
   // TikTok / LotCode steps are EXCLUDED — they're display-only forced N/A.
@@ -765,10 +777,8 @@ export function OnboardingTab({
   // Show selected shipping methods on the "Map Shipping Methods" row
   const shippingSubLabel = shippingDetails.trim() || undefined;
 
-  // Progress uses effectiveSteps so forced-N/A steps are excluded from the denominator
-  const doneCount = effectiveSteps.filter(s => getStepState(s.value, s.invertLogic, CHECKLIST_STEPS.find(c => c.id === s.id)) === 'done').length;
-  const applicableCount = effectiveSteps.filter(s => getStepState(s.value, s.invertLogic, CHECKLIST_STEPS.find(c => c.id === s.id)) !== 'na').length;
-  const progress = applicableCount > 0 ? Math.round((doneCount / applicableCount) * 100) : initialProgress;
+  // Progress excludes forced-N/A steps from the denominator (see computeProgress).
+  const progress = computeProgress(steps);
 
   const handleSaved = (stepId: string, newValue: string | null) => {
     // stepsRef.current is always the latest local steps — build the full next
@@ -777,7 +787,9 @@ export function OnboardingTab({
     // OnboardingItem.checklist stays current across tab switches / reopen.
     const next = stepsRef.current.map(s => s.id === stepId ? { ...s, value: newValue } : s);
     setSteps(next);
-    onChecklistChange?.(next);
+    // Report the recomputed % alongside the new checklist so the kanban card's
+    // progress badge and dots update in real time, not just the panel.
+    onChecklistChange?.(next, computeProgress(next));
   };
 
   const progressColor = progress === 100 ? '#00c875' : progress > 50 ? '#579bfc' : '#fdab3d';
