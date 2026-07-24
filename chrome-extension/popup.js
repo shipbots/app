@@ -1263,7 +1263,8 @@ async function loadClientDocs(sectionsEl, beforeNode, clientBoardItemId, fieldSe
         const header = sectionWrap.querySelector('.detail-section-header');
         if (header && typeof header.after === 'function') header.after(holder);
         else sectionWrap.appendChild(holder);
-        if (typeof sectionWrap._expand === 'function') sectionWrap._expand();
+        // Docs sit under the header (visible even when collapsed), so DON'T
+        // auto-expand — sections stay collapsed until the user opens them.
       } catch (e) {
         console.error('[client-docs] inject failed', section && section.id, e && e.name, e && e.message);
       }
@@ -3259,37 +3260,62 @@ document.addEventListener('DOMContentLoaded', async () => {
   void readLastClient().then(stub => { if (stub) void showClientDetail(stub, 'search'); });
 
   // ── Detail-header search: switch to another client without going back ──
+  // Behaves exactly like the main search bar — same rich result rows (contact
+  // match, warehouse/agent meta via renderResults), arrow-key navigation, and
+  // Enter opens the highlighted (top-by-default) result.
   const detailSearchInput = document.getElementById('detail-search-input');
   const detailSearchResults = document.getElementById('detail-search-results');
   if (detailSearchInput && detailSearchResults) {
     let dsResults = [];
-    const closeDetailSearch = () => { detailSearchResults.hidden = true; detailSearchResults.innerHTML = ''; };
-    detailSearchInput.addEventListener('input', () => {
-      const q = detailSearchInput.value.trim();
-      if (!q || !clientIndex) { closeDetailSearch(); return; }
-      dsResults = filterClients(clientIndex, q, 6);
+    let dsActiveIdx = -1;
+    const closeDetailSearch = () => {
+      detailSearchResults.hidden = true;
       detailSearchResults.innerHTML = '';
-      for (const r of dsResults) {
-        const li = document.createElement('li');
-        li.className = 'detail-search-item';
-        li.textContent = r.c.name || '(unnamed)';
-        li.title = r.c.contactEmail || r.c.name || '';
-        li.addEventListener('click', () => {
-          detailSearchInput.value = '';
-          closeDetailSearch();
-          void showClientDetail(r.c, 'search');
-        });
-        detailSearchResults.appendChild(li);
-      }
-      detailSearchResults.hidden = dsResults.length === 0;
-    });
+      dsResults = [];
+      dsActiveIdx = -1;
+    };
+    const openDetailResult = client => {
+      if (!client) return;
+      detailSearchInput.value = '';
+      closeDetailSearch();
+      void showClientDetail(client, 'search');
+    };
+    const runDetailSearch = debounce(async () => {
+      const q = detailSearchInput.value.trim();
+      if (!q) { closeDetailSearch(); return; }
+      await ensureIndex();
+      if (!clientIndex) { closeDetailSearch(); return; }
+      dsResults = filterClients(clientIndex, q, 6);
+      dsActiveIdx = dsResults.length > 0 ? 0 : -1;
+      renderResults(dsResults, detailSearchResults, dsActiveIdx);
+    }, 80);
+    detailSearchInput.addEventListener('input', runDetailSearch);
+    detailSearchInput.addEventListener('focus', () => { void ensureIndex(); });
     detailSearchInput.addEventListener('keydown', e => {
-      if (e.key === 'Escape') { detailSearchInput.value = ''; closeDetailSearch(); }
-      else if (e.key === 'Enter' && dsResults[0]) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (dsResults.length === 0) return;
+        dsActiveIdx = Math.min(dsActiveIdx + 1, dsResults.length - 1);
+        renderResults(dsResults, detailSearchResults, dsActiveIdx);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (dsResults.length === 0) return;
+        dsActiveIdx = Math.max(dsActiveIdx - 1, 0);
+        renderResults(dsResults, detailSearchResults, dsActiveIdx);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (dsActiveIdx >= 0 && dsResults[dsActiveIdx]) openDetailResult(dsResults[dsActiveIdx].c);
+      } else if (e.key === 'Escape') {
         detailSearchInput.value = '';
         closeDetailSearch();
-        void showClientDetail(dsResults[0].c, 'search');
       }
+    });
+    detailSearchResults.addEventListener('click', e => {
+      const li = e.target.closest('li[data-client-id]');
+      if (!li) return;
+      const id = li.getAttribute('data-client-id');
+      const hit = dsResults.find(r => r.c.id === id);
+      if (hit) openDetailResult(hit.c);
     });
     // Close the dropdown on outside click.
     document.addEventListener('click', e => { if (!e.target.closest('.detail-search')) closeDetailSearch(); });

@@ -1687,6 +1687,24 @@ body.calendar-open { width: 760px; }
   text-overflow: ellipsis;
 }
 .detail-search-item:hover { background: #f0fbff; }
+/* Rich result rows (reused from the main search via renderResults) inside the
+   switch-client dropdown, so both searches surface the same information. */
+.detail-search-results li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 9px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.detail-search-results li:hover,
+.detail-search-results li.active { background: #f0fbff; }
+.detail-search-results .search-result-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #6b7280;
+  cursor: default;
+}
 
 /* ── "Open in Onboarding app" button in the checklist panel head ───────────── */
 .onb-head-row { justify-content: flex-start; gap: 8px; }
