@@ -727,12 +727,16 @@ function buildSection(section, client) {
   body.hidden = true;
 
   const isCustom = section.custom === 'renderContacts' || section.custom === 'renderNotifications';
-  const hasEditable = !isCustom && (section.fields || []).some(f => EDITABLE_KEYS[f.key]);
+  // Contacts are editable too (add / edit each contact's name, email, phone);
+  // the notifications section stays read-only.
+  const hasEditable = section.custom === 'renderContacts'
+    ? true
+    : (!isCustom && (section.fields || []).some(f => EDITABLE_KEYS[f.key]));
   let editing = false;
 
   function renderBody() {
     body.innerHTML = '';
-    if (section.custom === 'renderContacts') { buildContactsBody(body, client); return; }
+    if (section.custom === 'renderContacts') { buildContactsBody(body, client, editing); return; }
     if (section.custom === 'renderNotifications') { buildNotificationsBody(body, client); return; }
     let any = false;
     for (const field of section.fields) {
@@ -776,32 +780,40 @@ function buildSection(section, client) {
   }
   renderBody();
 
-  // Edit toggle — only for sections that actually have editable fields.
+  // Edit toggle — only for sections with editable fields, and only visible once
+  // the section is expanded (collapsed sections stay clean).
+  let editBtn = null;
   if (hasEditable) {
-    const editBtn = document.createElement('button');
+    editBtn = document.createElement('button');
     editBtn.className = 'detail-section-edit';
     editBtn.type = 'button';
     editBtn.textContent = 'Edit';
     editBtn.title = 'Edit or add information in this section';
+    editBtn.hidden = true;
     editBtn.addEventListener('click', e => {
       e.stopPropagation();
       editing = !editing;
       editBtn.textContent = editing ? 'Done' : 'Edit';
       editBtn.classList.toggle('is-active', editing);
-      // Entering edit mode expands the section if it was collapsed.
-      if (editing && body.hidden) {
-        toggle.setAttribute('aria-expanded', 'true');
-        body.hidden = false;
-      }
       renderBody();
     });
     header.appendChild(editBtn);
   }
 
   toggle.addEventListener('click', () => {
-    const expanded = toggle.getAttribute('aria-expanded') === 'true';
-    toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
-    body.hidden = expanded;
+    const nowExpanded = toggle.getAttribute('aria-expanded') !== 'true';
+    toggle.setAttribute('aria-expanded', nowExpanded ? 'true' : 'false');
+    body.hidden = !nowExpanded;
+    if (editBtn) {
+      editBtn.hidden = !nowExpanded;
+      // Collapsing exits edit mode so the section reopens in its clean read view.
+      if (!nowExpanded && editing) {
+        editing = false;
+        editBtn.textContent = 'Edit';
+        editBtn.classList.remove('is-active');
+        renderBody();
+      }
+    }
   });
 
   wrap.appendChild(header);
@@ -846,7 +858,56 @@ function buildNotificationsBody(body, client) {
   }
 }
 
-function buildContactsBody(body, client) {
+// Contact slots → Monday Clients-board column ids, for inline add/edit.
+const CONTACT_EDIT_SLOTS = [
+  { label: 'Primary Contact', fields: [
+    { key: 'contactName',  label: 'Name',  type: 'text',  columnId: 'text_mktqq7h6' },
+    { key: 'contactEmail', label: 'Email', type: 'email', columnId: 'text_mktq6sr5' },
+    { key: 'contactPhone', label: 'Phone', type: 'phone', columnId: 'text_mktqabcm' },
+  ] },
+  { label: 'Contact 2', fields: [
+    { key: 'contact2Name',  label: 'Name',  type: 'text',  columnId: 'text_mktr1evd' },
+    { key: 'contact2Email', label: 'Email', type: 'email', columnId: 'text_mktr2xmm' },
+    { key: 'contact2Phone', label: 'Phone', type: 'phone', columnId: 'text_mktr8kve' },
+  ] },
+  { label: 'Contact 3', fields: [
+    { key: 'contact3Name',  label: 'Name',  type: 'text',  columnId: 'text_mktr4v7q' },
+    { key: 'contact3Email', label: 'Email', type: 'email', columnId: 'text_mktrt74r' },
+    { key: 'contact3Phone', label: 'Phone', type: 'phone', columnId: 'text_mktrw0tb' },
+  ] },
+];
+
+function buildContactsBody(body, client, editing) {
+  // Edit mode: show every contact slot as editable Name / Email / Phone rows
+  // (empty ones get an "Add…" affordance) so reps can add or fix contacts.
+  if (editing) {
+    for (const slot of CONTACT_EDIT_SLOTS) {
+      const hd = document.createElement('div');
+      hd.className = 'contact-edit-slot';
+      hd.textContent = slot.label;
+      body.appendChild(hd);
+      for (const f of slot.fields) {
+        const dt = document.createElement('dt');
+        dt.textContent = f.label;
+        const dd = document.createElement('dd');
+        const field = { key: f.key, label: f.label, type: f.type };
+        const val = client[f.key];
+        if (val && String(val).trim()) {
+          dd.appendChild(renderField(client, field));
+        } else {
+          const add = document.createElement('span');
+          add.className = 'edit-empty';
+          add.textContent = 'Add…';
+          dd.appendChild(add);
+        }
+        attachInlineEdit(dd, client, field, { columnId: f.columnId });
+        body.appendChild(dt);
+        body.appendChild(dd);
+      }
+    }
+    return;
+  }
+
   const slots = [
     { idx: 1, primary: true, name: client.contactName, email: client.contactEmail, phone: client.contactPhone, extra: client.contactLocation },
     { idx: 2, primary: false, name: client.contact2Name, email: client.contact2Email, phone: client.contact2Phone, access: client.contact2ShipHeroAccess },

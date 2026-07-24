@@ -1058,6 +1058,19 @@ body.projects-open {
   padding: 8px 10px;
   margin-top: 4px;
 }
+/* Subheader separating each contact's Name/Email/Phone rows in edit mode. */
+.contact-edit-slot {
+  grid-column: 1 / -1;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: #6b7280;
+  padding: 8px 0 2px;
+  border-top: 1px solid #f1f2f4;
+  margin-top: 4px;
+}
+.contact-edit-slot:first-child { border-top: none; margin-top: 0; padding-top: 0; }
 .detail-contact.primary { border-color: #cbd5e1; background: #f3f4f6; }
 .detail-contact-label {
   font-size: 9px;
