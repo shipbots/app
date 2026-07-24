@@ -10,6 +10,7 @@ import { ChecklistBarLegend } from './checklist-bar';
 import { CalendarView } from './calendar-view';
 import { TasksView } from './tasks-view';
 import { ClientsView } from './clients-view';
+import { OnboardingHome } from './onboarding-home';
 import { MiniAppsView } from './mini-apps-view';
 import { NotesView } from './notes-view';
 import { ClientSearchResults } from './client-search-results';
@@ -20,7 +21,7 @@ import { newId } from './project-bits';
 import { MOCK_PROJECTS, DEFAULT_PROJECT_STATUSES, type Project, type ProjectDocument } from '@/lib/projects';
 import { useClientSearchIndex } from '@/hooks/use-client-search-index';
 import { useSession } from 'next-auth/react';
-import { Search, Bell, RefreshCw, ChevronDown, ChevronRight, LayoutGrid, CalendarDays, CheckSquare, UserPlus, Users, Sparkles, FolderKanban, StickyNote as StickyNoteIcon } from 'lucide-react';
+import { Search, Bell, RefreshCw, ChevronDown, ChevronRight, LayoutGrid, CalendarDays, CheckSquare, UserPlus, Users, Sparkles, FolderKanban, StickyNote as StickyNoteIcon, Home } from 'lucide-react';
 import { AddClientModal, CreatedClientResult } from './add-client-modal';
 import { CHECKLIST_STEPS } from '@/lib/constants';
 
@@ -59,11 +60,13 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     if (v === 'projects' && isCustomerService) return 'projects';
     // 'notes' is Onboarding-only — personal on-device scratchpad.
     if (v === 'notes' && !isCustomerService) return 'notes';
+    if (v === 'home' && !isCustomerService) return 'home';
+    if (v === 'pipeline' && !isCustomerService) return 'pipeline';
     // CS reps land on the per-client browser by default — their primary
     // workflow is "look up a client" rather than "see the kanban".
-    return isCustomerService ? 'clients' : 'pipeline';
+    return isCustomerService ? 'clients' : 'home';
   })();
-  const [viewMode, setViewMode] = useState<'pipeline' | 'calendar' | 'tasks' | 'clients' | 'apps' | 'notes' | 'projects'>(initialView);
+  const [viewMode, setViewMode] = useState<'home' | 'pipeline' | 'calendar' | 'tasks' | 'clients' | 'apps' | 'notes' | 'projects'>(initialView);
 
   // Auto-open a client's detail panel when the URL carries
   // ?clientId=<id>. The id can be either an onboarding-board item id OR
@@ -321,7 +324,7 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
   useEffect(() => {
     // Tasks are needed for both the dedicated Tasks view and the "My Tasks"
     // sidebar on the Browse-by-Client view.
-    if ((viewMode === 'tasks' || viewMode === 'clients') && !tasksFetched) {
+    if ((viewMode === 'tasks' || viewMode === 'clients' || viewMode === 'home') && !tasksFetched) {
       setLoadingTasks(true);
       fetch('/api/subitems')
         .then(r => r.json())
@@ -493,13 +496,30 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
               <div className="flex items-center rounded-lg overflow-hidden text-sm font-medium ml-2" style={{ border: '1px solid rgba(255,255,255,0.2)' }}>
                 {!isCustomerService && (
                   <button
+                    onClick={() => setViewMode('home')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
+                      viewMode === 'home'
+                        ? 'text-[#015280] font-semibold'
+                        : 'text-white/80 hover:text-white hover:bg-white/10'
+                    }`}
+                    style={viewMode === 'home' ? { background: 'var(--brand-cyan)' } : {}}
+                  >
+                    <Home className="w-3.5 h-3.5" />
+                    Home
+                  </button>
+                )}
+                {!isCustomerService && (
+                  <button
                     onClick={() => setViewMode('pipeline')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${
                       viewMode === 'pipeline'
                         ? 'text-[#015280] font-semibold'
                         : 'text-white/80 hover:text-white hover:bg-white/10'
                     }`}
-                    style={viewMode === 'pipeline' ? { background: 'var(--brand-cyan)' } : {}}
+                    style={{
+                      borderLeft: '1px solid rgba(255,255,255,0.2)',
+                      ...(viewMode === 'pipeline' ? { background: 'var(--brand-cyan)' } : {}),
+                    }}
                   >
                     <LayoutGrid className="w-3.5 h-3.5" />
                     Pipeline
@@ -681,6 +701,17 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
             there opens the ClientSearchResults dropdown rather than filtering
             these tables, so ClientsView always shows the full list and hides
             its own local search input. */}
+        {viewMode === 'home' && !isCustomerService && (
+          <OnboardingHome
+            items={overriddenAllItems}
+            agentEmailMap={agentEmailMap}
+            tasks={allTasks}
+            loadingTasks={loadingTasks}
+            currentUserEmail={session?.user?.email ?? null}
+            onSelectItem={setSelectedItem}
+          />
+        )}
+
         {viewMode === 'clients' && (
           <ClientsView
             items={overriddenAllItems}
