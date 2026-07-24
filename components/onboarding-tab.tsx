@@ -171,7 +171,7 @@ function EditableStep({
       state === 'done'      ? 'bg-green-50'
       : state === 'pending' ? 'bg-orange-50'
       : state === 'missing' ? 'bg-red-50'
-      : state === 'na'      ? 'bg-gray-50 opacity-50'
+      : state === 'na'      ? 'bg-green-50'
       : 'hover:bg-gray-50'
     }`}>
 
@@ -244,7 +244,7 @@ function EditableStep({
 
       {/* ── Label + optional sub-label badge ── */}
       <span className={`flex-1 text-xs leading-tight min-w-0 flex items-center gap-1.5 flex-wrap ${
-        state === 'na' ? 'line-through text-gray-400' : 'text-gray-700'
+        'text-gray-700'
       }`}>
         {step.label}
         {subLabel && (

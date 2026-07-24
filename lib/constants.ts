@@ -123,7 +123,7 @@ export function getStepColor(state: 'done' | 'pending' | 'na' | 'not_started' | 
   switch (state) {
     case 'done': return '#00c875';
     case 'pending': return '#fdab3d';
-    case 'na': return '#c4c4c4';
+    case 'na': return '#00c875'; // N/A = nothing left to do → treat as done (green)
     case 'not_started': return '#e0e0e0';
     case 'missing': return '#e2445c';
   }
