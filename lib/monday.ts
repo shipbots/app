@@ -465,7 +465,12 @@ export async function fetchClientInfo(itemId: string, onboardingItemId?: string)
     palletStorage: cols['text_mm5h6606'] || '',
     dtcPickPackPricing: cols['text_mm5hc2dg'] || '',
     b2bPickPack: cols['text_mm5h4938'] || '',
-    shippingUpcharge: cols['text_mm5h681j'] || '',
+    // Domestic shipping upcharge lives in the pre-existing "🟦 Shipping V"
+    // column (text_mktqa6sm) — the team's canonical field for the V-codes.
+    // NOTE: shippingVolume below reads the SAME column (historical mislabel),
+    // so the two fields alias one value; the billing tab edits it as the
+    // upcharge. The "💰 Shipping Upcharge" column (text_mm5h681j) is retired.
+    shippingUpcharge: cols['text_mktqa6sm'] || '',
     intlShippingUpcharge: cols['text_mm5h1w32'] || '',
     returnsFee: cols['text_mm5hzk9n'] || '',
     accountManagerFee: cols['text_mm5hb9'] || '',

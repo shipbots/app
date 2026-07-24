@@ -36,7 +36,7 @@ const FIELD_COL: Record<keyof ExtractedPricingInfo, string> = {
   palletStorage:        'text_mm5h6606',
   dtcPickPackPricing:   'text_mm5hc2dg',
   b2bPickPack:          'text_mm5h4938',
-  shippingUpcharge:     'text_mm5h681j',
+  shippingUpcharge:     'text_mktqa6sm', // "🟦 Shipping V" — the team's canonical upcharge column
   intlShippingUpcharge: 'text_mm5h1w32',
   returnsFee:           'text_mm5hzk9n',
   accountManagerFee:    'text_mm5hb9',

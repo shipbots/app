@@ -2227,7 +2227,9 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
             <EditField label="🟫 Pallet Storage" value={localClient.palletStorage} columnId="text_mm5h6606" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, palletStorage: v }))} />
             <EditField label="🏬 DTC Pick & Pack" value={localClient.dtcPickPackPricing} columnId="text_mm5hc2dg" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, dtcPickPackPricing: v }))} />
             <EditField label="🏭 B2B Pick & Pack" value={localClient.b2bPickPack} columnId="text_mm5h4938" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, b2bPickPack: v }))} />
-            <EditField label="🚚 Shipping Upcharge" value={localClient.shippingUpcharge} columnId="text_mm5h681j" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, shippingUpcharge: v }))} />
+            {/* Reads/writes the pre-existing "🟦 Shipping V" column (text_mktqa6sm).
+                shippingVolume aliases the same column, so keep both in sync on save. */}
+            <EditField label="🚚 Shipping Upcharge" value={localClient.shippingUpcharge} columnId="text_mktqa6sm" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, shippingUpcharge: v, shippingVolume: v }))} />
             <EditField label="🌐 Intl Shipping Upcharge" value={localClient.intlShippingUpcharge} columnId="text_mm5h1w32" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, intlShippingUpcharge: v }))} />
             <EditField label="↩️ Returns Fee" value={localClient.returnsFee} columnId="text_mm5hzk9n" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, returnsFee: v }))} />
             <EditField label="👤 Dedicated Account Manager Fee" value={localClient.accountManagerFee} columnId="text_mm5hb9" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, accountManagerFee: v }))} />
