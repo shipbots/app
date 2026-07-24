@@ -1203,8 +1203,19 @@ async function loadClientDocs(sectionsEl, beforeNode, clientBoardItemId, fieldSe
         .then(r => r.ok ? r.json() : [])
         .catch(() => []),
     ]);
-    if (fileRes.status === 401) return;
+    if (fileRes.status === 401) { console.warn('[client-docs] 401 on section-files — not signed in'); return; }
     const files = fileRes.ok ? await fileRes.json() : [];
+    // Diagnostic: surfaces base URL, client id, endpoint statuses, and counts so
+    // a "no documents" report can be pinpointed from the popup console.
+    console.log('[client-docs] fetch', {
+      base,
+      clientBoardItemId,
+      sectionFilesStatus: fileRes.status,
+      files: Array.isArray(files) ? files.length : `not-array(${typeof files})`,
+      links: Array.isArray(links) ? links.length : `not-array(${typeof links})`,
+      firstFileCat: Array.isArray(files) && files[0] ? files[0].category : null,
+      firstLinkCat: Array.isArray(links) && links[0] ? links[0].category : null,
+    });
 
     // Bucket everything by category. Files default to 'documents';
     // links only count as section docs when they carry a known
@@ -1218,6 +1229,11 @@ async function loadClientDocs(sectionsEl, beforeNode, clientBoardItemId, fieldSe
       const cat = SECTION_DOC_CATEGORIES.has(l?.category) ? l.category : 'documents';
       byCat[cat].push({ name: l.name, url: l.url, kind: 'link' });
     }
+    console.log('[client-docs] byCat', {
+      documents: byCat.documents.length, receiving: byCat.receiving.length,
+      packing: byCat.packing.length, returns: byCat.returns.length,
+      sectionIds: Array.isArray(fieldSections) ? fieldSections.map(f => f.section.id) : null,
+    });
 
     // Per-section docs render directly UNDER the section header (between the
     // header and the collapsible field body) so they stay visible even when
