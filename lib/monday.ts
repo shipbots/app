@@ -1,5 +1,5 @@
 import { OnboardingItem, ChecklistStep, ClientInfo, MonFile, SubItem } from './types';
-import { ONBOARDING_BOARD_ID, CLIENTS_BOARD_ID, CHECKLIST_STEPS, ONBOARDING_COLUMN_IDS, CLIENT_COLUMN_IDS, getStepState } from './constants';
+import { ONBOARDING_BOARD_ID, CLIENTS_BOARD_ID, CHECKLIST_STEPS, ONBOARDING_COLUMN_IDS, CLIENT_COLUMN_IDS, getStepState, conditionalNaStepIds } from './constants';
 import { notificationColumnIds } from './notifications';
 
 const MONDAY_API_URL = 'https://api.monday.com/v2';
@@ -212,6 +212,17 @@ export async function fetchOnboardingItems(): Promise<OnboardingItem[]> {
           step.value = j.clientBoardColumns[cfg.id] ?? null;
         }
 
+        // Force conditional-N/A steps (TikTok / Lot Code / FBA / Intl) to N/A
+        // when the client doesn't use that capability, so they count as done —
+        // matching the detail panel. Mutating the value here means the card %,
+        // the kanban progress dots, and the detail all agree.
+        const naIds = conditionalNaStepIds(j.settings);
+        if (naIds.size) {
+          for (const step of item.checklist) {
+            if (naIds.has(step.id)) step.value = 'N/A';
+          }
+        }
+
         // Recompute progress now that client-board steps have real values.
         const doneCount = item.checklist.filter(s => getStepState(s.value, s.invertLogic, CHECKLIST_STEPS.find(c => c.id === s.id)) === 'done').length;
         const applicableCount = item.checklist.filter(s => getStepState(s.value, s.invertLogic, CHECKLIST_STEPS.find(c => c.id === s.id)) !== 'na').length;
@@ -226,6 +237,16 @@ export async function fetchOnboardingItems(): Promise<OnboardingItem[]> {
   return allItems;
 }
 
+// Clients-board columns that drive the "conditional N/A" checklist steps (the
+// client doesn't use that capability → the step is auto-N/A). Kept here so the
+// join fetches them and the progress calc can mark those steps complete.
+const CONDITIONAL_NA_SETTING_COLS = {
+  internationalFulfillment: 'color_mktq43r0',
+  amazonFBA: 'color_mktqw7rg',
+  tikTokShop: 'dropdown_mm28h9mz',
+  lotCodeExpiration: 'dropdown_mm28rr9y',
+} as const;
+
 // Per-client fields that the Onboarding view reads from the Clients board.
 type ClientBoardJoin = {
   estimatedDeliveryDate: string | null;
@@ -233,16 +254,24 @@ type ClientBoardJoin = {
   /** Raw text value (e.g. "Yes", "No", "") for every client-board checklist
    *  step, keyed by column id. */
   clientBoardColumns: Record<string, string>;
+  /** Client-board settings that drive conditional-N/A steps. */
+  settings: {
+    internationalFulfillment: string;
+    amazonFBA: string;
+    tikTokShop: string;
+    lotCodeExpiration: string;
+  };
 };
 
 // IDs of all Clients-board columns the join needs to pull. Includes the
-// Initial Inventory date plus every checklist step configured with
-// `board: 'clients'`.
+// Initial Inventory date, every checklist step configured with
+// `board: 'clients'`, and the conditional-N/A setting columns.
 function clientBoardJoinColumnIds(): string[] {
   const set = new Set<string>(['date_mktrzhyk']);
   for (const step of CHECKLIST_STEPS) {
     if ((step.board ?? 'onboarding') === 'clients') set.add(step.id);
   }
+  for (const id of Object.values(CONDITIONAL_NA_SETTING_COLS)) set.add(id);
   return Array.from(set);
 }
 
@@ -295,7 +324,14 @@ async function fetchClientBoardJoins(itemIds: string[]): Promise<Record<string, 
           clientBoardColumns[step.id] = cvById[step.id]?.text ?? '';
         }
 
-        result[it.id] = { estimatedDeliveryDate: date, estimatedDeliveryTime: time, clientBoardColumns };
+        const settings = {
+          internationalFulfillment: cvById[CONDITIONAL_NA_SETTING_COLS.internationalFulfillment]?.text ?? '',
+          amazonFBA: cvById[CONDITIONAL_NA_SETTING_COLS.amazonFBA]?.text ?? '',
+          tikTokShop: cvById[CONDITIONAL_NA_SETTING_COLS.tikTokShop]?.text ?? '',
+          lotCodeExpiration: cvById[CONDITIONAL_NA_SETTING_COLS.lotCodeExpiration]?.text ?? '',
+        };
+
+        result[it.id] = { estimatedDeliveryDate: date, estimatedDeliveryTime: time, clientBoardColumns, settings };
       }
     })
   );

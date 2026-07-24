@@ -119,6 +119,33 @@ export function getStepState(
   return 'not_started';
 }
 
+/**
+ * Checklist steps that are auto-marked N/A because the client doesn't use that
+ * capability — there's nothing left to do, so the step counts as complete
+ * (excluded from the "% complete" denominator). Driven by client-board
+ * settings. Single source of truth shared by the onboarding detail panel
+ * (display) AND the progress computation in lib/monday.ts (card % + kanban
+ * dots), so all three always agree.
+ *
+ *   • Configure International Shipping → N/A when not fulfilling internationally
+ *   • Configure FBA Shipping          → N/A when not sending to Amazon FBA
+ *   • Set up TikTok Shop Automation    → N/A unless TikTok Shop = Yes
+ *   • Lot Code / Expiration Set up     → N/A unless Lot Code / Expiration = Yes
+ */
+export function conditionalNaStepIds(settings: {
+  internationalFulfillment?: string | null;
+  amazonFBA?: string | null;
+  tikTokShop?: string | null;
+  lotCodeExpiration?: string | null;
+}): Set<string> {
+  const set = new Set<string>();
+  if ((settings.internationalFulfillment ?? '').toLowerCase() === 'no') set.add('color_mktv3dek');
+  if ((settings.amazonFBA ?? '').toLowerCase() === 'no') set.add('color_mktv6qb');
+  if ((settings.tikTokShop ?? '').toLowerCase() !== 'yes') set.add('color_mm28q860');
+  if ((settings.lotCodeExpiration ?? '').toLowerCase() !== 'yes') set.add('color_mm28ht8');
+  return set;
+}
+
 export function getStepColor(state: 'done' | 'pending' | 'na' | 'not_started' | 'missing'): string {
   switch (state) {
     case 'done': return '#00c875';

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { ChecklistStep } from '@/lib/types';
-import { getStepState, getStepColor, CHECKLIST_STEPS } from '@/lib/constants';
+import { getStepState, getStepColor, CHECKLIST_STEPS, conditionalNaStepIds } from '@/lib/constants';
 import {
   Check, Clock, Minus, ChevronDown, User,
   FileSignature, PhoneCall, ShoppingBag, Settings2, RefreshCw,
@@ -615,15 +615,12 @@ export function OnboardingTab({
   // Steps whose value should be forced to N/A based on client-info conditions:
   //   • Configure International Shipping  → N/A when not fulfilling internationally
   //   • Configure FBA Shipping            → N/A when not sending to Amazon FBA
-  const forcedNaIds = useMemo(() => {
-    const set = new Set<string>();
-    if (internationalFulfillment?.toLowerCase() === 'no') set.add('color_mktv3dek');
-    if (amazonFBA?.toLowerCase() === 'no')               set.add('color_mktv6qb');
-    // TikTok / LotCode: forced N/A in display only when not "yes" — NOT written to Monday.com
-    if (!tikTokShop || tikTokShop.toLowerCase() !== 'yes')             set.add('color_mm28q860');
-    if (!lotCodeExpiration || lotCodeExpiration.toLowerCase() !== 'yes') set.add('color_mm28ht8');
-    return set;
-  }, [internationalFulfillment, amazonFBA, tikTokShop, lotCodeExpiration]);
+  // Shared with the server-side progress calc (lib/monday.ts) so the detail
+  // panel, the card %, and the kanban dots all treat the same steps as N/A.
+  const forcedNaIds = useMemo(
+    () => conditionalNaStepIds({ internationalFulfillment, amazonFBA, tikTokShop, lotCodeExpiration }),
+    [internationalFulfillment, amazonFBA, tikTokShop, lotCodeExpiration],
+  );
 
   // Silently write N/A to Monday.com the first time a condition is detected
   // so the checklist stays in sync with client-info data.
