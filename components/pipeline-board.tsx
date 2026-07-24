@@ -301,6 +301,34 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
     setItemOverrides(prev => ({ ...prev, [itemId]: { ...prev[itemId], ...patch } }));
     setSelectedItem(prev => prev && prev.id === itemId ? { ...prev, ...patch } : prev);
   };
+
+  // ── Live task-completion propagation ──
+  // Completing / creating / editing a task anywhere must immediately refresh
+  // every task indicator: the ✓ badge on the kanban, calendar, and CS cards
+  // (item.subitemCount = number of OUTSTANDING subitems, matching the server in
+  // lib/monday.ts) and the task lists that read allTasks (My Tasks, Tasks view,
+  // CS client tables).
+  const TASK_DONE = /(done|complete|finished)/i;
+  // From the detail panel, which holds the authoritative full task list for a
+  // single client: make it the source of truth in allTasks and re-derive its
+  // card badge from it.
+  const handleClientTasksChange = (itemId: string, clientTasks: SubItem[]) => {
+    const ids = new Set(clientTasks.map(t => t.id));
+    setAllTasks(prev => [...clientTasks, ...prev.filter(t => t.parentItemId !== itemId && !ids.has(t.id))]);
+    handleItemUpdate(itemId, { subitemCount: clientTasks.filter(t => !TASK_DONE.test(t.status)).length });
+  };
+  // From a task-list view (My Tasks / Tasks view) where allTasks is already fully
+  // loaded: upsert the one changed task and recompute its parent's badge.
+  const handleTaskChange = (task: SubItem) => {
+    const exists = allTasks.some(t => t.id === task.id);
+    const next = exists ? allTasks.map(t => t.id === task.id ? task : t) : [task, ...allTasks];
+    setAllTasks(next);
+    if (task.parentItemId) {
+      handleItemUpdate(task.parentItemId, {
+        subitemCount: next.filter(t => t.parentItemId === task.parentItemId && !TASK_DONE.test(t.status)).length,
+      });
+    }
+  };
   // Clients-board group overrides — fed by the Active/Inactive toggle in the
   // detail panel. ClientsView reads these on top of its search index so the
   // CS tables update instantly without re-fetching.
@@ -709,6 +737,7 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
             loadingTasks={loadingTasks}
             currentUserEmail={session?.user?.email ?? null}
             onSelectItem={setSelectedItem}
+            onTaskChange={handleTaskChange}
           />
         )}
 
@@ -759,8 +788,8 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
             onSelectClient={item => { setSelectedItem(item); }}
             taskClientFilter={taskClientFilter}
             onFilterChange={setTaskClientFilter}
-            onTaskCreated={task => setAllTasks(prev => [task, ...prev])}
-            onTaskUpdated={updated => setAllTasks(prev => prev.map(t => t.id === updated.id ? updated : t))}
+            onTaskCreated={handleTaskChange}
+            onTaskUpdated={handleTaskChange}
           />
         )}
 
@@ -893,6 +922,7 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
             setStatusOverrides(prev => ({ ...prev, [itemId]: newStatus }))
           }
           onItemUpdate={handleItemUpdate}
+          onClientTasksChange={handleClientTasksChange}
           onNavigate={newItem => setSelectedItem(newItem)}
           onClientActiveChanged={handleClientActiveChanged}
           projects={projects}

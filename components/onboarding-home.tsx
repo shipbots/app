@@ -155,13 +155,14 @@ function CustomChecklistBox({
 
 // ─── My outstanding tasks box (with inline mark-complete) ────────────────────
 function TasksBox({
-  tasks, loading, currentUserEmail, itemsById, onSelectItem,
+  tasks, loading, currentUserEmail, itemsById, onSelectItem, onTaskChange,
 }: {
   tasks: SubItem[];
   loading: boolean;
   currentUserEmail: string | null;
   itemsById: Record<string, OnboardingItem>;
   onSelectItem: (item: OnboardingItem) => void;
+  onTaskChange?: (task: SubItem) => void;
 }) {
   const [boardInfo, setBoardInfo] = useState<BoardInfo | null>(null);
   const [completed, setCompleted] = useState<Set<string>>(new Set());
@@ -211,7 +212,12 @@ function TasksBox({
           statusColumnId: boardInfo.statusColumnId ?? undefined,
         }),
       });
-      if (res.ok) setCompleted(prev => new Set(prev).add(t.id));
+      if (res.ok) {
+        setCompleted(prev => new Set(prev).add(t.id));
+        // Bubble up so the kanban / calendar / CS card badges and the other
+        // task lists reflect the completion live, not just this box.
+        onTaskChange?.({ ...t, status: doneOption });
+      }
     } catch { /* leave it in the list to retry */ } finally {
       setSavingId(null);
     }
@@ -482,7 +488,7 @@ function InProgressList({
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 export function OnboardingHome({
-  items, agentEmailMap, tasks, loadingTasks, currentUserEmail, onSelectItem,
+  items, agentEmailMap, tasks, loadingTasks, currentUserEmail, onSelectItem, onTaskChange,
 }: {
   items: OnboardingItem[];
   agentEmailMap: Record<string, string>;
@@ -490,6 +496,7 @@ export function OnboardingHome({
   loadingTasks: boolean;
   currentUserEmail: string | null;
   onSelectItem: (item: OnboardingItem) => void;
+  onTaskChange?: (task: SubItem) => void;
 }) {
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
   const active = useMemo(() => items.filter(isActive), [items]);
@@ -553,6 +560,7 @@ export function OnboardingHome({
           currentUserEmail={currentUserEmail}
           itemsById={itemsById}
           onSelectItem={onSelectItem}
+          onTaskChange={onTaskChange}
         />
         <InProgressList items={active} agentEmailMap={agentEmailMap} onSelectItem={onSelectItem} />
       </div>

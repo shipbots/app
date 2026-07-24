@@ -618,6 +618,9 @@ interface ClientDetailPanelProps {
    *  Lets the parent (PipelineBoard) keep the kanban / calendar / tasks
    *  views in sync without a full server round-trip. */
   onItemUpdate?: (itemId: string, patch: Partial<OnboardingItem>) => void;
+  /** Fired whenever this client's task list changes (created / completed /
+   *  edited) so the board can update allTasks + the card's ✓ badge live. */
+  onClientTasksChange?: (itemId: string, tasks: SubItem[]) => void;
   onNavigate?: (item: OnboardingItem) => void;
   /**
    * Which app surface this panel is mounted in. 'customer-service' hides the
@@ -673,7 +676,7 @@ function readPersistedNumber(key: string, fallback: number): number {
   }
 }
 
-export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onItemUpdate, onNavigate, appMode = 'onboarding', onClientActiveChanged, fullscreen: fullscreenProp, onFullscreenChange, projects = [], onOpenProject, onCreateProject }: ClientDetailPanelProps) {
+export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onItemUpdate, onClientTasksChange, onNavigate, appMode = 'onboarding', onClientActiveChanged, fullscreen: fullscreenProp, onFullscreenChange, projects = [], onOpenProject, onCreateProject }: ClientDetailPanelProps) {
   const isCustomerService = appMode === 'customer-service';
   // The Billing Info tab exposes sensitive data (EIN, the DocuSign contract,
   // billing address), so it's gated to the DocuSign-access group — the same
@@ -909,6 +912,14 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
   // the cache, so the Tasks tab reflects created / updated tasks immediately.
   const mutateTasks = (fn: (prev: SubItem[]) => SubItem[]) =>
     setTasksData(prev => fn(prev ?? []));
+  // Apply a change to the tasks list AND bubble the full new list up to the
+  // board, so the client card's ✓ task badge (kanban / calendar / CS tables)
+  // and the app-wide task lists all update the moment a task is completed.
+  const applyTaskChange = (fn: (prev: SubItem[]) => SubItem[]) => {
+    const next = fn(tasks);
+    mutateTasks(() => next);
+    onClientTasksChange?.(item.id, next);
+  };
   // Called from the Meetings tab after it creates tasks from action items —
   // make sure the Tasks tab is live and refreshed so the new tasks show up.
   const onTasksCreatedFromMeeting = (newTasks: SubItem[]) => {
@@ -1221,8 +1232,8 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
           loading={loadingTasks}
           items={items}
           clientItemId={item.id}
-          onTaskCreated={task => mutateTasks(prev => [task, ...prev])}
-          onTaskUpdated={updated => mutateTasks(prev => prev.map(t => t.id === updated.id ? updated : t))}
+          onTaskCreated={task => applyTaskChange(prev => [task, ...prev])}
+          onTaskUpdated={updated => applyTaskChange(prev => prev.map(t => t.id === updated.id ? updated : t))}
         />
       )}
       {activeTab === 'docs' && (
@@ -1805,8 +1816,8 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
               loading={loadingTasks}
               items={items}
               clientItemId={item.id}
-              onTaskCreated={task => mutateTasks(prev => [task, ...prev])}
-              onTaskUpdated={updated => mutateTasks(prev => prev.map(t => t.id === updated.id ? updated : t))}
+              onTaskCreated={task => applyTaskChange(prev => [task, ...prev])}
+              onTaskUpdated={updated => applyTaskChange(prev => prev.map(t => t.id === updated.id ? updated : t))}
             />
           )}
           {activeTab === 'docs' && (
