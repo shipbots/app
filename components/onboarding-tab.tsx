@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { ChecklistStep } from '@/lib/types';
 import { getStepState, getStepColor, CHECKLIST_STEPS, conditionalNaStepIds } from '@/lib/constants';
 import {
@@ -119,19 +120,44 @@ function EditableStep({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  // The options menu is portaled to <body> so it can't be clipped. In the
+  // expanded view the checklist sits inside several overflow-hidden / scrolling
+  // ancestors (each dense row, the section card, and the scrolling column),
+  // any of which would otherwise crop an absolutely-positioned child and make
+  // the dropdown impossible to use. buttonRef anchors it; menuPos is the
+  // fixed-position rect, recomputed on open, scroll, and resize.
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
 
   const state = forcedNa ? 'na' : getStepState(value, step.invertLogic, CHECKLIST_STEPS.find(s => s.id === step.id));
   const color = getStepColor(state);
   const icon = STEP_ICON[step.id];
 
+  const positionMenu = () => {
+    const b = buttonRef.current;
+    if (!b) return;
+    const r = b.getBoundingClientRect();
+    setMenuPos({ top: r.bottom + 4, left: r.left });
+  };
+
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setOpen(false);
+    const onDocMouseDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (buttonRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    const reposition = () => positionMenu();
+    document.addEventListener('mousedown', onDocMouseDown);
+    // Capture phase so scrolling any inner container repositions the menu too.
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+    return () => {
+      document.removeEventListener('mousedown', onDocMouseDown);
+      window.removeEventListener('scroll', reposition, true);
+      window.removeEventListener('resize', reposition);
+    };
   }, [open]);
 
   const select = async (newValue: string) => {
@@ -186,10 +212,15 @@ function EditableStep({
     }`}>
 
       {/* ── Merged status indicator + dropdown trigger (LEFT) ── */}
-      <div className="relative flex-shrink-0" ref={dropdownRef}>
+      <div className="relative flex-shrink-0">
         <button
+          ref={buttonRef}
           type="button"
-          onClick={() => !forcedNa && setOpen(o => !o)}
+          onClick={() => {
+            if (forcedNa) return;
+            if (!open) positionMenu();
+            setOpen(o => !o);
+          }}
           disabled={forcedNa}
           className={`flex items-center gap-1 pl-0.5 pr-1.5 py-0.5 rounded-full font-semibold text-[10px] whitespace-nowrap ${
             forcedNa ? 'cursor-default opacity-75' : 'transition-opacity hover:opacity-80'
@@ -218,8 +249,12 @@ function EditableStep({
           }
         </button>
 
-        {open && !forcedNa && (
-          <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[140px]">
+        {open && !forcedNa && menuPos && typeof document !== 'undefined' && createPortal(
+          <div
+            ref={menuRef}
+            className="fixed z-[200] bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[140px] max-h-72 overflow-y-auto"
+            style={{ top: menuPos.top, left: menuPos.left }}
+          >
             {step.options.map(opt => (
               <button
                 key={opt}
@@ -243,7 +278,8 @@ function EditableStep({
                 — Clear
               </button>
             </div>
-          </div>
+          </div>,
+          document.body,
         )}
       </div>
 
@@ -292,15 +328,35 @@ function ShippingMethodPicker({
   const [selected, setSelected] = useState<string[]>(() => parse(initialValue));
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  // Portaled to <body> for the same reason as EditableStep — otherwise the
+  // overflow-hidden / scrolling ancestors in the expanded view clip it.
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+
+  const positionMenu = () => {
+    const b = buttonRef.current;
+    if (!b) return;
+    const r = b.getBoundingClientRect();
+    setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+  };
 
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    const onDocMouseDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (buttonRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    const reposition = () => positionMenu();
+    document.addEventListener('mousedown', onDocMouseDown);
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+    return () => {
+      document.removeEventListener('mousedown', onDocMouseDown);
+      window.removeEventListener('scroll', reposition, true);
+      window.removeEventListener('resize', reposition);
+    };
   }, [open]);
 
   const toggle = async (method: string) => {
@@ -322,10 +378,11 @@ function ShippingMethodPicker({
   };
 
   return (
-    <div ref={ref} className="relative flex-shrink-0">
+    <div className="relative flex-shrink-0">
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setOpen(o => !o)}
+        onClick={() => { if (!open) positionMenu(); setOpen(o => !o); }}
         className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full border text-[#015280] hover:opacity-90 transition-colors whitespace-nowrap" style={{ background: 'var(--brand-cyan-light)', borderColor: 'var(--brand-cyan)' }}
       >
         {saving ? (
@@ -337,8 +394,12 @@ function ShippingMethodPicker({
         <ChevronDown className="w-2.5 h-2.5 opacity-60" />
       </button>
 
-      {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[140px]">
+      {open && menuPos && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={menuRef}
+          className="fixed z-[200] bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[140px] max-h-72 overflow-y-auto"
+          style={{ top: menuPos.top, right: menuPos.right }}
+        >
           {SHIPPING_OPTIONS.map(opt => (
             <label
               key={opt}
@@ -353,7 +414,8 @@ function ShippingMethodPicker({
               {opt}
             </label>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
