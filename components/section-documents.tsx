@@ -285,13 +285,6 @@ export function SectionDocuments({
         </div>
       )}
 
-      {status === 'loading' && (
-        <div className="flex items-center gap-2 text-[11px] text-gray-400 px-1 py-2">
-          <Loader2 className="w-3 h-3 animate-spin" />
-          Loading…
-        </div>
-      )}
-
       {status === 'ready' && errorMsg && (
         <div className="rounded-md bg-rose-50 border border-rose-200 px-2.5 py-1.5 text-[11px] text-rose-800 mb-2">
           {errorMsg}
@@ -342,13 +335,24 @@ export function SectionDocuments({
         </div>
       )}
 
-      {status === 'ready' && (
+      {(status === 'loading' || status === 'ready') && (
         // Two-column layout: files + links on the left, add-targets on
         // the right (upload square + add-link square stacked). Docs own
-        // the visual weight so reps first see what's on file.
+        // the visual weight so reps first see what's on file. The grid is
+        // rendered during loading too — the right-hand add column fixes the
+        // area's height, so expanding the section doesn't jolt from a tiny
+        // "Loading…" row up to the full size once the docs arrive.
         <div className="grid grid-cols-[1fr_auto] gap-3 items-start">
           <div>
-            {files.length === 0 && links.length === 0 ? (
+            {status === 'loading' ? (
+              // Skeleton rows while the fetch runs — the right column already
+              // reserves the height, so this just fills the left so it doesn't
+              // read as empty. Real docs replace it in place.
+              <ul className="space-y-1.5" aria-hidden="true">
+                <li className="h-9 rounded-md bg-gray-100 animate-pulse" />
+                <li className="h-9 rounded-md bg-gray-100 animate-pulse" />
+              </ul>
+            ) : files.length === 0 && links.length === 0 ? (
               <p className="text-[11px] text-gray-400 italic px-1 py-1">
                 No documents yet — add a file or link on the right.
               </p>
