@@ -31,8 +31,10 @@ export async function PATCH(
       assigneeColumnId?: string;
       /** New assignee emails. Send an empty array to clear the assignment. */
       assignees?: string[];
-      /** Optional Monday update text — posts a fresh comment when non-empty. */
+      /** Task description/notes — saved to the long_text column when
+       *  notesColumnId is present, else posted as a Monday update. */
       notes?: string;
+      notesColumnId?: string;
     };
     if (!body.boardId) {
       return NextResponse.json({ error: 'boardId is required' }, { status: 400 });
@@ -46,6 +48,7 @@ export async function PATCH(
       assigneeColumnId: body.assigneeColumnId,
       assignees: body.assignees,
       notes: body.notes,
+      notesColumnId: body.notesColumnId,
     });
     return NextResponse.json({ ok: true });
   } catch (err) {

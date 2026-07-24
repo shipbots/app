@@ -17,8 +17,9 @@ import {
 } from '@/lib/constants';
 import {
   UserX, CalendarClock, MailX, ListChecks, ChevronRight, Loader2, Check,
-  User, ClipboardList,
+  User, ClipboardList, Plus,
 } from 'lucide-react';
+import { CreateTaskModal } from './tasks-view';
 
 // ─── stage helpers ──────────────────────────────────────────────────────────
 // Terminal / non-active stages — a client here is not "in progress".
@@ -165,6 +166,10 @@ function TasksBox({
   const [boardInfo, setBoardInfo] = useState<BoardInfo | null>(null);
   const [completed, setCompleted] = useState<Set<string>>(new Set());
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  // Tasks created from this box — merged in optimistically so a new task shows
+  // immediately without waiting for the next full refresh.
+  const [createdTasks, setCreatedTasks] = useState<SubItem[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -178,13 +183,19 @@ function TasksBox({
   const mine = useMemo(() => {
     const email = (currentUserEmail || '').toLowerCase();
     if (!email) return [];
-    return tasks.filter(t => {
-      const isMine = (t.assigneeEmails || []).some(e => e.toLowerCase() === email)
-        || (t.assignee || '').toLowerCase().includes(email);
-      if (!isMine) return false;
-      return !isDoneStatus(t.status) && !completed.has(t.id);
-    });
-  }, [tasks, currentUserEmail, completed]);
+    const merged = [...tasks];
+    for (const t of createdTasks) if (!merged.some(m => m.id === t.id)) merged.push(t);
+    return merged
+      .filter(t => {
+        const isMine = (t.assigneeEmails || []).some(e => e.toLowerCase() === email)
+          || (t.assignee || '').toLowerCase().includes(email);
+        if (!isMine) return false;
+        return !isDoneStatus(t.status) && !completed.has(t.id);
+      })
+      // Oldest first — the longest-outstanding tasks surface at the top as
+      // priority. Undated (no createdAt) sort last.
+      .sort((a, b) => (a.createdAt || '9999').localeCompare(b.createdAt || '9999'));
+  }, [tasks, createdTasks, currentUserEmail, completed]);
 
   const markComplete = async (t: SubItem) => {
     if (!boardInfo || savingId) return;
@@ -213,6 +224,14 @@ function TasksBox({
       <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-gray-100">
         <ClipboardList className="w-4 h-4 text-[#0071BC] flex-shrink-0" />
         <span className="text-[13px] font-semibold text-gray-800 flex-1 truncate">My Outstanding Tasks</span>
+        <button
+          type="button"
+          onClick={() => setShowCreate(true)}
+          title="Create a new task"
+          className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#015280] bg-[#e6f8ff] border border-[#43c7ff]/40 hover:bg-[#d5f2ff] px-2 py-1 rounded-full flex-shrink-0 transition-colors"
+        >
+          <Plus className="w-3 h-3" /> New
+        </button>
         <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 leading-none ${
           mine.length ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-400'
         }`}>{mine.length}</span>
@@ -265,6 +284,17 @@ function TasksBox({
           </ul>
         )}
       </div>
+
+      {showCreate && (
+        <CreateTaskModal
+          items={Object.values(itemsById)}
+          onClose={() => setShowCreate(false)}
+          onCreated={(task) => {
+            setCreatedTasks(prev => [...prev, task]);
+            setShowCreate(false);
+          }}
+        />
+      )}
     </section>
   );
 }

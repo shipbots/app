@@ -123,7 +123,7 @@ export function ActionItemsModal({
     fetch('/api/subitems/board-info')
       .then(r => r.json())
       .then((d: BoardInfo) => setBoardInfo(d))
-      .catch(() => setBoardInfo({ boardId: null, statusColumnId: null, statusOptions: [], dateColumnId: null, assigneeColumnId: null, assigneeOptions: [] }));
+      .catch(() => setBoardInfo({ boardId: null, statusColumnId: null, statusOptions: [], dateColumnId: null, assigneeColumnId: null, assigneeOptions: [], notesColumnId: null }));
   }, []);
 
   const statusOptions = boardInfo?.statusOptions?.length

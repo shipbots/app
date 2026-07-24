@@ -45,6 +45,12 @@ export interface SubItem {
    */
   assigneeEmails: string[];
   dueDate: string;      // "YYYY-MM-DD" or ""
+  /** Free-text description/notes, stored in the subitem board's long_text
+   *  "Notes" column so it persists (not a fire-and-forget Monday update). */
+  notes: string;
+  /** ISO datetime the subitem was created (Monday's native created_at) —
+   *  used to sort tasks oldest → newest so the longest-open surface first. */
+  createdAt: string;
   parentItemId: string;
   parentItemName: string;
 }
@@ -70,6 +76,8 @@ export interface BoardInfo {
   assigneeColumnId: string | null;
   /** Existing emails the dropdown has seen; UI seeds its picker from these. */
   assigneeOptions: string[];
+  /** ID of the long_text column that stores a task's description/notes. */
+  notesColumnId: string | null;
 }
 
 export interface CalendarEvent {

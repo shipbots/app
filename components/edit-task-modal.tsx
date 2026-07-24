@@ -17,10 +17,9 @@ export function EditTaskModal({ task, onClose, onSaved }: EditTaskModalProps) {
   const [status, setStatus]     = useState(task.status);
   const [dueDate, setDueDate]   = useState(task.dueDate);
   const [assignees, setAssignees] = useState<string[]>((task.assigneeEmails ?? []).map(e => e.toLowerCase()));
-  // Always-blank on open — each non-empty save posts a *new* Monday update.
-  // We don't fetch the latest update text to pre-fill since the user
-  // typically wants to add context, not overwrite the prior thread.
-  const [notes, setNotes]       = useState('');
+  // Seeded from the task's saved description (long_text Notes column) so the
+  // user edits the existing text rather than starting blank; saving overwrites.
+  const [notes, setNotes]       = useState(task.notes ?? '');
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState('');
   const [saved, setSaved]       = useState(false);
@@ -29,7 +28,7 @@ export function EditTaskModal({ task, onClose, onSaved }: EditTaskModalProps) {
     fetch('/api/subitems/board-info')
       .then(r => r.json())
       .then((d: BoardInfo) => setBoardInfo(d))
-      .catch(() => setBoardInfo({ boardId: null, statusColumnId: null, statusOptions: [], dateColumnId: null, assigneeColumnId: null, assigneeOptions: [] }));
+      .catch(() => setBoardInfo({ boardId: null, statusColumnId: null, statusOptions: [], dateColumnId: null, assigneeColumnId: null, assigneeOptions: [], notesColumnId: null }));
   }, []);
 
   const statusOptions = boardInfo?.statusOptions?.length
@@ -57,7 +56,11 @@ export function EditTaskModal({ task, onClose, onSaved }: EditTaskModalProps) {
           ...(boardInfo.assigneeColumnId
             ? { assigneeColumnId: boardInfo.assigneeColumnId, assignees }
             : {}),
-          ...(notes.trim() ? { notes: notes.trim() } : {}),
+          // Send the description whenever it changed (incl. clearing it) so
+          // the long_text Notes column is overwritten to match the editor.
+          ...(notes !== (task.notes ?? '')
+            ? { notes: notes.trim(), notesColumnId: boardInfo.notesColumnId ?? undefined }
+            : {}),
         }),
       });
       if (!res.ok) {
@@ -73,6 +76,7 @@ export function EditTaskModal({ task, onClose, onSaved }: EditTaskModalProps) {
         assigneeEmails: assignees,
         // Refresh the legacy display string so the row updates immediately.
         assignee: assignees.join(', '),
+        notes: notes.trim(),
       });
       setTimeout(onClose, 700);
     } catch (err) {
@@ -180,20 +184,20 @@ export function EditTaskModal({ task, onClose, onSaved }: EditTaskModalProps) {
             )}
           </div>
 
-          {/* Notes — additive Monday update on save */}
+          {/* Description — saved to the task's Notes column (persists + editable) */}
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-              Notes <span className="text-gray-300 font-normal normal-case">(optional)</span>
+              Description <span className="text-gray-300 font-normal normal-case">(optional)</span>
             </label>
             <textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              placeholder="Add a fresh update to this task…"
-              rows={2}
+              placeholder="What needs to happen for this task…"
+              rows={3}
               className="w-full px-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#43c7ff] hover:border-[#43c7ff] transition-colors resize-none"
             />
             <p className="text-[11px] text-gray-400 mt-1">
-              Posts as a Monday.com update on the task — doesn&apos;t replace earlier notes.
+              Saved to the task&apos;s Description and kept — edit anytime.
             </p>
           </div>
 

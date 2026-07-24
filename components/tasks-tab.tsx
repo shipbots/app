@@ -95,6 +95,9 @@ function TaskRow({
         <p className={`text-sm font-medium truncate ${done ? 'line-through text-gray-400' : 'text-gray-800'}`}>
           {task.name}
         </p>
+        {task.notes && (
+          <p className="text-xs text-gray-400 truncate" title={task.notes}>{task.notes}</p>
+        )}
       </div>
 
       {task.status && (
@@ -205,8 +208,10 @@ export function TasksTab({ tasks, loading, items, clientItemId, onTaskCreated, o
       .catch(() => {});
   }, []);
 
-  const outstanding = tasks.filter(t => !isDone(t.status));
-  const completed   = tasks.filter(t =>  isDone(t.status));
+  // Oldest first — longest-outstanding tasks are the priority. Undated last.
+  const byOldest = (a: SubItem, b: SubItem) => (a.createdAt || '9999').localeCompare(b.createdAt || '9999');
+  const outstanding = tasks.filter(t => !isDone(t.status)).sort(byOldest);
+  const completed   = tasks.filter(t =>  isDone(t.status)).sort(byOldest);
 
   if (loading) {
     return (

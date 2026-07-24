@@ -199,7 +199,7 @@ export function CreateTaskModal({
     fetch('/api/subitems/board-info')
       .then(r => r.json())
       .then((d: BoardInfo) => setBoardInfo(d))
-      .catch(() => setBoardInfo({ boardId: null, statusColumnId: null, statusOptions: [], dateColumnId: null, assigneeColumnId: null, assigneeOptions: [] }));
+      .catch(() => setBoardInfo({ boardId: null, statusColumnId: null, statusOptions: [], dateColumnId: null, assigneeColumnId: null, assigneeOptions: [], notesColumnId: null }));
   }, []);
 
   // Close client list on outside click
@@ -240,7 +240,11 @@ export function CreateTaskModal({
         body.dateColumnId = boardInfo.dateColumnId;
         body.dueDate = dueDate;
       }
-      if (notes.trim()) body.notes = notes.trim();
+      if (notes.trim()) {
+        body.notes = notes.trim();
+        // Persist the description into the board's long_text Notes column.
+        if (boardInfo?.notesColumnId) body.notesColumnId = boardInfo.notesColumnId;
+      }
       if (boardInfo?.assigneeColumnId && assignees.length > 0) {
         body.assigneeColumnId = boardInfo.assigneeColumnId;
         body.assignees = assignees;

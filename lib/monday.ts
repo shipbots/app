@@ -876,6 +876,8 @@ export async function fetchSubitemBoardInfo(): Promise<{
   assigneeColumnId: string | null;
   /** Existing dropdown options (emails) — UI seeds its picker from this. */
   assigneeOptions: string[];
+  /** long_text column that stores a task's description/notes. */
+  notesColumnId: string | null;
 }> {
   // We need at least one subitem to discover the subitem board's column schema.
   const query = `query {
@@ -904,6 +906,7 @@ export async function fetchSubitemBoardInfo(): Promise<{
     let dateColumnId: string | null = null;
     let assigneeColumnId: string | null = null;
     let assigneeOptions: string[] = [];
+    let notesColumnId: string | null = null;
 
     for (const col of cols) {
       if ((col.type === 'color' || col.type === 'status') && !statusColumnId) {
@@ -916,6 +919,10 @@ export async function fetchSubitemBoardInfo(): Promise<{
       }
       if (col.type === 'date' && !dateColumnId) {
         dateColumnId = col.id;
+      }
+      // First long_text column is the task's description/notes ("Notes").
+      if (col.type === 'long_text' && !notesColumnId) {
+        notesColumnId = col.id;
       }
       // The "Assigned" column is a dropdown of emails. Match by title so a
       // future rename to "Assignee" or "Assigned To" still resolves; first
@@ -935,10 +942,10 @@ export async function fetchSubitemBoardInfo(): Promise<{
         }
       }
     }
-    return { boardId, statusColumnId, statusOptions, dateColumnId, assigneeColumnId, assigneeOptions };
+    return { boardId, statusColumnId, statusOptions, dateColumnId, assigneeColumnId, assigneeOptions, notesColumnId };
   }
 
-  return { boardId: null, statusColumnId: null, statusOptions: [], dateColumnId: null, assigneeColumnId: null, assigneeOptions: [] };
+  return { boardId: null, statusColumnId: null, statusOptions: [], dateColumnId: null, assigneeColumnId: null, assigneeOptions: [], notesColumnId: null };
 }
 
 // ─── Update an existing subitem ───────────────────────────────────────────────
@@ -960,12 +967,13 @@ export async function updateSubitem(
      */
     assignees?: string[];
     /**
-     * Optional Monday "update" (post) to attach to the subitem. We don't
-     * edit existing updates — each non-empty string posts a fresh update,
-     * which is how Monday's UI surfaces note history. Empty / whitespace
-     * strings are ignored.
+     * The task's description/notes. When notesColumnId is supplied it's
+     * written to that long_text column (persisted, editable). Without a
+     * column id it falls back to posting a Monday update (legacy behavior).
      */
     notes?: string;
+    /** long_text column the notes save into (from board-info). */
+    notesColumnId?: string;
   }
 ): Promise<void> {
   // Rename if name provided
@@ -991,6 +999,11 @@ export async function updateSubitem(
       .filter(Boolean);
     colObj[opts.assigneeColumnId] = labels.length > 0 ? { labels } : { labels: [] };
   }
+  // Description/notes → long_text column (overwrite; empty string clears it).
+  // long_text takes the { text } object form.
+  if (opts.notesColumnId && opts.notes !== undefined) {
+    colObj[opts.notesColumnId] = { text: opts.notes.trim() };
+  }
   if (Object.keys(colObj).length) {
     const colValuesStr = JSON.stringify(JSON.stringify(colObj));
     // create_labels_if_missing: lets the UI add a new teammate by typing
@@ -1000,9 +1013,9 @@ export async function updateSubitem(
     }`);
   }
 
-  // Post a Monday update (comment-style) when notes are present. Same
-  // approach createSubitem uses — additive, never overwrites prior notes.
-  if (opts.notes?.trim()) {
+  // Fallback for callers without a notes column id: post the notes as a Monday
+  // update (legacy behavior) so the text isn't lost.
+  if (opts.notes?.trim() && !opts.notesColumnId) {
     try {
       const safeBody = opts.notes.trim().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
       await mondayQuery(`mutation {
@@ -1022,6 +1035,8 @@ export async function createSubitem(
     dateColumnId?: string;
     dueDate?: string;
     notes?: string;
+    /** long_text column the description/notes save into (from board-info). */
+    notesColumnId?: string;
     assigneeColumnId?: string;
     assignees?: string[];
   }
@@ -1033,6 +1048,10 @@ export async function createSubitem(
     const labels = opts.assignees.map(e => (e ?? '').trim().toLowerCase()).filter(Boolean);
     if (labels.length > 0) colObj[opts.assigneeColumnId] = { labels };
   }
+  // Description/notes → the long_text column so it PERSISTS (the old code
+  // posted it as a throwaway Monday update, which is why it "wasn't saved").
+  // long_text takes the { text } object form.
+  if (opts?.notesColumnId && opts.notes?.trim()) colObj[opts.notesColumnId] = { text: opts.notes.trim() };
 
   const colValuesStr = Object.keys(colObj).length
     ? JSON.stringify(JSON.stringify(colObj))   // double-encoded for inline GraphQL string
@@ -1048,6 +1067,7 @@ export async function createSubitem(
     ) {
       id
       name
+      created_at
       column_values { id text type value }
     }
   }`;
@@ -1058,6 +1078,7 @@ export async function createSubitem(
   let assignee = '';
   let assigneeEmails: string[] = [];
   let dueDate = '';
+  let notes = '';
   for (const cv of sub.column_values) {
     if ((cv.type === 'color' || cv.type === 'status') && !status && cv.text) status = cv.text;
     if ((cv.type === 'multiple-person' || cv.type === 'people' || cv.id === 'person') && !assignee && cv.text) assignee = cv.text;
@@ -1070,11 +1091,13 @@ export async function createSubitem(
     if ((cv.type === 'date' || cv.id.startsWith('date')) && !dueDate && cv.value) {
       try { dueDate = JSON.parse(cv.value).date || ''; } catch { /* ignore */ }
     }
+    if (cv.type === 'long_text' && !notes && cv.text) notes = cv.text;
   }
-  const result: SubItem = { id: sub.id, name: sub.name, status, assignee, assigneeEmails, dueDate, parentItemId, parentItemName: '' };
+  if (!notes && opts?.notes?.trim()) notes = opts.notes.trim();
 
-  // Post notes as a Monday.com update on the new subitem
-  if (opts?.notes?.trim()) {
+  // Fallback for callers that didn't supply the notes column id: preserve the
+  // old behavior and post the description as a Monday update so it isn't lost.
+  if (opts?.notes?.trim() && !opts?.notesColumnId) {
     try {
       const safeBody = opts.notes.trim().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
       await mondayQuery(`mutation {
@@ -1083,7 +1106,18 @@ export async function createSubitem(
     } catch { /* non-fatal */ }
   }
 
-  return result;
+  return {
+    id: sub.id,
+    name: sub.name,
+    status,
+    assignee,
+    assigneeEmails,
+    dueDate,
+    notes,
+    createdAt: sub.created_at || '',
+    parentItemId,
+    parentItemName: '',
+  };
 }
 
 // ─── Fetch subitems for a single onboarding item ─────────────────────────────
@@ -1093,6 +1127,7 @@ export async function fetchSubitems(onboardingItemId: string): Promise<SubItem[]
       subitems {
         id
         name
+        created_at
         column_values {
           id
           text
@@ -1105,11 +1140,12 @@ export async function fetchSubitems(onboardingItemId: string): Promise<SubItem[]
   const data = await mondayQuery(query);
   const raw = data.items?.[0]?.subitems ?? [];
 
-  return raw.map((sub: { id: string; name: string; column_values: { id: string; text: string | null; value: string | null; type: string }[] }) => {
+  return raw.map((sub: { id: string; name: string; created_at?: string; column_values: { id: string; text: string | null; value: string | null; type: string }[] }) => {
     let status = '';
     let assignee = '';
     let assigneeEmails: string[] = [];
     let dueDate = '';
+    let notes = '';
 
     for (const cv of sub.column_values) {
       // Status columns
@@ -1131,6 +1167,8 @@ export async function fetchSubitems(onboardingItemId: string): Promise<SubItem[]
           try { dueDate = JSON.parse(cv.value).date || ''; } catch { /* ignore */ }
         }
       }
+      // Description/notes (long_text "Notes" column)
+      if (cv.type === 'long_text' && !notes && cv.text) notes = cv.text;
     }
 
     return {
@@ -1140,6 +1178,8 @@ export async function fetchSubitems(onboardingItemId: string): Promise<SubItem[]
       assignee,
       assigneeEmails,
       dueDate,
+      notes,
+      createdAt: sub.created_at || '',
       parentItemId: onboardingItemId,
       parentItemName: '', // filled by caller if needed
     } satisfies SubItem;
@@ -1162,6 +1202,7 @@ export async function fetchAllSubitems(): Promise<SubItem[]> {
               subitems {
                 id
                 name
+                created_at
                 column_values { id text value type }
               }
             }
@@ -1177,6 +1218,7 @@ export async function fetchAllSubitems(): Promise<SubItem[]> {
                 subitems {
                   id
                   name
+                  created_at
                   column_values { id text value type }
                 }
               }
@@ -1186,7 +1228,7 @@ export async function fetchAllSubitems(): Promise<SubItem[]> {
 
     const variables = cursor ? { cursor } : undefined;
     const data = await mondayQuery(query, variables);
-    type SubRaw = { id: string; name: string; column_values: { id: string; text: string | null; value: string | null; type: string }[] };
+    type SubRaw = { id: string; name: string; created_at?: string; column_values: { id: string; text: string | null; value: string | null; type: string }[] };
     type ParentRaw = { id: string; name: string; subitems: SubRaw[] };
     const page: { cursor: string | null; items: ParentRaw[] } = cursor
       ? data.next_items_page
@@ -1198,6 +1240,7 @@ export async function fetchAllSubitems(): Promise<SubItem[]> {
         let assignee = '';
         let assigneeEmails: string[] = [];
         let dueDate = '';
+        let notes = '';
 
         for (const cv of sub.column_values) {
           if ((cv.type === 'color' || cv.type === 'status') && !status && cv.text) status = cv.text;
@@ -1209,6 +1252,7 @@ export async function fetchAllSubitems(): Promise<SubItem[]> {
           if ((cv.type === 'date' || cv.id.startsWith('date')) && !dueDate && cv.value) {
             try { dueDate = JSON.parse(cv.value).date || ''; } catch { /* ignore */ }
           }
+          if (cv.type === 'long_text' && !notes && cv.text) notes = cv.text;
         }
 
         allSubitems.push({
@@ -1218,6 +1262,8 @@ export async function fetchAllSubitems(): Promise<SubItem[]> {
           assignee,
           assigneeEmails,
           dueDate,
+          notes,
+          createdAt: sub.created_at || '',
           parentItemId: parent.id,
           parentItemName: parent.name,
         });

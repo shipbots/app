@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
       dateColumnId?: string;
       dueDate?: string;
       notes?: string;
+      notesColumnId?: string;
       assigneeColumnId?: string;
       assignees?: string[];
     };
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest) {
       dateColumnId: body.dateColumnId,
       dueDate: body.dueDate,
       notes: body.notes,
+      notesColumnId: body.notesColumnId,
       assigneeColumnId: body.assigneeColumnId,
       assignees: body.assignees,
     });
