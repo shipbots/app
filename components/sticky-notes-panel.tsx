@@ -16,7 +16,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, X, GripVertical, StickyNote, Clock, Wrench, Copy, Check, Loader2 } from 'lucide-react';
+import { Plus, X, GripVertical, StickyNote, Clock, Wrench, Copy, Check, Loader2, Maximize2 } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { useSession } from 'next-auth/react';
 import { firstNameFromEmail } from '@/lib/agent-name';
 
@@ -43,6 +44,10 @@ export type StickyNote = {
   color: NoteColor;
   x: number;
   y: number;
+  // v3: per-note size (resizable). Optional — notes saved before this default
+  // to NOTE_W × NOTE_H.
+  w?: number;
+  h?: number;
   // v2: provenance + lifecycle. All optional so notes saved before this
   // version still load without losing data.
   createdAt?: string;     // ISO timestamp of when the note was first added
@@ -150,10 +155,15 @@ function StickyCard({
 }) {
   const [colorOpen, setColorOpen] = useState(false);
   const [expiryOpen, setExpiryOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number } | null>(null);
+  const [resizeStart, setResizeStart] = useState<{ mx: number; my: number; w: number; h: number } | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const expiryRef = useRef<HTMLDivElement>(null);
   const styles = COLOR_STYLES[note.color];
+  // Effective size — falls back to the default for notes saved before resizing.
+  const noteW = note.w ?? NOTE_W;
+  const noteH = note.h ?? NOTE_H;
   const dateLabel = shortDate(note.createdAt);
   const initials = authorLabel(note.authorEmail);
 
@@ -188,8 +198,8 @@ function StickyCard({
       const rect = container.getBoundingClientRect();
       let x = e.clientX - rect.left - dragOffset.dx;
       let y = e.clientY - rect.top - dragOffset.dy;
-      x = Math.max(0, Math.min(x, rect.width - NOTE_W));
-      y = Math.max(0, Math.min(y, rect.height - NOTE_H));
+      x = Math.max(0, Math.min(x, rect.width - noteW));
+      y = Math.max(0, Math.min(y, rect.height - noteH));
       onChange({ ...note, x, y });
     };
     const onUp = () => setDragOffset(null);
@@ -199,7 +209,37 @@ function StickyCard({
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
     };
-  }, [dragOffset, note, containerRef, onChange]);
+  }, [dragOffset, note, containerRef, onChange, noteW, noteH]);
+
+  // Resize by dragging the bottom-right grip. Clamped to a sane min/max and to
+  // the container's right/bottom edges so a note can't run off the pane.
+  const onMouseDownResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizeStart({ mx: e.clientX, my: e.clientY, w: noteW, h: noteH });
+  };
+  useEffect(() => {
+    if (!resizeStart) return;
+    const onMove = (e: MouseEvent) => {
+      let w = resizeStart.w + (e.clientX - resizeStart.mx);
+      let h = resizeStart.h + (e.clientY - resizeStart.my);
+      w = Math.max(140, Math.min(w, 520));
+      h = Math.max(110, Math.min(h, 520));
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        w = Math.min(w, rect.width - note.x);
+        h = Math.min(h, rect.height - note.y);
+      }
+      onChange({ ...note, w: Math.round(w), h: Math.round(h) });
+    };
+    const onUp = () => setResizeStart(null);
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+  }, [resizeStart, note, containerRef, onChange]);
 
   return (
     <div
@@ -208,12 +248,12 @@ function StickyCard({
       style={{
         left: note.x,
         top: note.y,
-        width: NOTE_W,
-        height: NOTE_H,
+        width: noteW,
+        height: noteH,
         backgroundColor: styles.bg,
         border: `1px solid ${styles.border}`,
         cursor: dragOffset ? 'grabbing' : 'default',
-        zIndex: dragOffset ? 30 : 10,
+        zIndex: dragOffset || resizeStart ? 30 : 10,
       }}
     >
       {/* Top header: grip · date · initials · delete. Stays compact so the
@@ -237,14 +277,25 @@ function StickyCard({
             {initials && <span>{initials}</span>}
           </div>
         )}
-        <button
-          type="button"
-          onClick={onDelete}
-          title="Delete note"
-          className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-black/10 transition-opacity"
-        >
-          <X className="w-3 h-3" style={{ color: styles.accent }} />
-        </button>
+        <div className="flex items-center">
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            title="Expand note"
+            aria-label="Expand note"
+            className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-black/10 transition-opacity"
+          >
+            <Maximize2 className="w-3 h-3" style={{ color: styles.accent }} />
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            title="Delete note"
+            className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-black/10 transition-opacity"
+          >
+            <X className="w-3 h-3" style={{ color: styles.accent }} />
+          </button>
+        </div>
       </div>
 
       {/* Text — autosize-ish textarea */}
@@ -357,6 +408,63 @@ function StickyCard({
           )}
         </div>
       </div>
+
+      {/* Resize grip — drag the bottom-right corner to make the note wider or
+          taller. Only visible on hover so it doesn't clutter the card. */}
+      <div
+        onMouseDown={onMouseDownResize}
+        title="Drag to resize"
+        className="absolute bottom-0 right-0 w-3.5 h-3.5 cursor-nwse-resize opacity-0 group-hover:opacity-70 transition-opacity"
+        style={{ zIndex: 25 }}
+      >
+        <svg viewBox="0 0 10 10" className="w-full h-full" aria-hidden="true" style={{ color: styles.accent }}>
+          <path d="M9.5 2.5 L2.5 9.5 M9.5 6 L6 9.5" stroke="currentColor" strokeWidth="1.1" fill="none" strokeLinecap="round" />
+        </svg>
+      </div>
+
+      {/* Expanded view — the full note in a centered modal so long notes are
+          readable/editable without resizing the card. */}
+      {expanded && createPortal(
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4"
+          onMouseDown={() => setExpanded(false)}
+        >
+          <div
+            className="w-full max-w-lg max-h-[80vh] rounded-xl shadow-2xl flex flex-col overflow-hidden"
+            style={{ backgroundColor: styles.bg, border: `1px solid ${styles.border}` }}
+            onMouseDown={e => e.stopPropagation()}
+          >
+            <div
+              className="flex items-center justify-between gap-2 px-4 py-2.5 border-b"
+              style={{ borderColor: styles.border, color: styles.accent }}
+            >
+              <span className="text-[11px] font-semibold uppercase tracking-wider opacity-80 truncate">
+                {fullDate(note.createdAt) || 'Note'}
+                {note.authorEmail ? ` · ${authorLabel(note.authorEmail)}` : ''}
+                {note.expiresAt ? ` · auto-deletes ${fullDate(note.expiresAt)}` : ''}
+              </span>
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                title="Close"
+                className="p-1 rounded hover:bg-black/10 flex-shrink-0"
+              >
+                <X className="w-4 h-4" style={{ color: styles.accent }} />
+              </button>
+            </div>
+            <textarea
+              value={note.text}
+              onChange={e => onChange({ ...note, text: e.target.value })}
+              placeholder="Write a note…"
+              spellCheck
+              autoFocus
+              className="flex-1 min-h-[240px] bg-transparent text-sm p-4 resize-none focus:outline-none placeholder:italic"
+              style={{ color: styles.accent }}
+            />
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
