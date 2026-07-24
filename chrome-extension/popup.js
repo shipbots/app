@@ -1192,79 +1192,72 @@ function renderDocsList(items, clientBoardItemId) {
 
 async function loadClientDocs(sectionsEl, beforeNode, clientBoardItemId, fieldSections) {
   if (!clientBoardItemId || !sectionsEl) return;
-  try {
-    const base = await getBaseUrl();
-    const enc = encodeURIComponent(clientBoardItemId);
-    // Files can 503 (storage unconfigured) independently of links;
-    // links soft-fail to [] so a docs-column hiccup doesn't hide files.
-    const [fileRes, links] = await Promise.all([
-      fetch(`${base}/api/client/${enc}/section-files/all`, { credentials: 'include' }),
-      fetch(`${base}/api/documents/${enc}`, { credentials: 'include' })
-        .then(r => r.ok ? r.json() : [])
-        .catch(() => []),
-    ]);
-    if (fileRes.status === 401) { console.warn('[client-docs] 401 on section-files — not signed in'); return; }
-    const files = fileRes.ok ? await fileRes.json() : [];
-    // Diagnostic: surfaces base URL, client id, endpoint statuses, and counts so
-    // a "no documents" report can be pinpointed from the popup console.
-    console.log('[client-docs] fetch', {
-      base,
-      clientBoardItemId,
-      sectionFilesStatus: fileRes.status,
-      files: Array.isArray(files) ? files.length : `not-array(${typeof files})`,
-      links: Array.isArray(links) ? links.length : `not-array(${typeof links})`,
-      firstFileCat: Array.isArray(files) && files[0] ? files[0].category : null,
-      firstLinkCat: Array.isArray(links) && links[0] ? links[0].category : null,
-    });
+  const base = await getBaseUrl();
+  const enc = encodeURIComponent(clientBoardItemId);
+  // Both endpoints soft-fail to [] — one failing (or a redirect/network error)
+  // must never throw out of the loader or hide the other's docs.
+  const safeJson = p => p
+    .then(r => (r && r.ok ? r.json() : []))
+    .then(d => (Array.isArray(d) ? d : []))
+    .catch(() => []);
+  const [files, links] = await Promise.all([
+    safeJson(fetch(`${base}/api/client/${enc}/section-files/all`, { credentials: 'include' })),
+    safeJson(fetch(`${base}/api/documents/${enc}`, { credentials: 'include' })),
+  ]);
+  console.log('[client-docs] fetch', {
+    base, clientBoardItemId, files: files.length, links: links.length,
+    firstFileCat: files[0] ? files[0].category : null,
+    firstLinkCat: links[0] ? links[0].category : null,
+  });
 
-    // Bucket everything by category. Files default to 'documents';
-    // links only count as section docs when they carry a known
-    // section category (Docs-tab links stay general).
-    const byCat = { documents: [], receiving: [], packing: [], returns: [] };
-    for (const f of Array.isArray(files) ? files : []) {
-      const cat = SECTION_DOC_CATEGORIES.has(f?.category) ? f.category : 'documents';
-      byCat[cat].push({ name: f.name, url: f.url, kind: 'file', assetId: f.assetId });
-    }
-    for (const l of Array.isArray(links) ? links : []) {
-      const cat = SECTION_DOC_CATEGORIES.has(l?.category) ? l.category : 'documents';
-      byCat[cat].push({ name: l.name, url: l.url, kind: 'link' });
-    }
-    console.log('[client-docs] byCat', {
-      documents: byCat.documents.length, receiving: byCat.receiving.length,
-      packing: byCat.packing.length, returns: byCat.returns.length,
-      sectionIds: Array.isArray(fieldSections) ? fieldSections.map(f => f.section.id) : null,
-    });
+  // Bucket by category. Files default to 'documents'; links count as section
+  // docs only when they carry a known section category.
+  const byCat = { documents: [], receiving: [], packing: [], returns: [] };
+  for (const f of files) {
+    const cat = SECTION_DOC_CATEGORIES.has(f?.category) ? f.category : 'documents';
+    byCat[cat].push({ name: f.name, url: f.url, kind: 'file', assetId: f.assetId });
+  }
+  for (const l of links) {
+    const cat = SECTION_DOC_CATEGORIES.has(l?.category) ? l.category : 'documents';
+    byCat[cat].push({ name: l.name, url: l.url, kind: 'link' });
+  }
+  console.log('[client-docs] byCat', {
+    documents: byCat.documents.length, receiving: byCat.receiving.length,
+    packing: byCat.packing.length, returns: byCat.returns.length,
+  });
 
-    // Per-section docs render directly UNDER the section header (between the
-    // header and the collapsible field body) so they stay visible even when
-    // the fields are collapsed, and survive the Edit-mode re-render (which only
-    // rewrites the field body). A 📎 badge on the header shows the count too.
-    if (Array.isArray(fieldSections)) {
-      for (const { section, wrap: sectionWrap } of fieldSections) {
+  // Per-section docs render right under the section header. header.after() is
+  // used (not insertBefore against a queried body) so a stale/mismatched
+  // reference node can't throw a NotFoundError. Each section is isolated so one
+  // failure can't abort the rest.
+  if (Array.isArray(fieldSections)) {
+    for (const { section, wrap: sectionWrap } of fieldSections) {
+      try {
         const items = SECTION_DOC_CATEGORIES.has(section.id) ? byCat[section.id] : [];
         if (!items.length) continue;
         stampAttachmentBadge(sectionWrap, items.length);
-        const sectionBody = sectionWrap.querySelector('.detail-section-body');
         const holder = document.createElement('div');
         holder.className = 'detail-docs-inline';
         holder.appendChild(renderDocsList(items, clientBoardItemId));
-        if (sectionBody) sectionWrap.insertBefore(holder, sectionBody);
+        const header = sectionWrap.querySelector('.detail-section-header');
+        if (header && typeof header.after === 'function') header.after(holder);
         else sectionWrap.appendChild(holder);
-        // Auto-open the section so its documents are visible on load.
         if (typeof sectionWrap._expand === 'function') sectionWrap._expand();
+      } catch (e) {
+        console.error('[client-docs] inject failed', section && section.id, e && e.name, e && e.message);
       }
     }
+  }
 
-    // Top "Documents" section — built ONLY when there are general /
-    // uncategorized docs, so nothing flashes when there are none.
-    const general = byCat.documents;
-    if (general.length) {
-      const topWrap = buildDocumentsSection(general, clientBoardItemId);
-      sectionsEl.insertBefore(topWrap, beforeNode || null);
+  // Top "Documents" section — general / uncategorized docs only.
+  if (byCat.documents.length) {
+    try {
+      const topWrap = buildDocumentsSection(byCat.documents, clientBoardItemId);
+      if (beforeNode && beforeNode.parentNode === sectionsEl) sectionsEl.insertBefore(topWrap, beforeNode);
+      else sectionsEl.appendChild(topWrap);
+    } catch (e) {
+      console.error('[client-docs] top-docs failed', e && e.name, e && e.message);
     }
-  } catch (err) {
-    console.error('[client-docs] load failed', err);
-    // Silent fail — read-only surface. The dashboard covers the case.
   }
 }
 
