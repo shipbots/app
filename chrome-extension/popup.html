@@ -98,6 +98,7 @@
         <p class="detail-name">My Tasks</p>
         <p id="tasks-view-meta" class="detail-meta"></p>
       </div>
+      <span id="tasks-updating" class="view-updating" hidden>Updating…</span>
       <div class="tv-toggle" role="tablist" aria-label="Filter tasks">
         <button id="tasks-tab-open" class="tv-toggle-btn is-active" type="button" role="tab">Outstanding</button>
         <button id="tasks-tab-done" class="tv-toggle-btn" type="button" role="tab">Done</button>
@@ -107,19 +108,31 @@
     <div id="tasks-view-list" class="projects-view-list"></div>
   </section>
 
-  <!-- Calendar view: opened from the "Calendar" quick-launch button. A compact
-       agenda of upcoming onboarding calls + estimated / actual deliveries,
-       with past-due deliveries surfaced first. Rows open the client. -->
-  <section id="calendar-view" class="projects-view" tabindex="-1" hidden>
+  <!-- Calendar view: opened from the "Calendar" quick-launch button. A month
+       grid (like the CS app) of onboarding calls + estimated / actual
+       deliveries. Event chips open the client. Data is cached + revalidated. -->
+  <section id="calendar-view" class="projects-view calendar-view" tabindex="-1" hidden>
     <div class="detail-header">
       <button id="calendar-back" class="detail-back" type="button" aria-label="Back to search">←</button>
       <div class="detail-title">
         <p class="detail-name">Calendar</p>
         <p id="calendar-view-meta" class="detail-meta"></p>
       </div>
+      <span id="calendar-updating" class="view-updating" hidden>Updating…</span>
     </div>
     <div id="calendar-view-status" class="detail-status" hidden></div>
-    <div id="calendar-view-list" class="projects-view-list"></div>
+    <div class="cal-nav">
+      <button id="cal-today" class="cal-today-btn" type="button">Today</button>
+      <button id="cal-prev" class="cal-arrow" type="button" aria-label="Previous month">‹</button>
+      <button id="cal-next" class="cal-arrow" type="button" aria-label="Next month">›</button>
+      <span id="cal-label" class="cal-label"></span>
+      <span class="cal-legend">
+        <span class="cal-legend-item"><i class="cal-dot kickoff"></i>Call</span>
+        <span class="cal-legend-item"><i class="cal-dot delivery"></i>Delivery</span>
+        <span class="cal-legend-item"><i class="cal-dot delivered"></i>Delivered</span>
+      </span>
+    </div>
+    <div id="calendar-grid" class="cal-grid-wrap"></div>
   </section>
 
   <main id="search-view" class="body">

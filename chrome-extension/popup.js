@@ -1954,6 +1954,91 @@ function setTasksFilterMode(mode) {
   renderMyTasks();
 }
 
+// ── View data cache + background refresh (Tasks + Calendar) ─────────────────
+// Both views pull from Monday via the Vercel API, which can take several
+// seconds. Stash the last successful payload in chrome.storage.local and paint
+// it instantly on open, then refresh in the background (stale-while-revalidate)
+// — same deal as the client index. Prewarmed on popup launch so the first click
+// is instant. In-flight promises are shared so the launch prewarm and a click
+// never double-fetch.
+const TASKS_CACHE_KEY = 'tasksCacheV1';
+const CALENDAR_CACHE_KEY = 'calendarCacheV1';
+
+function readViewCache(key) {
+  return new Promise(resolve => {
+    try {
+      chrome.storage.local.get([key], result => {
+        if (chrome.runtime.lastError) { resolve(null); return; }
+        resolve((result && result[key]) || null);
+      });
+    } catch { resolve(null); }
+  });
+}
+function writeViewCache(key, data) {
+  try { chrome.storage.local.set({ [key]: { at: Date.now(), data } }); } catch { /* ignore */ }
+}
+
+// Toggles the small "Updating…" pill in a view header while a refresh runs.
+function setViewUpdating(which, on) {
+  const el = document.getElementById(which === 'tasks' ? 'tasks-updating' : 'calendar-updating');
+  if (el) el.hidden = !on;
+}
+
+let tasksRefreshInFlight = null;
+function refreshTasksData() {
+  if (tasksRefreshInFlight) return tasksRefreshInFlight;
+  tasksRefreshInFlight = (async () => {
+    try {
+      const [subitems, email] = await Promise.all([fetchAllSubitems(), fetchCurrentUserEmail()]);
+      const boardInfo = await fetchSubitemBoardInfo();
+      writeViewCache(TASKS_CACHE_KEY, { subitems, boardInfo, email });
+      return { subitems, boardInfo, email };
+    } finally { tasksRefreshInFlight = null; }
+  })();
+  return tasksRefreshInFlight;
+}
+
+let calendarRefreshInFlight = null;
+function refreshCalendarData() {
+  if (calendarRefreshInFlight) return calendarRefreshInFlight;
+  calendarRefreshInFlight = (async () => {
+    try {
+      const items = await fetchOnboardingItems();
+      writeViewCache(CALENDAR_CACHE_KEY, items);
+      return items;
+    } finally { calendarRefreshInFlight = null; }
+  })();
+  return calendarRefreshInFlight;
+}
+
+// Fetch both datasets in the background right after the popup opens so the
+// caches are warm ("update in the background as soon as the extension launches").
+function prewarmViewCaches() {
+  refreshTasksData()
+    .then(({ subitems, boardInfo, email }) => {
+      const tv = document.getElementById('tasks-view');
+      if (tv && !tv.hidden && email) { applyTasksData(subitems, boardInfo, email); setViewUpdating('tasks', false); }
+    })
+    .catch(() => {});
+  refreshCalendarData()
+    .then(items => {
+      const cv = document.getElementById('calendar-view');
+      if (cv && !cv.hidden) { calendarItems = items; renderCalendarMonth(); setViewUpdating('calendar', false); }
+    })
+    .catch(() => {});
+}
+
+// Filter a raw subitem list to the signed-in user's tasks and render them.
+function applyTasksData(subitems, boardInfo, email) {
+  if (boardInfo) tasksBoardInfo = boardInfo;
+  const em = String(email || '').toLowerCase();
+  myTasksCache = (Array.isArray(subitems) ? subitems : []).filter(t => {
+    const emails = Array.isArray(t.assigneeEmails) ? t.assigneeEmails : [];
+    return emails.some(e => String(e).toLowerCase() === em) || String(t.assignee || '').toLowerCase().includes(em);
+  });
+  renderMyTasks();
+}
+
 async function showTasksView() {
   const searchView = document.getElementById('search-view');
   const detailView = document.getElementById('client-detail');
@@ -1968,36 +2053,45 @@ async function showTasksView() {
 
   const backBtn = document.getElementById('tasks-back');
   (backBtn || tasksView).focus({ preventScroll: true });
-  document.body.classList.remove('detail-open');
+  document.body.classList.remove('detail-open', 'calendar-open');
   document.body.classList.add('projects-open');
 
   setTasksFilterMode('open');
   const list = document.getElementById('tasks-view-list');
-  if (list) list.innerHTML = '';
-  showTasksViewStatus('Loading your tasks…', false);
 
-  try {
-    const [subitems, myEmail] = await Promise.all([fetchAllSubitems(), fetchCurrentUserEmail()]);
-    await fetchSubitemBoardInfo();     // best-effort → enables the Done button
+  // 1. Instant paint from the cached payload (previous session or prewarm).
+  const cached = await readViewCache(TASKS_CACHE_KEY);
+  let painted = false;
+  if (cached && cached.data && cached.data.email) {
+    applyTasksData(cached.data.subitems, cached.data.boardInfo, cached.data.email);
     showTasksViewStatus('', false);
+    setViewUpdating('tasks', true);
+    painted = true;
+  } else {
+    if (list) list.innerHTML = '';
+    showTasksViewStatus('Loading your tasks…', false);
+  }
 
-    const email = String(myEmail || '').toLowerCase();
+  // 2. Background refresh (shared with the launch prewarm — no double fetch).
+  try {
+    const { subitems, boardInfo, email } = await refreshTasksData();
+    setViewUpdating('tasks', false);
     if (!email) {
-      showTasksViewStatus('Sign in to the dashboard first, then reopen this popup.', true);
+      if (!painted) showTasksViewStatus('Sign in to the dashboard first, then reopen this popup.', true);
       return;
     }
-    myTasksCache = subitems.filter(t => {
-      const emails = Array.isArray(t.assigneeEmails) ? t.assigneeEmails : [];
-      return emails.some(e => String(e).toLowerCase() === email)
-        || String(t.assignee || '').toLowerCase().includes(email);
-    });
     locallyCompletedTaskIds.clear();
-    renderMyTasks();
+    applyTasksData(subitems, boardInfo, email);
+    showTasksViewStatus('', false);
   } catch (err) {
-    if (err.code === 'unauthorized') {
-      showTasksViewStatus('Sign in to the dashboard first, then reopen this popup.', true);
-    } else {
-      showTasksViewStatus(`Couldn't load tasks (${err.message || 'network error'}).`, true);
+    setViewUpdating('tasks', false);
+    if (!painted) {
+      showTasksViewStatus(
+        err.code === 'unauthorized'
+          ? 'Sign in to the dashboard first, then reopen this popup.'
+          : `Couldn't load tasks (${err.message || 'network error'}).`,
+        true,
+      );
     }
   }
 }
@@ -2036,97 +2130,135 @@ function buildCalendarEvents(items) {
   return events;
 }
 
-function calBadgeEl(kind) {
-  const b = document.createElement('span');
-  b.className = 'cal-badge';
-  if (kind === 'kickoff') { b.classList.add('kickoff'); b.textContent = 'Call'; }
-  else if (kind === 'delivered') { b.classList.add('delivered'); b.textContent = 'Delivered'; }
-  else if (kind === 'overdue') { b.classList.add('overdue'); b.textContent = 'Past-due'; }
-  else { b.classList.add('delivery'); b.textContent = 'Delivery'; }
-  return b;
+// ── Month calendar grid (mirrors the CS app's month view) ───────────────────
+const CAL_WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const CAL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+let calendarItems = [];   // cached onboarding items backing the grid
+let calViewYear = null;   // month currently displayed
+let calViewMonth = null;
+
+// Monday of the week containing the 1st — the grid's top-left cell.
+function startOfMonthGrid(year, month) {
+  const first = new Date(year, month, 1);
+  const dow = first.getDay(); // 0=Sun
+  const start = new Date(first);
+  start.setDate(first.getDate() - (dow === 0 ? 6 : dow - 1));
+  return start;
+}
+function ymdOf(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function eventsByDate(items) {
+  const map = {};
+  for (const ev of buildCalendarEvents(items)) (map[ev.date] = map[ev.date] || []).push(ev);
+  return map;
 }
 
-function calRowEl(ev, overdue) {
-  const row = document.createElement('div');
-  row.className = 'pv-row';
-  row.title = 'Open this client in the dashboard';
-  row.addEventListener('click', () => {
+// One event pill inside a day cell. Colored by type; click opens the client.
+function calChip(ev, overdue) {
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = `cal-chip ${overdue ? 'overdue' : ev.type}`;
+  const t = formatTimeHM(ev.time);
+  const label = ev.item.name || '(unnamed)';
+  chip.textContent = t ? `${t} ${label}` : label;
+  const kind = ev.type === 'kickoff' ? 'Onboarding call'
+    : overdue ? 'Past-due delivery'
+    : ev.type === 'delivered' ? 'Delivered'
+    : 'Expected delivery';
+  chip.title = `${kind}: ${label}${t ? ' · ' + t : ''}`;
+  chip.addEventListener('click', e => {
+    e.stopPropagation();
     const cid = ev.item.clientBoardItemId;
     if (cid) void openPath(`/customer-service?clientId=${encodeURIComponent(cid)}&expanded=1`);
   });
-
-  row.appendChild(calBadgeEl(overdue ? 'overdue' : ev.type));
-
-  const name = document.createElement('span');
-  name.className = 'pv-row-name';
-  name.textContent = ev.item.name || '(unnamed)';
-  name.title = ev.item.name || '';
-  row.appendChild(name);
-
-  const t = formatTimeHM(ev.time);
-  if (t) {
-    const time = document.createElement('span');
-    time.className = 'cal-row-time';
-    time.textContent = t;
-    row.appendChild(time);
-  } else if (overdue) {
-    const exp = document.createElement('span');
-    exp.className = 'cal-row-time overdue';
-    exp.textContent = `Exp ${shortMonthDay(ev.date)}`;
-    row.appendChild(exp);
-  }
-  return row;
+  return chip;
 }
 
-function renderCalendarAgenda(items) {
-  const list = document.getElementById('calendar-view-list');
+function renderCalendarMonth() {
+  const grid = document.getElementById('calendar-grid');
+  const label = document.getElementById('cal-label');
   const metaEl = document.getElementById('calendar-view-meta');
-  if (!list) return;
-  list.innerHTML = '';
+  if (!grid) return;
+  if (calViewYear == null || calViewMonth == null) {
+    const now = new Date();
+    calViewYear = now.getFullYear();
+    calViewMonth = now.getMonth();
+  }
+  grid.innerHTML = '';
+  if (label) label.textContent = `${CAL_MONTHS[calViewMonth]} ${calViewYear}`;
 
-  const events = buildCalendarEvents(items);
+  const byDate = eventsByDate(calendarItems);
   const t = todayYMD();
-  const byDateTime = (a, b) => (a.date === b.date ? (a.time || '').localeCompare(b.time || '') : (a.date < b.date ? -1 : 1));
 
-  // Past-due: expected deliveries whose date passed with no Delivered Date yet.
-  const overdue = events.filter(e => e.type === 'delivery' && e.date < t).sort(byDateTime);
-  const upcoming = events.filter(e => e.date >= t).sort(byDateTime);
-
-  if (metaEl) metaEl.textContent = upcoming.length ? `${upcoming.length} upcoming` : '';
-
-  if (overdue.length === 0 && upcoming.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'projects-view-empty';
-    empty.textContent = 'No upcoming kickoffs or deliveries.';
-    list.appendChild(empty);
-    return;
+  // Weekday header row.
+  const head = document.createElement('div');
+  head.className = 'cal-grid cal-grid-head';
+  for (const wd of CAL_WEEKDAYS) {
+    const c = document.createElement('div');
+    c.className = 'cal-head-cell';
+    c.textContent = wd;
+    head.appendChild(c);
   }
+  grid.appendChild(head);
 
-  if (overdue.length) {
-    const lbl = document.createElement('div');
-    lbl.className = 'pv-group-label overdue';
-    lbl.textContent = `${overdue.length} past-due deliver${overdue.length === 1 ? 'y' : 'ies'}`;
-    list.appendChild(lbl);
-    overdue.forEach(ev => list.appendChild(calRowEl(ev, true)));
-  }
+  // 6-week day grid.
+  const daysWrap = document.createElement('div');
+  daysWrap.className = 'cal-grid cal-grid-days';
+  const start = startOfMonthGrid(calViewYear, calViewMonth);
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const ymd = ymdOf(d);
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell';
+    if (d.getMonth() !== calViewMonth) cell.classList.add('other-month');
+    if (ymd === t) cell.classList.add('today');
 
-  let lastDate = null;
-  for (const ev of upcoming) {
-    if (ev.date !== lastDate) {
-      lastDate = ev.date;
-      const lbl = document.createElement('div');
-      lbl.className = 'pv-group-label';
-      lbl.textContent = formatAgendaHeader(ev.date);
-      list.appendChild(lbl);
+    const num = document.createElement('span');
+    num.className = 'cal-cell-num';
+    num.textContent = String(d.getDate());
+    cell.appendChild(num);
+
+    const evs = (byDate[ymd] || []).slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+    const MAX = 3;
+    evs.slice(0, MAX).forEach(ev => cell.appendChild(calChip(ev, ev.type === 'delivery' && ymd < t)));
+    if (evs.length > MAX) {
+      const more = document.createElement('span');
+      more.className = 'cal-more';
+      more.textContent = `+${evs.length - MAX} more`;
+      cell.appendChild(more);
     }
-    list.appendChild(calRowEl(ev, false));
+    daysWrap.appendChild(cell);
   }
+  grid.appendChild(daysWrap);
+
+  if (metaEl) {
+    const total = buildCalendarEvents(calendarItems).length;
+    metaEl.textContent = total ? `${total} events` : '';
+  }
+}
+
+function calNavigate(delta) {
+  if (calViewYear == null) { const n = new Date(); calViewYear = n.getFullYear(); calViewMonth = n.getMonth(); }
+  let m = calViewMonth + delta, y = calViewYear;
+  if (m < 0) { m = 11; y -= 1; }
+  else if (m > 11) { m = 0; y += 1; }
+  calViewMonth = m; calViewYear = y;
+  renderCalendarMonth();
+}
+function calGoToday() {
+  const now = new Date();
+  calViewYear = now.getFullYear();
+  calViewMonth = now.getMonth();
+  renderCalendarMonth();
 }
 
 function backFromCalendar() {
   document.getElementById('calendar-view').hidden = true;
   document.getElementById('search-view').hidden = false;
-  document.body.classList.remove('projects-open');
+  document.body.classList.remove('projects-open', 'calendar-open');
   const input = document.getElementById('search-input');
   if (input) input.focus();
 }
@@ -2153,21 +2285,43 @@ async function showCalendarView() {
 
   const backBtn = document.getElementById('calendar-back');
   (backBtn || calendarView).focus({ preventScroll: true });
-  document.body.classList.remove('detail-open');
-  document.body.classList.add('projects-open');
+  document.body.classList.remove('detail-open', 'projects-open');
+  document.body.classList.add('calendar-open');
 
-  const list = document.getElementById('calendar-view-list');
-  if (list) list.innerHTML = '';
-  showCalendarViewStatus('Loading calendar…', false);
-  try {
-    const items = await fetchOnboardingItems();
+  // Always land on the current month.
+  const now = new Date();
+  calViewYear = now.getFullYear();
+  calViewMonth = now.getMonth();
+
+  // 1. Instant paint from the cached onboarding list (previous session/prewarm).
+  const cached = await readViewCache(CALENDAR_CACHE_KEY);
+  let painted = false;
+  if (cached && Array.isArray(cached.data)) {
+    calendarItems = cached.data;
+    renderCalendarMonth();
     showCalendarViewStatus('', false);
-    renderCalendarAgenda(items);
+    setViewUpdating('calendar', true);
+    painted = true;
+  } else {
+    showCalendarViewStatus('Loading calendar…', false);
+  }
+
+  // 2. Background refresh (shared with the launch prewarm).
+  try {
+    const items = await refreshCalendarData();
+    setViewUpdating('calendar', false);
+    calendarItems = items;
+    renderCalendarMonth();
+    showCalendarViewStatus('', false);
   } catch (err) {
-    if (err.code === 'unauthorized') {
-      showCalendarViewStatus('Sign in to the dashboard first, then reopen this popup.', true);
-    } else {
-      showCalendarViewStatus(`Couldn't load the calendar (${err.message || 'network error'}).`, true);
+    setViewUpdating('calendar', false);
+    if (!painted) {
+      showCalendarViewStatus(
+        err.code === 'unauthorized'
+          ? 'Sign in to the dashboard first, then reopen this popup.'
+          : `Couldn't load the calendar (${err.message || 'network error'}).`,
+        true,
+      );
     }
   }
 }
@@ -2653,6 +2807,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('projects-back').addEventListener('click', backFromProjects);
   document.getElementById('tasks-back').addEventListener('click', backFromTasks);
   document.getElementById('calendar-back').addEventListener('click', backFromCalendar);
+
+  // Calendar month navigation.
+  document.getElementById('cal-prev').addEventListener('click', () => calNavigate(-1));
+  document.getElementById('cal-next').addEventListener('click', () => calNavigate(1));
+  document.getElementById('cal-today').addEventListener('click', calGoToday);
+
+  // Warm the Tasks + Calendar caches in the background as soon as the popup
+  // opens, so those views paint instantly (and stay fresh) when clicked.
+  prewarmViewCaches();
 
   // Tasks Outstanding/Done toggle.
   document.getElementById('tasks-tab-open').addEventListener('click', () => setTasksFilterMode('open'));

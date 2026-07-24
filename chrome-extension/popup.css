@@ -1392,3 +1392,159 @@ body.projects-open {
 }
 .pc-btn-primary:hover { background: #013f63; }
 
+/* ── "Updating…" pill (stale-while-revalidate on Tasks + Calendar) ─────────── */
+.view-updating {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: #6b7280;
+  background: #f3f4f6;
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.view-updating[hidden] { display: none; }
+
+/* ── Month calendar (grid, like the CS app) ───────────────────────────────── */
+/* Wider popup so a 7-column month grid has room to breathe. */
+body.calendar-open { width: 760px; }
+.calendar-view { max-height: 620px; }
+
+.cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #eef0f2;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.cal-today-btn {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #374151;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background .12s;
+}
+.cal-today-btn:hover { background: #f9fafb; }
+.cal-arrow {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #374151;
+  font-size: 14px;
+  line-height: 1;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background .12s;
+}
+.cal-arrow:hover { background: #f9fafb; }
+.cal-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #111827;
+  min-width: 130px;
+}
+.cal-legend {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10px;
+  color: #6b7280;
+}
+.cal-legend-item { display: inline-flex; align-items: center; gap: 4px; }
+.cal-dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
+.cal-dot.kickoff   { background: #fb923c; }
+.cal-dot.delivery  { background: #43c7ff; }
+.cal-dot.delivered { background: #34d399; }
+
+.cal-grid-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.cal-grid-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+}
+.cal-head-cell {
+  text-align: center;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: #9ca3af;
+  padding: 6px 0;
+}
+.cal-grid-days { flex: 1; grid-auto-rows: minmax(66px, 1fr); }
+.cal-cell {
+  border-right: 1px solid #f1f2f4;
+  border-bottom: 1px solid #f1f2f4;
+  padding: 3px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+.cal-cell:nth-child(7n) { border-right: none; }
+.cal-cell.other-month { background: #fafafb; }
+.cal-cell.today { background: #f0fbff; }
+.cal-cell-num {
+  align-self: flex-end;
+  font-size: 10px;
+  font-weight: 700;
+  color: #6b7280;
+  line-height: 1;
+  padding: 1px 2px;
+}
+.cal-cell.other-month .cal-cell-num { color: #cbd5e1; }
+.cal-cell.today .cal-cell-num {
+  background: #0071bc;
+  color: #fff;
+  border-radius: 999px;
+  min-width: 15px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.cal-chip {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: 9px;
+  line-height: 1.35;
+  padding: 1px 4px;
+  border-radius: 3px;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: filter .1s;
+}
+.cal-chip:hover { filter: brightness(.95); }
+.cal-chip.kickoff   { background: #fff1e6; color: #c2410c; }
+.cal-chip.delivery  { background: #e6f8ff; color: #015280; }
+.cal-chip.delivered { background: #ecfdf5; color: #047857; }
+.cal-chip.overdue   { background: #fee2e2; color: #b91c1c; }
+.cal-more {
+  font-size: 9px;
+  color: #9ca3af;
+  padding: 0 4px;
+}
+
