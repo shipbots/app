@@ -17,7 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { canUseDocusign } from '@/lib/docusign-access';
-import { extractPricingFromPDF, type ExtractedPricingInfo } from '@/lib/billing-extraction';
+import { extractPricingFromPDF, AnthropicExtractionError, type ExtractedPricingInfo } from '@/lib/billing-extraction';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -156,7 +156,18 @@ export async function POST(
     extracted = await extractPricingFromPDF(base64);
   } catch (err) {
     console.error('[extract-pricing] extraction failed:', err);
-    return NextResponse.json({ error: 'Could not read pricing from the contract' }, { status: 502 });
+    // Surface the out-of-credits case so the UI can tell the user to top up the
+    // Anthropic account rather than showing a generic "extract failed".
+    if (err instanceof AnthropicExtractionError && err.billing) {
+      return NextResponse.json(
+        { error: 'AI extraction is unavailable — the ShipBots Anthropic API account is out of credits. Add credits in the Anthropic Console → Plans & Billing.', billing: true },
+        { status: 402 },
+      );
+    }
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Could not read pricing from the contract' },
+      { status: 502 },
+    );
   }
 
   // Write the non-empty fields to Monday (skip blanks so a re-extract never wipes

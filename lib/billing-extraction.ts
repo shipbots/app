@@ -4,6 +4,28 @@
  *   - /api/docusign/webhook              (auto-sync when envelope is completed)
  */
 
+/**
+ * Raised when the Anthropic API rejects an extraction request. Flags the
+ * out-of-credits case specifically so callers can surface an actionable
+ * "add credits" message instead of a generic failure.
+ */
+export class AnthropicExtractionError extends Error {
+  status: number;
+  billing: boolean;
+  constructor(status: number, body: string) {
+    const lower = (body || '').toLowerCase();
+    const billing = lower.includes('credit balance') || lower.includes('plans & billing') || lower.includes('purchase credits');
+    super(
+      billing
+        ? 'The ShipBots Anthropic API account is out of credits.'
+        : `Anthropic API error (${status}): ${(body || '').slice(0, 200)}`,
+    );
+    this.name = 'AnthropicExtractionError';
+    this.status = status;
+    this.billing = billing;
+  }
+}
+
 export interface ExtractedBillingInfo {
   legalEntity: string;
   ein: string;
@@ -67,8 +89,7 @@ export async function extractBillingFromPDF(base64: string): Promise<ExtractedBi
   });
 
   if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Anthropic API error (${res.status}): ${errText.slice(0, 300)}`);
+    throw new AnthropicExtractionError(res.status, await res.text());
   }
 
   const data = await res.json();
@@ -138,8 +159,7 @@ export async function extractACHFromFile(base64: string, mediaType: string): Pro
   });
 
   if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Anthropic API error (${res.status}): ${errText.slice(0, 300)}`);
+    throw new AnthropicExtractionError(res.status, await res.text());
   }
 
   const data = await res.json();
@@ -226,8 +246,7 @@ export async function extractPricingFromPDF(base64: string): Promise<ExtractedPr
   });
 
   if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Anthropic API error (${res.status}): ${errText.slice(0, 300)}`);
+    throw new AnthropicExtractionError(res.status, await res.text());
   }
 
   const data = await res.json();

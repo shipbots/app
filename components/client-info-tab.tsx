@@ -1787,7 +1787,7 @@ function ExtractFromDocusignButton({
 }: {
   hasFile: boolean;
   extracting: boolean;
-  flash: 'ok' | 'none' | 'nofile' | 'err' | null;
+  flash: 'ok' | 'none' | 'nofile' | 'err' | 'billing' | null;
   onClick: () => void;
 }) {
   return (
@@ -1796,6 +1796,14 @@ function ExtractFromDocusignButton({
       {flash === 'none' && <span className="text-[11px] text-gray-400">No pricing found</span>}
       {flash === 'nofile' && <span className="text-[11px] text-amber-600">No agreement on file</span>}
       {flash === 'err' && <span className="text-[11px] text-red-500">Extract failed</span>}
+      {flash === 'billing' && (
+        <span
+          className="text-[11px] text-red-500 font-medium"
+          title="The ShipBots Anthropic API account is out of credits. Add credits in the Anthropic Console → Plans & Billing."
+        >
+          Out of AI credits
+        </span>
+      )}
       <button
         type="button"
         onClick={onClick}
@@ -1894,7 +1902,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
   // the signed contract and writes the pricing columns server-side, then merges
   // the saved values into local state so the fields reflect them immediately.
   const [extractingPricing, setExtractingPricing] = useState(false);
-  const [pricingFlash, setPricingFlash] = useState<'ok' | 'none' | 'nofile' | 'err' | null>(null);
+  const [pricingFlash, setPricingFlash] = useState<'ok' | 'none' | 'nofile' | 'err' | 'billing' | null>(null);
   const extractPricingFromDocusign = useCallback(async (assetIdOverride?: string) => {
     const assetId = assetIdOverride || localClient.docusignFile?.assetId || '';
     // Run off the existing on-file agreement: send the assetId when we have it,
@@ -1910,7 +1918,13 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
         body: JSON.stringify({ assetId, onboardingItemId }),
       });
       if (res.status === 404) { setPricingFlash('nofile'); return; }
-      if (!res.ok) throw new Error(`${res.status}`);
+      if (!res.ok) {
+        // 402 with { billing: true } → out of Anthropic credits; show the
+        // actionable "add credits" hint instead of a generic failure.
+        const body = await res.json().catch(() => ({}));
+        setPricingFlash(body?.billing ? 'billing' : 'err');
+        return;
+      }
       const data = await res.json();
       const saved = (data?.saved ?? {}) as Partial<ClientInfo>;
       if (Object.keys(saved).length > 0) {
