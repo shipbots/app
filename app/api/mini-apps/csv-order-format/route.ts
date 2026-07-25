@@ -113,6 +113,15 @@ export async function POST(req: NextRequest) {
   if (!aiRes.ok) {
     const text = await aiRes.text();
     console.error('[csv-order-format] Anthropic error:', aiRes.status, text.slice(0, 300));
+    // The most common 400 here is a billing block ("credit balance is too low").
+    // Surface that plainly instead of an opaque "AI error 400".
+    const lower = text.toLowerCase();
+    if (lower.includes('credit balance') || lower.includes('plans & billing') || lower.includes('purchase credits')) {
+      return NextResponse.json(
+        { error: 'The ShipBots Anthropic API account is out of credits — add credits in the Anthropic Console → Plans & Billing.', billing: true },
+        { status: 402 },
+      );
+    }
     return NextResponse.json({ error: `AI error ${aiRes.status}` }, { status: 502 });
   }
 
