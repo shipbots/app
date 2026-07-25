@@ -158,6 +158,19 @@ function splitProducts(cell: string, delimiters: string[]): string[] {
   return v.split(re).map(s => s.trim()).filter(Boolean);
 }
 
+// Detect a trailing quantity multiplier on a product name — "Blue Shirt x2",
+// "Widget X3", "Item (x4)", "Thing ×2", "Shirt x 2". Returns the base name with
+// the suffix stripped and the numeric quantity, or qty:null when there's no such
+// suffix. Lets the product→SKU mapping turn "Product x2" into quantity 2. A
+// separator (space or "(") before the x keeps this from matching model numbers
+// glued to the name like "SKU12".
+function parseQtySuffix(name: string): { base: string; qty: number | null } {
+  const raw = (name ?? '').trim();
+  const m = raw.match(/^(.+?)[\s(]+[x×]\s*(\d{1,4})\)?\s*$/i);
+  if (m && m[1].trim()) return { base: m[1].trim(), qty: parseInt(m[2], 10) };
+  return { base: raw, qty: null };
+}
+
 // Walk every source row's product cells (one OR many columns) and
 // collect the unique product names. Sorted alphabetically for stable
 // UI; deduplication is case-insensitive but we keep the first-seen
@@ -367,6 +380,10 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
   const [delimiters, setDelimiters] = useState<string[]>([',']);
   const [customDelim, setCustomDelim] = useState<string>('');
   const [productSkuMap, setProductSkuMap] = useState<Record<string, string>>({});
+  // Per-product quantity for the product→SKU mapping, keyed by product name
+  // (lowercased). Empty/absent means "use the detected xN multiplier if the name
+  // ends in one, otherwise the default quantity". Editable so the user decides.
+  const [productQtyMap, setProductQtyMap] = useState<Record<string, string>>({});
   // Global products applied to every order under the 'global-products'
   // strategy. Each entry becomes one extra output row per source row.
   const [globalProducts, setGlobalProducts] = useState<GlobalProductEntry[]>(
@@ -419,6 +436,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     setDelimiters([',']);
     setCustomDelim('');
     setProductSkuMap({});
+    setProductQtyMap({});
     setGlobalProducts([{ id: genId(), sku: '', name: '', quantity: '' }]);
     setColumnExpandMulti(false);
     setDefaultQuantity('1');
@@ -615,6 +633,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
       setDelimiters(detectDelimitersFromCells(sampleCells));
       setCustomDelim('');
       setProductSkuMap({});
+      setProductQtyMap({});
       setGlobalProducts([{ id: genId(), sku: '', name: '', quantity: '' }]);
       setColumnExpandMulti(false);
       // Quantity default stays at whatever the user previously typed,
@@ -854,16 +873,22 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
         return;
       }
       for (const name of names) {
-        const sku = productSkuMap[name.toLowerCase()] ?? '';
+        const key = name.toLowerCase();
+        const sku = productSkuMap[key] ?? '';
+        // "Blue Shirt x2" → clean product name "Blue Shirt" with its own
+        // quantity. Precedence for the line quantity when no Quantity column is
+        // mapped: the user's per-product override, then the detected xN
+        // multiplier, then the app default.
+        const parsed = parseQtySuffix(name);
+        const override = (productQtyMap[key] ?? '').trim();
         const lineRow: Record<string, string> = {
           ...base,
-          'Product Name': name,
+          'Product Name': parsed.base,
           'Product Sku (Required)': sku,
         };
-        // Per-line quantity. If no Quantity column was mapped, use the
-        // user-confirmed default (1 unless they changed it). If a column
-        // was mapped, all line items inherit the source row's quantity.
-        if (!quantityCol) lineRow['Quantity'] = defaultQuantity || '1';
+        if (!quantityCol) {
+          lineRow['Quantity'] = override || (parsed.qty != null ? String(parsed.qty) : (defaultQuantity || '1'));
+        }
         expanded.push(lineRow);
       }
     });
@@ -1031,7 +1056,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     result, sourceRows, mappingEdits, countryEdits, stateCorrections,
-    blankedStateKeys, skuStrategy, productSkuMap, productNameCols, delimiters,
+    blankedStateKeys, skuStrategy, productSkuMap, productQtyMap, productNameCols, delimiters,
     customDelim, globalProducts, columnExpandMulti, defaultQuantity, autoGenPrefix,
     fixedValues,
   ]);
@@ -1070,7 +1095,7 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     result, aiRunning, mappingEdits, countryEdits, stateCorrections,
-    blankedStateKeys, skuStrategy, productSkuMap, productNameCols, delimiters,
+    blankedStateKeys, skuStrategy, productSkuMap, productQtyMap, productNameCols, delimiters,
     customDelim, globalProducts, columnExpandMulti, defaultQuantity, autoGenPrefix,
     fixedValues,
   ]);
@@ -1295,6 +1320,8 @@ export function CsvOrderFormatterApp({ onBack }: { onBack: () => void }) {
               setCustomDelim={setCustomDelim}
               productSkuMap={productSkuMap}
               setProductSkuMap={setProductSkuMap}
+              productQtyMap={productQtyMap}
+              setProductQtyMap={setProductQtyMap}
               uniqueProductNames={uniqueProductNames}
               productMapComplete={productMapComplete}
               globalProducts={globalProducts}
@@ -1341,6 +1368,7 @@ function ReviewPanel({
   delimiters, setDelimiters,
   customDelim, setCustomDelim,
   productSkuMap, setProductSkuMap,
+  productQtyMap, setProductQtyMap,
   uniqueProductNames, productMapComplete,
   globalProducts, setGlobalProducts,
   globalProductsValid, validGlobalProductCount,
@@ -1378,6 +1406,8 @@ function ReviewPanel({
   setCustomDelim: (s: string) => void;
   productSkuMap: Record<string, string>;
   setProductSkuMap: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  productQtyMap: Record<string, string>;
+  setProductQtyMap: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   uniqueProductNames: string[];
   productMapComplete: boolean;
   globalProducts: GlobalProductEntry[];
@@ -1660,10 +1690,13 @@ function ReviewPanel({
             setCustomDelim={setCustomDelim}
             productSkuMap={productSkuMap}
             setProductSkuMap={setProductSkuMap}
+            productQtyMap={productQtyMap}
+            setProductQtyMap={setProductQtyMap}
             uniqueProductNames={uniqueProductNames}
             productMapComplete={productMapComplete}
             projectedOutputRows={projectedOutputRows}
             sourceRowCount={sourceRows.length}
+            defaultQuantity={defaultQuantity}
           />
         )}
 
@@ -2003,8 +2036,9 @@ function ProductMappingPanel({
   delimiters, setDelimiters,
   customDelim, setCustomDelim,
   productSkuMap, setProductSkuMap,
+  productQtyMap, setProductQtyMap,
   uniqueProductNames, productMapComplete,
-  projectedOutputRows, sourceRowCount,
+  projectedOutputRows, sourceRowCount, defaultQuantity,
 }: {
   sourceHeaders: string[];
   sourceRows: Record<string, unknown>[];
@@ -2016,10 +2050,13 @@ function ProductMappingPanel({
   setCustomDelim: (s: string) => void;
   productSkuMap: Record<string, string>;
   setProductSkuMap: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  productQtyMap: Record<string, string>;
+  setProductQtyMap: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   uniqueProductNames: string[];
   productMapComplete: boolean;
   projectedOutputRows: number;
   sourceRowCount: number;
+  defaultQuantity: string;
 }) {
   const toggleDelim = (key: string) => {
     setDelimiters(prev => prev.includes(key) ? prev.filter(d => d !== key) : [...prev, key]);
@@ -2027,6 +2064,10 @@ function ProductMappingPanel({
   const setSkuForProduct = (name: string, sku: string) => {
     const key = name.toLowerCase();
     setProductSkuMap(prev => ({ ...prev, [key]: sku }));
+  };
+  const setQtyForProduct = (name: string, qty: string) => {
+    const key = name.toLowerCase();
+    setProductQtyMap(prev => ({ ...prev, [key]: qty }));
   };
   const filledCount = uniqueProductNames.filter(n => (productSkuMap[n.toLowerCase()] ?? '').trim() !== '').length;
 
@@ -2163,16 +2204,34 @@ function ProductMappingPanel({
           </div>
         ) : (
           <div className="border border-gray-200 rounded-lg overflow-hidden">
-            <div className="grid grid-cols-[1fr_140px] gap-0 bg-gray-50 px-3 py-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+            <p className="text-[11px] text-gray-500 px-3 py-1.5 bg-amber-50/50 border-b border-amber-100">
+              💡 A product name ending in <span className="font-mono">×2</span> / <span className="font-mono">x3</span> auto-fills that quantity — change the <span className="font-semibold">Qty</span> if it should be different.
+            </p>
+            <div className="grid grid-cols-[1fr_130px_84px] gap-2 bg-gray-50 px-3 py-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
               <span>Product name</span>
               <span>SKU</span>
+              <span>Qty</span>
             </div>
             <div className="max-h-72 overflow-y-auto divide-y divide-gray-100">
               {uniqueProductNames.map(name => {
-                const sku = productSkuMap[name.toLowerCase()] ?? '';
+                const key = name.toLowerCase();
+                const sku = productSkuMap[key] ?? '';
+                const parsed = parseQtySuffix(name);
+                // A detected "xN" pre-fills the Qty; the user's own entry wins.
+                const qtyValue = productQtyMap[key] ?? (parsed.qty != null ? String(parsed.qty) : '');
                 return (
-                  <div key={name} className="grid grid-cols-[1fr_140px] gap-2 items-center px-3 py-1.5">
-                    <span className="text-xs text-gray-800 truncate" title={name}>{name}</span>
+                  <div key={name} className="grid grid-cols-[1fr_130px_84px] gap-2 items-center px-3 py-1.5">
+                    <span className="text-xs text-gray-800 flex items-center gap-1.5 min-w-0" title={name}>
+                      <span className="truncate">{name}</span>
+                      {parsed.qty != null && (
+                        <span
+                          className="flex-shrink-0 text-[9px] font-bold text-[#015280] bg-[#e6f8ff] border border-[#43c7ff]/40 rounded-full px-1.5 py-0.5"
+                          title={`Detected quantity ${parsed.qty} from "x${parsed.qty}" — edit the Qty if it's not right`}
+                        >
+                          ×{parsed.qty}
+                        </span>
+                      )}
+                    </span>
                     <input
                       type="text"
                       value={sku}
@@ -2181,6 +2240,15 @@ function ProductMappingPanel({
                       className={`px-2 py-1 text-xs font-mono border rounded focus:outline-none focus:ring-1 focus:ring-[#43c7ff] ${
                         sku ? 'border-emerald-300 bg-emerald-50/30' : 'border-red-200 bg-white'
                       }`}
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      value={qtyValue}
+                      onChange={e => setQtyForProduct(name, e.target.value)}
+                      placeholder={defaultQuantity || '1'}
+                      title="Quantity for this product on each order line"
+                      className="px-2 py-1 text-xs font-mono border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#43c7ff]"
                     />
                   </div>
                 );
