@@ -144,6 +144,68 @@ function looksLikePostal(s: string): boolean {
   return digits >= 2 || /[A-Za-z]\d/.test(t);
 }
 
+// High-confidence US street-type suffixes. Kept deliberately tight — words that
+// commonly double as city-name components (Grove, View, Point, Harbor, Mill,
+// Park, Lake, …) are excluded so "Park Ave Grove City" splits at "Ave", not
+// "Grove".
+const STREET_TYPES = new Set([
+  'st', 'street', 'ave', 'av', 'avenue', 'blvd', 'boulevard', 'dr', 'drive',
+  'ln', 'lane', 'rd', 'road', 'way', 'ct', 'court', 'pl', 'place', 'cir',
+  'circle', 'ter', 'terr', 'terrace', 'trl', 'trail', 'pkwy', 'parkway', 'hwy',
+  'highway', 'sq', 'square', 'plz', 'plaza', 'pike', 'tpke', 'turnpike', 'cres',
+  'crescent', 'aly', 'alley', 'expy', 'expressway',
+]);
+// Secondary-unit words + directionals stay with the STREET, not the city.
+const UNIT_WORDS = new Set([
+  'apt', 'apartment', 'unit', 'ste', 'suite', 'no', 'num', 'number', 'bldg',
+  'building', 'fl', 'floor', 'rm', 'room', 'dept', 'department', 'lot', 'trlr',
+  'space', 'spc',
+]);
+const DIRECTIONALS = new Set([
+  'n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw', 'north', 'south', 'east', 'west',
+  'northeast', 'northwest', 'southeast', 'southwest',
+]);
+const bareWord = (t: string) => t.toLowerCase().replace(/[.,#]/g, '');
+
+/**
+ * Recover a trailing city glued onto a street line with no comma —
+ * "1302 Aviation Way Lebanon" → { street: "1302 Aviation Way", city: "Lebanon" }.
+ * Anchors on the LAST street-type suffix, keeps any trailing directional /
+ * unit designator with the street, and treats whatever remains as the city.
+ * Returns an empty city (and the street untouched) when it can't split
+ * confidently — e.g. no street type ("13700 FM 150 W Driftwood") — so a bad
+ * guess never corrupts the address.
+ */
+export function splitStreetAndCity(street: string): { street: string; city: string } {
+  const s = (street ?? '').trim();
+  const tokens = s.split(/\s+/).filter(Boolean);
+  if (tokens.length < 3) return { street: s, city: '' };
+
+  let typeIdx = -1;
+  for (let i = tokens.length - 1; i >= 1; i--) {
+    if (STREET_TYPES.has(bareWord(tokens[i]))) { typeIdx = i; break; }
+  }
+  // Need a street type that isn't the very last token (else nothing follows).
+  if (typeIdx === -1 || typeIdx === tokens.length - 1) return { street: s, city: '' };
+
+  let i = typeIdx + 1;
+  while (i < tokens.length) {
+    const w = bareWord(tokens[i]);
+    if (DIRECTIONALS.has(w)) { i++; continue; }
+    if (UNIT_WORDS.has(w) || tokens[i].startsWith('#')) {
+      i++; // the designator itself
+      if (i < tokens.length && !STREET_TYPES.has(bareWord(tokens[i]))) i++; // its value
+      continue;
+    }
+    break;
+  }
+  const cityTokens = tokens.slice(i);
+  const city = cityTokens.join(' ').trim();
+  // A lone trailing directional (or nothing) isn't a city.
+  if (!city || cityTokens.every(t => DIRECTIONALS.has(bareWord(t)))) return { street: s, city: '' };
+  return { street: tokens.slice(0, i).join(' '), city };
+}
+
 /**
  * Split a combined mailing address into its ShipHero pieces. Accepts a single
  * string or an array of cell values (joined in order). State/country come back
@@ -167,7 +229,10 @@ export function splitAddress(input: string | Array<string | null | undefined>): 
     let zip = ''; if (z) { zip = z.zip; tail = z.rest; }
     const st = extractTrailingState(tail, country);
     let state = ''; if (st) { state = st.code; tail = st.rest.trim(); if (!country) country = st.country; }
-    return finalize({ address: tail.trim(), address2: '', city: '', state, zip, country });
+    // Street + city are space-glued here ("1302 Aviation Way Lebanon") — split
+    // the trailing city off the street type.
+    const sc = splitStreetAndCity(tail.trim());
+    return finalize({ address: sc.street, address2: '', city: sc.city, state, zip, country });
   }
 
   let country = '';
@@ -218,7 +283,14 @@ export function splitAddress(input: string | Array<string | null | undefined>): 
   } else if (streetSegs.length > 1 && isAddress2(streetSegs[1])) {
     address2 = streetSegs.splice(1, 1)[0];
   }
-  const address = streetSegs.join(', ');
+  let address = streetSegs.join(', ');
+
+  // 4b. City still blank AND the street glues a trailing city on with no comma
+  //     ("1302 Aviation Way Lebanon" → "1302 Aviation Way" + "Lebanon").
+  if (!city && address && !address.includes(',')) {
+    const sc = splitStreetAndCity(address);
+    if (sc.city) { address = sc.street; city = sc.city; }
+  }
 
   return finalize({ address, address2, city, state, zip, country });
 }

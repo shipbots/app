@@ -53,6 +53,12 @@ const REQUIRED_COLS = [
 const ADDRESS_DERIVED_COLS = new Set<string>([
   'Address (Required)', 'City (Required)', 'State / Province', 'Zip (Required)', 'Country Code (Required)',
 ]);
+// The template fields that are auto-split OUT of the single combined-address
+// column (everything derived except the Address source itself). In the mapping
+// UI these show an "Auto-split from …" note instead of a red "Not mapped".
+const ADDRESS_SPLIT_NOTE_COLS = new Set<string>([
+  'City (Required)', 'State / Province', 'Zip (Required)', 'Country Code (Required)', 'Address 2',
+]);
 
 // Sentinel for the Order Number mapping when the user wants to auto-generate
 // numbers from a prefix instead of mapping a source column. Kept as a string
@@ -1790,6 +1796,26 @@ function ReviewPanel({
               );
             }
 
+            // Combined-address mode: City / State / Zip / Country / Address 2
+            // are auto-split from the single Address column. Show a read-only
+            // note (not a red "Not mapped" picker) so it's obvious they're
+            // handled, not missing.
+            if (addressCombinedCols.length > 0 && ADDRESS_SPLIT_NOTE_COLS.has(col)) {
+              return (
+                <div key={col} className="grid grid-cols-2 gap-2 items-center text-xs">
+                  <span className="truncate font-semibold text-gray-900" title={col}>
+                    {col}
+                  </span>
+                  <div className="px-2 py-1 text-xs bg-[#e6f8ff]/40 border border-[#43c7ff]/40 rounded text-[#015280] flex items-center gap-1.5">
+                    <Check className="w-3 h-3 flex-shrink-0" />
+                    <span className="truncate">
+                      Auto-split from {addressCombinedCols.map(c => `“${c}”`).join(' + ')}
+                    </span>
+                  </div>
+                </div>
+              );
+            }
+
             const reqMissing = isReq && (
               !src || (isOrderRow && src === AUTO_GEN_ORDER_VAL && !autoGenPrefix.trim())
             );
@@ -1842,6 +1868,11 @@ function ReviewPanel({
                     extraOptions={extraOptions}
                     highlightError={reqMissingFinal}
                   />
+                  {col === 'Address (Required)' && addressCombinedCols.length > 0 && (
+                    <p className="text-[10px] text-[#015280] leading-snug">
+                      Whole address detected in this column — auto-splitting it into City, State, Zip &amp; Country below.
+                    </p>
+                  )}
                   {showAutoGenInput && (
                     <div className="border border-[#43c7ff]/50 bg-[#e6f8ff]/40 rounded p-2 flex flex-col gap-1">
                       <label className="flex items-center gap-1.5">
