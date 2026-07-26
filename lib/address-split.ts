@@ -155,11 +155,11 @@ const STREET_TYPES = new Set([
   'highway', 'sq', 'square', 'plz', 'plaza', 'pike', 'tpke', 'turnpike', 'cres',
   'crescent', 'aly', 'alley', 'expy', 'expressway',
 ]);
-// Secondary-unit words + directionals stay with the STREET, not the city.
+// Secondary-unit designators ("Apt 302", "Unit 100"). "no"/"num"/"fl" are left
+// out on purpose — they collide with ordinary words and the "FL" state code.
 const UNIT_WORDS = new Set([
-  'apt', 'apartment', 'unit', 'ste', 'suite', 'no', 'num', 'number', 'bldg',
-  'building', 'fl', 'floor', 'rm', 'room', 'dept', 'department', 'lot', 'trlr',
-  'space', 'spc',
+  'apt', 'apartment', 'unit', 'ste', 'suite', 'bldg', 'building', 'floor',
+  'rm', 'room', 'dept', 'department', 'lot', 'trlr', 'space', 'spc',
 ]);
 const DIRECTIONALS = new Set([
   'n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw', 'north', 'south', 'east', 'west',
@@ -167,43 +167,94 @@ const DIRECTIONALS = new Set([
 ]);
 const bareWord = (t: string) => t.toLowerCase().replace(/[.,#]/g, '');
 
-/**
- * Recover a trailing city glued onto a street line with no comma —
- * "1302 Aviation Way Lebanon" → { street: "1302 Aviation Way", city: "Lebanon" }.
- * Anchors on the LAST street-type suffix, keeps any trailing directional /
- * unit designator with the street, and treats whatever remains as the city.
- * Returns an empty city (and the street untouched) when it can't split
- * confidently — e.g. no street type ("13700 FM 150 W Driftwood") — so a bad
- * guess never corrupts the address.
- */
-export function splitStreetAndCity(street: string): { street: string; city: string } {
-  const s = (street ?? '').trim();
-  const tokens = s.split(/\s+/).filter(Boolean);
-  if (tokens.length < 3) return { street: s, city: '' };
+// A plausible unit value token — "302", "A", "K1", "c", "3026", "#359.". Used so
+// "Suite Ave" (designator with no numeric value) isn't mistaken for a unit.
+function isUnitValue(t: string): boolean {
+  const v = t.replace(/[.,]+$/, '');
+  if (!/^#?[A-Za-z0-9-]{1,6}$/.test(v)) return false;
+  return /\d/.test(v) || v.replace(/^#/, '').length <= 2;
+}
 
+// Split a trailing city off a street line using the last street-type suffix.
+// "1302 Aviation Way Lebanon" → { street: "1302 Aviation Way", city: "Lebanon" }.
+// When there's no recognizable street type, fall back to the last word as the
+// city — but only for a numbered street with ≥2 street tokens left, so
+// "804 Guisando de Avila Tampa" splits while "Parkgatan 14" is left alone.
+function splitCityOffStreet(tokens: string[]): { street: string; city: string } {
   let typeIdx = -1;
   for (let i = tokens.length - 1; i >= 1; i--) {
     if (STREET_TYPES.has(bareWord(tokens[i]))) { typeIdx = i; break; }
   }
-  // Need a street type that isn't the very last token (else nothing follows).
-  if (typeIdx === -1 || typeIdx === tokens.length - 1) return { street: s, city: '' };
-
-  let i = typeIdx + 1;
-  while (i < tokens.length) {
-    const w = bareWord(tokens[i]);
-    if (DIRECTIONALS.has(w)) { i++; continue; }
-    if (UNIT_WORDS.has(w) || tokens[i].startsWith('#')) {
-      i++; // the designator itself
-      if (i < tokens.length && !STREET_TYPES.has(bareWord(tokens[i]))) i++; // its value
-      continue;
+  if (typeIdx !== -1 && typeIdx < tokens.length - 1) {
+    let i = typeIdx + 1;
+    while (i < tokens.length && DIRECTIONALS.has(bareWord(tokens[i]))) i++; // directional stays with street
+    const rest = tokens.slice(i);
+    if (rest.length && !rest.every(t => DIRECTIONALS.has(bareWord(t)))) {
+      return { street: tokens.slice(0, i).join(' '), city: rest.join(' ') };
     }
-    break;
+    return { street: tokens.join(' '), city: '' };
   }
-  const cityTokens = tokens.slice(i);
-  const city = cityTokens.join(' ').trim();
-  // A lone trailing directional (or nothing) isn't a city.
-  if (!city || cityTokens.every(t => DIRECTIONALS.has(bareWord(t)))) return { street: s, city: '' };
-  return { street: tokens.slice(0, i).join(' '), city };
+  if (/^\d/.test(tokens[0]) && tokens.length >= 3) {
+    const last = tokens[tokens.length - 1];
+    const lw = bareWord(last);
+    // The last word is only a plausible city if it isn't a street-type suffix
+    // ("500 Main St" must not read "St" as the city), a directional, a number,
+    // or a 1-2 char token.
+    if (!DIRECTIONALS.has(lw) && !STREET_TYPES.has(lw) && !/\d/.test(last) && last.length >= 3) {
+      return { street: tokens.slice(0, -1).join(' '), city: last };
+    }
+  }
+  return { street: tokens.join(' '), city: '' };
+}
+
+/**
+ * Split a glued street line into { street, address2, city }. Pulls a secondary
+ * unit into Address 2 ("1445 BROADCLOTH ST Apt 302 Fort Mill" → street
+ * "1445 BROADCLOTH ST", address2 "Apt 302", city "Fort Mill"), then recovers a
+ * trailing city off the street type. Leaves pieces blank rather than guessing
+ * wrong so a bad split never corrupts the address.
+ */
+export function splitStreetLine(line: string): { street: string; address2: string; city: string } {
+  const s = (line ?? '').trim();
+  const tokens = s.split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) return { street: s, address2: '', city: '' };
+
+  // 1. A glued secondary unit anywhere after the house number.
+  for (let i = 1; i < tokens.length; i++) {
+    const raw = tokens[i];
+    let end = -1;
+    if (raw.startsWith('#') && raw.length > 1) {
+      end = i + 1; // "#359." carries its own number
+    } else if (UNIT_WORDS.has(bareWord(raw))) {
+      const next = tokens[i + 1];
+      if (next && (isUnitValue(next) || next.startsWith('#'))) end = i + 2;
+    }
+    if (end !== -1) {
+      const address2 = tokens.slice(i, end).join(' ');
+      const rest = tokens.slice(end);
+      const city = rest.length && !rest.every(t => DIRECTIONALS.has(bareWord(t))) ? rest.join(' ') : '';
+      return { street: tokens.slice(0, i).join(' '), address2, city };
+    }
+  }
+
+  // 2. No unit — just split a trailing city off the street type.
+  const sc = splitCityOffStreet(tokens);
+  return { street: sc.street, address2: '', city: sc.city };
+}
+
+// Strip a leading unit off a city value ("unit 4414 Marina Del Rey" →
+// { address2: "unit 4414", city: "Marina Del Rey" }) — some sources glue the
+// suite onto the city instead of the street.
+function stripLeadingUnit(text: string): { address2: string; city: string } {
+  const tokens = text.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) return { address2: '', city: text.trim() };
+  if (tokens[0].startsWith('#') && tokens[0].length > 1) {
+    return { address2: tokens[0], city: tokens.slice(1).join(' ') };
+  }
+  if (UNIT_WORDS.has(bareWord(tokens[0])) && (isUnitValue(tokens[1]) || tokens[1].startsWith('#'))) {
+    return { address2: tokens.slice(0, 2).join(' '), city: tokens.slice(2).join(' ') };
+  }
+  return { address2: '', city: text.trim() };
 }
 
 /**
@@ -229,10 +280,11 @@ export function splitAddress(input: string | Array<string | null | undefined>): 
     let zip = ''; if (z) { zip = z.zip; tail = z.rest; }
     const st = extractTrailingState(tail, country);
     let state = ''; if (st) { state = st.code; tail = st.rest.trim(); if (!country) country = st.country; }
-    // Street + city are space-glued here ("1302 Aviation Way Lebanon") — split
-    // the trailing city off the street type.
-    const sc = splitStreetAndCity(tail.trim());
-    return finalize({ address: sc.street, address2: '', city: sc.city, state, zip, country });
+    // Street / unit / city are space-glued here ("1445 BROADCLOTH ST Apt 302
+    // Fort Mill") — pull the unit into Address 2 and the trailing city off the
+    // street type.
+    const line = splitStreetLine(tail.trim());
+    return finalize({ address: line.street, address2: line.address2, city: line.city, state, zip, country });
   }
 
   let country = '';
@@ -285,11 +337,25 @@ export function splitAddress(input: string | Array<string | null | undefined>): 
   }
   let address = streetSegs.join(', ');
 
-  // 4b. City still blank AND the street glues a trailing city on with no comma
-  //     ("1302 Aviation Way Lebanon" → "1302 Aviation Way" + "Lebanon").
-  if (!city && address && !address.includes(',')) {
-    const sc = splitStreetAndCity(address);
-    if (sc.city) { address = sc.street; city = sc.city; }
+  // 4b. Pull a glued secondary unit and/or a trailing city off the street line
+  //     when a comma didn't separate them ("1445 BROADCLOTH ST Apt 302 Fort
+  //     Mill" → street "1445 BROADCLOTH ST" + Address 2 "Apt 302" + "Fort Mill").
+  if (address && !address.includes(',')) {
+    const line = splitStreetLine(address);
+    // Only accept the shortened street when the split actually produced a piece
+    // we use — never drop part of the street (a trailing "Way"/"Court") when the
+    // city / unit are already known.
+    let changed = false;
+    if (!address2 && line.address2) { address2 = line.address2; changed = true; }
+    if (!city && line.city) { city = line.city; changed = true; }
+    if (changed) address = line.street;
+  }
+
+  // 4c. A comma-provided city can itself carry a leading unit
+  //     ("unit 4414 Marina Del Rey" → Address 2 "unit 4414" + "Marina Del Rey").
+  if (city && !address2) {
+    const lu = stripLeadingUnit(city);
+    if (lu.address2) { address2 = lu.address2; city = lu.city; }
   }
 
   return finalize({ address, address2, city, state, zip, country });
