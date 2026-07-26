@@ -11,7 +11,6 @@ import {
 import { ClientStickyNotesSummary } from './client-sticky-notes-summary';
 import { ClientAchInfo } from './client-ach-info';
 import { FilePreviewModal, type PreviewableFile } from './file-preview-modal';
-import { ConfirmDialog } from './client-header';
 import { SectionDocuments } from './section-documents';
 import { ClientProjectsBox } from './client-projects-box';
 import { EmailNotificationsSection } from './email-notifications-section';
@@ -35,14 +34,6 @@ function useFieldMode() {
   return { csMode: useContext(CsModeContext), editing: useContext(SectionEditContext) };
 }
 
-// The Billing tab's Pricing Info fields (ClientInfo keys). Used to detect
-// whether a client already has pricing on file before a DocuSign (re)extract
-// would overwrite it.
-const PRICING_FIELDS: (keyof ClientInfo)[] = [
-  'receivingPricing', 'floorLoadedFee', 'binStorage', 'palletStorage',
-  'dtcPickPackPricing', 'b2bPickPack', 'shippingUpcharge', 'intlShippingUpcharge',
-  'returnsFee', 'accountManagerFee', 'platformFee', 'paymentTerms', 'otherNotes',
-];
 
 // ─── "On file / Not on file" field ───────────────────────────────────────────
 // For sensitive values (EIN, the DocuSign document) that a Customer Service rep
@@ -1942,41 +1933,16 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
     }
   }, [id, localClient.docusignFile?.assetId, onboardingItemId, extractingPricing]);
 
-  // On a NEW DocuSign upload, offer to pull the pricing from it. If the client
-  // already has pricing on file, confirm before overwriting; otherwise extract
-  // straight away. Declining keeps the existing pricing (the upload still ran).
-  const [pendingDocusignAsset, setPendingDocusignAsset] = useState<string | null>(null);
+  // A newly uploaded DocuSign is the source of truth, so pull its pricing
+  // automatically — the same way the billing / legal extraction runs on upload.
+  // Both extractions fire together (see the FileField onUploaded handlers). The
+  // server only writes fields the contract actually restates, so a re-extract
+  // never blanks out pricing the new contract happens to omit.
   const handleDocusignUploaded = useCallback((newFile: MonFile) => {
     const assetId = newFile?.assetId;
     if (!assetId) return;
-    const hasPricing = PRICING_FIELDS.some(f => String(localClient[f] ?? '').trim());
-    if (hasPricing) setPendingDocusignAsset(assetId);
-    else void extractPricingFromDocusign(assetId);
-  }, [localClient, extractPricingFromDocusign]);
-
-  // Overwrite-confirm dialog for the DocuSign upload → pricing extraction flow.
-  // Rendered in BOTH the Billing tab and the main view so a DocuSign uploaded
-  // from either surface can prompt before overwriting existing pricing.
-  const pricingOverwriteDialog = pendingDocusignAsset ? (
-    <ConfirmDialog
-      title="Overwrite existing pricing?"
-      description={
-        <>
-          This client already has pricing on file. Pull the pricing from the DocuSign you just uploaded and replace the current values?
-          <br />
-          Choose <strong>Cancel</strong> to keep the existing pricing — the contract is uploaded either way.
-        </>
-      }
-      confirmLabel="Overwrite with new pricing"
-      busy={extractingPricing}
-      onCancel={() => setPendingDocusignAsset(null)}
-      onConfirm={() => {
-        const a = pendingDocusignAsset;
-        if (!a) return;
-        void extractPricingFromDocusign(a).finally(() => setPendingDocusignAsset(null));
-      }}
-    />
-  ) : null;
+    void extractPricingFromDocusign(assetId);
+  }, [extractPricingFromDocusign]);
 
   // ── Inline name / rename ────────────────────────────────────────────────────
   const [nameEditing, setNameEditing] = useState(false);
@@ -2261,8 +2227,6 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
             <EditField label="📝 Other Notes / Promotions" value={localClient.otherNotes} columnId="long_text_mm5hy744" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, otherNotes: v }))} />
           </div>
         </Section>
-
-        {pricingOverwriteDialog}
       </div>
     );
   }
@@ -2687,8 +2651,6 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
           />
         </div>
       </section>
-
-      {pricingOverwriteDialog}
     </div>
     </CsModeContext.Provider>
   );
