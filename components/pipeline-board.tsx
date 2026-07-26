@@ -685,11 +685,12 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
                     '--tw-ring-color': 'var(--brand-cyan)',
                   } as React.CSSProperties}
                 />
-                {/* Finder dropdown — shown on the primary list surfaces
-                    (CS Clients table / Onboarding kanban) whenever there's a
-                    query. Portals to <body>, so it floats over the view
-                    behind it instead of filtering it. */}
-                {searchQuery.trim() && (viewMode === 'clients' || viewMode === 'pipeline') && (
+                {/* Finder dropdown — the header search is a global finder that
+                    opens the client detail panel. Shown on every view (Home,
+                    kanban, Clients table, Notes, …) EXCEPT Calendar and Tasks,
+                    where the query filters that view instead. Portals to <body>
+                    so it floats over the view behind it. */}
+                {searchQuery.trim() && viewMode !== 'calendar' && viewMode !== 'tasks' && (
                   <ClientSearchResults
                     query={searchQuery}
                     items={overriddenAllItems}
