@@ -1920,6 +1920,10 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
       const saved = (data?.saved ?? {}) as Partial<ClientInfo>;
       if (Object.keys(saved).length > 0) {
         setLocalClient(prev => ({ ...prev, ...saved }));
+        // Bump the version so the pricing EditFields remount and show the newly
+        // extracted values immediately (same mechanism the billing extraction
+        // uses), instead of keeping their initial empty value until a reload.
+        setBillingVersion(v => v + 1);
         setPricingFlash('ok');
       } else {
         setPricingFlash('none');
@@ -2207,6 +2211,9 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
             />
           }
         >
+          {/* key=billingVersion forces the pricing EditFields to remount after
+              an extraction populates values (they're uncontrolled inputs). */}
+          <div key={billingVersion}>
           <div className="grid grid-cols-2 gap-x-3">
             <EditField label="📥 Receiving Pricing" value={localClient.receivingPricing} columnId="text_mm5hpark" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, receivingPricing: v }))} />
             <EditField label="🚛 Floor Loaded Unloading Fee" value={localClient.floorLoadedFee} columnId="text_mm5hxygd" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, floorLoadedFee: v }))} />
@@ -2225,6 +2232,7 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
           </div>
           <div className="border-t border-gray-100 mt-1 pt-1">
             <EditField label="📝 Other Notes / Promotions" value={localClient.otherNotes} columnId="long_text_mm5hy744" clientId={id} multiline onSaved={v => setLocalClient(prev => ({ ...prev, otherNotes: v }))} />
+          </div>
           </div>
         </Section>
       </div>
