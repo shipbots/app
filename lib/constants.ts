@@ -33,6 +33,18 @@ export const PIPELINE_STAGES = [
 export const INVENTORY_NEVER_ARRIVED_STATUS = 'Inventory never arrived';
 export const INVENTORY_NEVER_ARRIVED_GROUP_ID = 'group_mks0npxe';
 
+// Terminal / done columns. A card in one of these is finished (or parked), so it
+// never generates action alerts — mirrors the columns the board collapses by
+// default. "Completed" is the big one: those cards are done and should be quiet.
+export const TERMINAL_STATUSES = new Set<string>([
+  'Completed',
+  'Done - Onboarding Complete, Inventory Arrived',
+  'Abandoned',
+  'N/A',
+  'ZAP ERROR',
+  'Inventory never arrived',
+]);
+
 // Deactivated / legacy statuses — items with these labels are hidden from the kanban
 export const INACTIVE_STATUSES = [
   'Done/Pending Items',

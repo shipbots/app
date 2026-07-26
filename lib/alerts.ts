@@ -1,5 +1,5 @@
 import { Alert, OnboardingItem } from './types';
-import { ALERT_THRESHOLDS } from './constants';
+import { ALERT_THRESHOLDS, TERMINAL_STATUSES } from './constants';
 
 function daysBetween(dateStr: string, now: Date): number {
   const date = new Date(dateStr);
@@ -11,9 +11,10 @@ export function computeAlerts(items: OnboardingItem[]): Alert[] {
   const now = new Date();
 
   for (const item of items) {
-    // Skip completed items
-    if (item.status === 'Done - Onboarding Complete, Inventory Arrived') continue;
-    if (item.status === 'N/A') continue;
+    // Completed / terminal cards are finished — they never trigger alerts.
+    // Also skip anything already at 100% regardless of its status label.
+    if (TERMINAL_STATUSES.has(item.status)) continue;
+    if (item.progress >= 100) continue;
 
     // Contract unsigned for too long
     if (item.status === 'Needs Contract') {

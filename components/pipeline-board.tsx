@@ -6,6 +6,7 @@ import { PIPELINE_STAGES, INVENTORY_NEVER_ARRIVED_STATUS, INVENTORY_NEVER_ARRIVE
 import { ClientCard } from './client-card';
 import { ClientDetailPanel } from './client-detail-panel';
 import { AlertsPanel } from './alerts-panel';
+import { useDismissedAlerts } from '@/hooks/use-dismissed-alerts';
 import { ChecklistBarLegend } from './checklist-bar';
 import { CalendarView } from './calendar-view';
 import { TasksView } from './tasks-view';
@@ -126,6 +127,9 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
   const searchAnchorRef = useRef<HTMLDivElement>(null);
   const { index: clientIndex, status: clientIndexStatus } = useClientSearchIndex();
   const [showAlerts, setShowAlerts] = useState(false);
+  // Reviewer-dismissible alerts (persisted). The bell badge + panel both read
+  // from this so clearing an alert updates the count too.
+  const { visible: visibleAlerts, dismissedCount, dismiss: dismissAlert, clearAll: clearAllAlerts, reset: resetAlerts } = useDismissedAlerts(alerts);
   // Collapse terminal/noise columns by default
   const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(new Set(['Completed', 'Abandoned', 'N/A', 'ZAP ERROR', 'Inventory never arrived']));
   const [refreshing, setRefreshing] = useState(false);
@@ -713,9 +717,9 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
               {!isCustomerService && (
                 <button onClick={() => setShowAlerts(!showAlerts)} className="relative p-2 rounded-lg hover:bg-white/10 transition-colors">
                   <Bell className="w-4 h-4 text-white/80" />
-                  {alerts.length > 0 && (
+                  {visibleAlerts.length > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                      {alerts.length}
+                      {visibleAlerts.length}
                     </span>
                   )}
                 </button>
@@ -895,7 +899,14 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
             <span className="text-xs text-gray-500">{alerts.length}</span>
           </div>
           <div className="flex-1 overflow-y-auto p-2">
-            <AlertsPanel alerts={alerts} onClientClick={handleAlertClick} />
+            <AlertsPanel
+              visible={visibleAlerts}
+              dismissedCount={dismissedCount}
+              onClientClick={handleAlertClick}
+              onDismiss={dismissAlert}
+              onClearAll={clearAllAlerts}
+              onReset={resetAlerts}
+            />
           </div>
         </div>
       )}
