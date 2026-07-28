@@ -255,6 +255,14 @@ RULES:
 - TIKTOK SHOP RULE: If "TikTok Shop" is "Yes", mention TikTok Shop prominently in the opening paragraph (e.g. "including **TikTok Shop**"). In the Platform & Operations section, add a bullet: "• 🛍️ **TikTok Shop**: Orders placed under the TikTok Shop status require **same-day shipping** and will appear under the TikTok Shop status in ShipHero."
 - LOT CODE RULE: If "Lot Code / Expiration Needed" is "Yes", add a bullet in Notes for Receiving: "• 🏷️ **Lot Code / Expiration Tracking**: This client requires lot code and expiration date tracking. Please ensure all receiving is done with lot codes and expiration dates recorded in ShipHero."
 
+DO NOT INCLUDE — the fulfillment team already knows these are true for every client, so including them is just noise. Never write any of these:
+- That the store (Shopify/Amazon/etc.) is integrated/synced with ShipHero for order syncing or inventory management. Just list which stores are connected; do NOT explain that they sync or how orders flow into ShipHero — that is the standard setup for everyone.
+- That orders with holds (address / fraud / payment) appear on the dashboard and require manual review before fulfillment. This is standard behavior for all clients.
+- The receiving-appointment booking rule (e.g. "must be booked ~1 week before arrival", "confirm the appointment has been scheduled by Mina"). That is our internal process — not client-specific info to relay.
+- Shipping volume tiers / "V" codes (e.g. "V120, V220, V230, V340"). The fulfillment team does not use these.
+- Insurance / signature requirements UNLESS this client actually requires them. If it is not required, not specified, or unknown, omit the topic entirely — do NOT add a "Not specified" or "Pending — confirm with Mina" line.
+- Any internal "confirm with Mina" / owner-follow-up lines for the items above.
+
 PORTAL DETECTION RULES:
 - It is the ShipHero Portal if the transcript mentions the login is www.shipbots.com/portal
 - It is AppDot (also called "advanced version", "backend software", or "legacy version" of ShipHero) if the transcript mentions giving access to the advanced/backend/legacy version
@@ -276,8 +284,7 @@ Hi team! 👋 I just onboarded [Client Name]! [One sentence: what they sell + ma
 **🖥️ Platform & Operations**
 • Portal: [ShipHero Portal (www.shipbots.com/portal) OR AppDot]
 • Stores connected: [list platforms]
-• Order management: [how orders flow]
-• [Any operational notes: buffers, kitting, TikTok SLA, etc.]
+• [Only NON-standard order-flow notes — special routing, manual-review buffers, kitting, TikTok SLA, etc. Skip this bullet entirely if there's nothing unusual; do NOT describe the standard store→ShipHero order sync.]
 • [Loop returns — one line only if applicable]
 
 **📦 Notes for Receiving**
@@ -291,9 +298,8 @@ Hi team! 👋 I just onboarded [Client Name]! [One sentence: what they sell + ma
 **📋 Notes for Packers**
 • [Packaging method]
 • [Custom packaging elements]
-• [Shipping tiers]
 • [International shipping — DDP or domestic only]
-• [Insurance / signature required status]
+• [Insurance / signature — ONLY if this client actually requires it; otherwise omit this bullet entirely]
 • [Bundles/kits if applicable]
 • [Anything else packers need to know]
 
