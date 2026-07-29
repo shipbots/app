@@ -30,6 +30,7 @@ import { prefetchCached } from '@/hooks/use-cached-fetch';
 import { useClientSearchIndex } from '@/hooks/use-client-search-index';
 import { usePersistentCollapse } from '@/hooks/use-persistent-collapse';
 import { CLIENT_GROUP_EXITED_ID, subLetter, type ClientIndexEntry } from '@/lib/client-search';
+import { firstNameFromEmail } from '@/lib/agent-name';
 import { OnboardingItem, SubItem, ClientInfo } from '@/lib/types';
 import type { Project } from '@/lib/projects';
 import { MyProjectsPanel } from './my-projects-panel';
@@ -41,18 +42,6 @@ type SortDir = 'asc' | 'desc';
 type SortConfig = { column: SortColumn; dir: SortDir };
 
 const UNASSIGNED_KEY = '__unassigned__';
-
-// Show just the person's name from their work email — "gera@shipbots.com" → "Gera",
-// "maria.lopez@shipbots.com" → "Maria Lopez". The full email stays available on hover.
-function agentName(email: string): string {
-  const local = (email || '').split('@')[0];
-  if (!local) return email;
-  return local
-    .split(/[._-]+/)
-    .filter(Boolean)
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
-}
 
 function compareStrings(a: string, b: string, dir: SortDir): number {
   // Empty strings go to the bottom in ASC, top in DESC — so unassigned /
