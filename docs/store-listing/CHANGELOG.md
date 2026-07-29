@@ -1,8 +1,8 @@
 # ShipBots Customer Service — extension changelog
 
 Release notes for the Chrome extension. The current store build is
-**v0.42.0**. Upload the matching zip from
-`docs/store-listing/shipbots-cs-v0.42.0.zip` (manifest sits at the zip
+**v0.43.0**. Upload the matching zip from
+`docs/store-listing/zips/shipbots-cs-v0.43.0.zip` (manifest sits at the zip
 root, as the Web Store requires). Teammates auto-update within ~5 hours
 of a new upload — no action on their end.
 
@@ -46,10 +46,11 @@ admin panel — without ever leaving the popup.
 
 ---
 
-## Version history (v0.24.0 → v0.42.0)
+## Version history (v0.24.0 → v0.43.0)
 
 | Version | Date | What changed |
 |--------:|------|--------------|
+| **0.43.0** | 2026-07-29 | Restored client opens **instantly** from a cached payload (no "Loading…" on reopen); the remembered view now expires after **15 min** so a stale open starts on the main menu. |
 | **0.42.0** | 2026-07-24 | Sections open collapsed; in-detail "switch client" search matches the main search (rich rows, arrow keys, Enter → top result). |
 | **0.41.0** | 2026-07-24 | Deep-link to the onboarding app for a client; in-detail client search; restore last-viewed client on reopen. |
 | **0.40.0** | 2026-07-24 | **Root-cause docs fix** — an attachment-badge insert threw `NotFoundError` and aborted document rendering. |

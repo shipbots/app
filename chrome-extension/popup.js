@@ -37,12 +37,18 @@ let clientIndex = null;
 // Remember the client whose detail is open so reopening the popup lands right
 // back on it (chrome.storage.local persists across popup closes). Cleared when
 // the user navigates back to search, so a fresh open starts on the search view.
+// The remembered view also expires after LAST_CLIENT_TTL_MS: reopen within the
+// window and you land back on the client; after that a fresh open starts on the
+// main menu (search view) so a day-old session doesn't dump you on a stale client.
 const LAST_CLIENT_KEY = 'lastClientV1';
+const LAST_CLIENT_TTL_MS = 15 * 60 * 1000; // 15 minutes
 function saveLastClient(stub) {
   if (!stub || !stub.id) return;
   try {
+    // `at` is stamped on every open so actively bouncing in and out keeps the
+    // remembered view alive; the 15-min clock is "since you last looked at it".
     chrome.storage.local.set({
-      [LAST_CLIENT_KEY]: { id: stub.id, name: stub.name || '', contactEmail: stub.contactEmail || '', warehouse: stub.warehouse || '' },
+      [LAST_CLIENT_KEY]: { id: stub.id, name: stub.name || '', contactEmail: stub.contactEmail || '', warehouse: stub.warehouse || '', at: Date.now() },
     });
   } catch { /* ignore */ }
 }
@@ -54,10 +60,58 @@ function readLastClient() {
     try {
       chrome.storage.local.get([LAST_CLIENT_KEY], r => {
         if (chrome.runtime.lastError) { resolve(null); return; }
-        resolve(r && r[LAST_CLIENT_KEY] && r[LAST_CLIENT_KEY].id ? r[LAST_CLIENT_KEY] : null);
+        const entry = r && r[LAST_CLIENT_KEY];
+        if (!entry || !entry.id) { resolve(null); return; }
+        // Expired → forget it and start on the main menu.
+        if (entry.at && (Date.now() - entry.at) > LAST_CLIENT_TTL_MS) {
+          clearLastClient();
+          resolve(null);
+          return;
+        }
+        resolve(entry);
       });
     } catch { resolve(null); }
   });
+}
+
+// ── Client-detail payload cache ─────────────────────────────────────
+// fetchClientFull hits Monday and takes a few seconds, so the detail view
+// showed "Loading client info…" on every open — including when we restore
+// the remembered client. Stash the last successful payload per client id and
+// paint it instantly, then refresh in the background (stale-while-revalidate),
+// exactly like the search-index and Tasks/Calendar caches. Bounded to the few
+// most-recently-viewed clients so storage can't grow with the whole board.
+const CLIENT_DETAIL_CACHE_KEY = 'clientDetailCacheV1';
+const CLIENT_DETAIL_CACHE_MAX = 6;
+function readClientDetailCache(id) {
+  return new Promise(resolve => {
+    if (!id) { resolve(null); return; }
+    try {
+      chrome.storage.local.get([CLIENT_DETAIL_CACHE_KEY], result => {
+        if (chrome.runtime.lastError) { resolve(null); return; }
+        const map = (result && result[CLIENT_DETAIL_CACHE_KEY]) || null;
+        const entry = map && map[id];
+        resolve(entry && entry.data ? entry.data : null);
+      });
+    } catch { resolve(null); }
+  });
+}
+function writeClientDetailCache(id, data) {
+  if (!id || !data) return;
+  try {
+    chrome.storage.local.get([CLIENT_DETAIL_CACHE_KEY], result => {
+      if (chrome.runtime.lastError) return;
+      const map = (result && result[CLIENT_DETAIL_CACHE_KEY]) || {};
+      map[id] = { at: Date.now(), data };
+      // LRU-evict the oldest entries beyond the cap.
+      const ids = Object.keys(map);
+      if (ids.length > CLIENT_DETAIL_CACHE_MAX) {
+        ids.sort((a, b) => (map[a].at || 0) - (map[b].at || 0));
+        for (const stale of ids.slice(0, ids.length - CLIENT_DETAIL_CACHE_MAX)) delete map[stale];
+      }
+      chrome.storage.local.set({ [CLIENT_DETAIL_CACHE_KEY]: map });
+    });
+  } catch { /* ignore */ }
 }
 
 function getBaseUrl() {
@@ -2930,11 +2984,27 @@ async function showClientDetail(clientStub, origin) {
   void loadStickyNotesPane(clientStub.id);
   void loadClientProjects(clientStub.id, clientStub.name);
 
+  // Paint instantly from the cached payload if we have one, so restoring the
+  // remembered client (or reopening one) shows content immediately instead of
+  // the "Loading client info…" spinner. The network fetch below still runs and
+  // repaints with fresh data (stale-while-revalidate).
+  const cachedFull = await readClientDetailCache(clientStub.id);
+  if (cachedFull && activeClientId === clientStub.id) {
+    statusEl.hidden = true;
+    renderClientDetail(cachedFull);
+  }
+
   try {
     const client = await fetchClientFull(clientStub.id);
+    // A fast client-switch may have moved on while we were fetching — don't
+    // clobber the newer client's view with this stale response.
+    if (activeClientId !== clientStub.id) return;
+    writeClientDetailCache(clientStub.id, client);
     statusEl.hidden = true;
     renderClientDetail(client);
   } catch (err) {
+    // Already showing cached content → keep it; the refresh just failed quietly.
+    if (cachedFull) return;
     statusEl.classList.add('error');
     if (err.code === 'unauthorized') {
       statusEl.textContent = 'Sign in at the dashboard first, then reopen this popup.';
