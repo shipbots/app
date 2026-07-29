@@ -3,9 +3,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Copy, Check, Loader2, Mail, ExternalLink, Users } from 'lucide-react';
 
-const TEAM_TO = 'support@shipbots.com, allen@shipbots.com, payam@shipbots.com, carmen@shipbots.com, karina@shipbots.com, alex@shipbots.com, nancy@shipbots.com, robert@shipbots.com';
-// The people who send these onboarding summaries — BCC'd so each keeps a copy.
-const TEAM_BCC = 'andres@shipbots.com, charmy@shipbots.com';
+const TEAM_TO = 'support@shipbots.com, allen@shipbots.com, payam@shipbots.com, carmen@shipbots.com, karina@shipbots.com, alex@shipbots.com, nancy@shipbots.com, robert@shipbots.com, charmy@shipbots.com';
+// The sender keeps a copy via BCC.
+const TEAM_BCC = 'andres@shipbots.com';
 
 interface InternalSummaryModalProps {
   clientName: string;

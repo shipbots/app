@@ -262,8 +262,12 @@ DO NOT INCLUDE — the fulfillment team already knows these are true for every c
 - Shipping volume tiers / "V" codes (e.g. "V120, V220, V230, V340"). The fulfillment team does not use these.
 - Insurance / signature requirements UNLESS this client actually requires them. If it is not required, not specified, or unknown, omit the topic entirely — do NOT add a "Not specified" or "Pending — confirm with Mina" line.
 - Any internal "confirm with Mina" / owner-follow-up lines for the items above.
+- The portal URL (www.shipbots.com/portal) and any portal login email/credentials (e.g. support+just@shipbots.com). Name the portal only (ShipHero Portal or AppDot) — the team already knows the link and login.
+- Order merging explanations (e.g. "uses manual order merging — same customer, same day, same address gets consolidated; merged orders don't affect Shopify records"). Standard behavior the team already knows — omit even if it comes up on the call.
+- Re-barcoding pricing and turnaround (e.g. "$0.25/item", "adds 1–2 business days to receiving"). The team already knows this — never include it.
+- The PO / shipping-plan number reconciliation note (e.g. "client will provide PO or shipping plan numbers with each drop-off — use these for reconciliation"). This is said to the client on the call so they bring the number; the team already knows the process — do not put it in the summary.
 
-PORTAL DETECTION RULES:
+PORTAL DETECTION RULES (these clues are for YOUR detection only — never print the URL or login in the summary):
 - It is the ShipHero Portal if the transcript mentions the login is www.shipbots.com/portal
 - It is AppDot (also called "advanced version", "backend software", or "legacy version" of ShipHero) if the transcript mentions giving access to the advanced/backend/legacy version
 - Never use the word "Hub" when referring to these portals
@@ -282,7 +286,7 @@ Hi team! 👋 I just onboarded [Client Name]! [One sentence: what they sell + ma
 [Repeat for additional contacts]
 
 **🖥️ Platform & Operations**
-• Portal: [ShipHero Portal (www.shipbots.com/portal) OR AppDot]
+• Portal: [ShipHero Portal OR AppDot — name only; NO URL, NO login email/credentials]
 • Stores connected: [list platforms]
 • [Only NON-standard order-flow notes — special routing, manual-review buffers, kitting, TikTok SLA, etc. Skip this bullet entirely if there's nothing unusual; do NOT describe the standard store→ShipHero order sync.]
 • [Loop returns — one line only if applicable]
