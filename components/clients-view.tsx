@@ -519,7 +519,7 @@ function ClientRow({
         {agentEmail ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-gray-100 rounded-full px-2 py-0.5" title={agentEmail}>
             <User className="w-3 h-3 text-gray-400" />
-            <span className="truncate max-w-[180px]">{agentName(agentEmail)}</span>
+            <span className="truncate max-w-[180px]">{firstNameFromEmail(agentEmail)}</span>
           </span>
         ) : (
           <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
@@ -1411,7 +1411,7 @@ export function ClientsView({
                 )}
                 <FilterButton
                   facets={[
-                    { key: 'manager', label: 'Account Manager', options: managers, selected: selectedManagers, onChange: setSelectedManagers, display: (m) => (m === UNASSIGNED_KEY ? 'Unassigned' : agentName(m)) },
+                    { key: 'manager', label: 'Account Manager', options: managers, selected: selectedManagers, onChange: setSelectedManagers, display: (m) => (m === UNASSIGNED_KEY ? 'Unassigned' : firstNameFromEmail(m)) },
                     { key: 'warehouse', label: 'Warehouse', options: facetOptions.warehouses, selected: selectedWarehouses, onChange: setSelectedWarehouses, display: (v) => (v === UNASSIGNED_KEY ? 'Unassigned' : v) },
                     { key: 'subwarehouse', label: 'Sub Warehouse', options: facetOptions.subWarehouses, selected: selectedSubWarehouses, onChange: setSelectedSubWarehouses, display: (v) => (v === UNASSIGNED_KEY ? 'Unassigned' : subLetter(v)) },
                     { key: 'portal', label: 'AppDot / Portal', options: facetOptions.portals, selected: selectedPortals, onChange: setSelectedPortals, display: (v) => (v === UNASSIGNED_KEY ? 'Unassigned' : v) },
