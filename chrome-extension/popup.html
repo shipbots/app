@@ -37,6 +37,9 @@
       <button id="detail-onboarding-btn" class="detail-onb-btn" type="button" title="Onboarding checklist (admin)" hidden>
         📋 Onboarding
       </button>
+      <button id="detail-billing-btn" class="detail-onb-btn detail-bill-btn" type="button" title="Billing info (restricted to authorized users)" hidden>
+        💳 Billing info
+      </button>
       <button id="detail-open" class="detail-open" type="button" title="Open in the full dashboard">
         Edit ↗
       </button>
@@ -77,6 +80,9 @@
       <!-- Admin-only onboarding checklist — replaces the notes/projects column
            when the Onboarding toggle is on. -->
       <div id="detail-onboarding" class="detail-onboarding" aria-label="Onboarding checklist" hidden></div>
+      <!-- Restricted billing view (DocuSign-access users only) — replaces the
+           notes/projects column when the Billing info toggle is on. -->
+      <div id="detail-billing" class="detail-onboarding detail-billing" aria-label="Billing info" hidden></div>
     </div>
   </section>
 
