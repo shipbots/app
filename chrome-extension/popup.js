@@ -25,11 +25,6 @@ function firstNameFromEmail(email) {
 // used by the sticky-note composer so it knows which client to post to.
 let activeClientId = null;
 
-// The full client payload most recently rendered (from fetchClientFull, or the
-// cached copy). The Billing info panel reads from this instead of re-fetching,
-// since the same payload already carries every billing field. Reset per open.
-let activeClientData = null;
-
 // Which view opened the current client detail ('search' | 'tasks' | 'calendar'
 // | 'projects'), so the Back button returns there.
 let detailOrigin = 'search';
@@ -1074,8 +1069,6 @@ function buildContactsBody(body, client, editing) {
 }
 
 function renderClientDetail(client) {
-  // Stash for the Billing info panel (reads from here instead of re-fetching).
-  activeClientData = client;
   const nameEl = document.getElementById('detail-name');
   const metaEl = document.getElementById('detail-meta');
   const sectionsEl = document.getElementById('detail-sections');
@@ -1156,12 +1149,6 @@ function renderClientDetail(client) {
   // column, which none of these endpoints read.
   const firstSectionWrap = fieldSections.length ? fieldSections[0].wrap : null;
   void loadClientDocs(sectionsEl, firstSectionWrap, client.id, fieldSections);
-
-  // If the Billing info panel is currently open, repaint it with this fresh
-  // payload (e.g. the instant cached render just got replaced by the network
-  // response).
-  const billEl = document.getElementById('detail-billing');
-  if (billEl && !billEl.hidden) renderBillingPanel(client);
 }
 
 // Field-section ids from DETAIL_SECTIONS that own a doc category.
@@ -2811,146 +2798,6 @@ async function onboardingItemForClient(clientBoardItemId) {
   return (items || []).find(it => it.clientBoardItemId === clientBoardItemId) || null;
 }
 
-// ── Billing info panel (restricted) ────────────────────────────────────────
-// Read-only mirror of the dashboard's Billing tab, shown only to users with
-// DocuSign access (the button is hidden otherwise, and EIN + the DocuSign file
-// are additionally redacted server-side for anyone without access). Values come
-// straight from the client payload already fetched for the detail view — no
-// extra network request. Empty fields/groups are skipped so it stays compact.
-const BILLING_GROUPS = [
-  {
-    title: 'Billing Address',
-    fields: [
-      { key: 'billingNameUpdated', label: 'Name updated?' },
-      { key: 'billingStreet1',     label: 'Street 1' },
-      { key: 'billingStreet2',     label: 'Street 2' },
-      { key: 'billingCity',        label: 'City' },
-      { key: 'billingState',       label: 'State' },
-      { key: 'billingZip',         label: 'ZIP' },
-      { key: 'billingCountry',     label: 'Country' },
-    ],
-  },
-  {
-    title: 'Legal & Tax',
-    fields: [
-      { key: 'legalEntity',    label: 'Legal entity' },
-      { key: 'quickbooksName', label: 'QuickBooks name' },
-      { key: 'ein',            label: 'EIN', kind: 'ein' },
-      { key: 'invoicingEmail', label: 'Invoicing email', type: 'email' },
-    ],
-  },
-  {
-    title: 'Contract',
-    fields: [
-      { key: 'dateDocusignSigned', label: 'DocuSign signed' },
-      { key: 'docusignFile',       label: 'DocuSign file', kind: 'docusign' },
-      { key: 'pricingProposal',    label: 'Pricing proposal', type: 'link' },
-    ],
-  },
-  {
-    title: 'Pricing (from SOW)',
-    fields: [
-      { key: 'receivingPricing',     label: '📥 Receiving' },
-      { key: 'floorLoadedFee',       label: '🚛 Floor-loaded unload' },
-      { key: 'binStorage',           label: '🗄️ Bin storage' },
-      { key: 'palletStorage',        label: '🟫 Pallet storage' },
-      { key: 'dtcPickPackPricing',   label: '🏬 DTC pick & pack' },
-      { key: 'b2bPickPack',          label: '🏭 B2B pick & pack' },
-      { key: 'shippingUpcharge',     label: '🚚 Shipping upcharge' },
-      { key: 'intlShippingUpcharge', label: '🌐 Intl shipping upcharge' },
-      { key: 'returnsFee',           label: '↩️ Returns fee' },
-      { key: 'accountManagerFee',    label: '👤 Account manager fee' },
-      { key: 'platformFee',          label: '🧾 Platform fee' },
-      { key: 'paymentTerms',         label: '📆 Payment terms' },
-      { key: 'otherNotes',           label: '📝 Other notes / promos', type: 'multiline' },
-    ],
-  },
-];
-
-// One billing row (dt/dd). Returns null when there's nothing to show so empty
-// fields don't clutter the panel. EIN / DocuSign use the API's on-file flags
-// when the real value was redacted for this viewer.
-function billingRow(client, f) {
-  const raw = client[f.key];
-  const dd = document.createElement('dd');
-  dd.className = 'bill-dd';
-
-  if (f.kind === 'ein') {
-    if (raw) dd.textContent = String(raw);
-    else if (client.einOnFile) { dd.textContent = 'On file (hidden)'; dd.classList.add('bill-muted'); }
-    else return null;
-  } else if (f.kind === 'docusign') {
-    if (raw && raw.url) {
-      const a = document.createElement('a');
-      a.href = raw.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
-      a.textContent = raw.name || 'View document';
-      dd.appendChild(a);
-    } else if (client.docusignOnFile) { dd.textContent = 'On file — open in dashboard'; dd.classList.add('bill-muted'); }
-    else return null;
-  } else {
-    if (!fieldHasValue(client, f)) return null;
-    dd.appendChild(renderField(client, f)); // reuse the detail-section renderer
-    if (f.type === 'multiline') dd.classList.add('bill-multiline');
-  }
-
-  const row = document.createElement('div');
-  row.className = 'bill-row';
-  const dt = document.createElement('dt');
-  dt.className = 'bill-dt';
-  dt.textContent = f.label;
-  row.appendChild(dt);
-  row.appendChild(dd);
-  return row;
-}
-
-function renderBillingPanel(client) {
-  const wrap = document.getElementById('detail-billing');
-  if (!wrap) return;
-  wrap.innerHTML = '';
-
-  const head = document.createElement('div');
-  head.className = 'onb-head';
-  head.innerHTML =
-    `<div class="onb-head-row"><span class="onb-title">Billing info</span>` +
-    `<button id="bill-open-app" class="onb-open-app" type="button" title="Open this client's Billing tab in the dashboard">Open in dashboard ↗</button></div>` +
-    `<div class="onb-sub">Restricted — visible only to authorized billing users.</div>`;
-  wrap.appendChild(head);
-  const openBtn = head.querySelector('#bill-open-app');
-  if (openBtn && client && client.id) {
-    openBtn.addEventListener('click', () => void openPath(`/customer-service?clientId=${encodeURIComponent(client.id)}&expanded=1`));
-  }
-
-  if (!client) {
-    const empty = document.createElement('p');
-    empty.className = 'onb-empty';
-    empty.textContent = 'Loading billing info…';
-    wrap.appendChild(empty);
-    return;
-  }
-
-  let shown = 0;
-  for (const group of BILLING_GROUPS) {
-    const rows = group.fields.map(f => billingRow(client, f)).filter(Boolean);
-    if (!rows.length) continue;
-    const gh = document.createElement('div');
-    gh.className = 'bill-group-title';
-    gh.textContent = group.title;
-    wrap.appendChild(gh);
-    const dl = document.createElement('dl');
-    dl.className = 'bill-list';
-    rows.forEach(r => dl.appendChild(r));
-    wrap.appendChild(dl);
-    shown += rows.length;
-  }
-
-  if (!shown) {
-    const empty = document.createElement('p');
-    empty.className = 'onb-empty';
-    empty.textContent = 'No billing info on file for this client.';
-    wrap.appendChild(empty);
-  }
-}
-
 function renderOnboardingChecklist(item) {
   const wrap = document.getElementById('detail-onboarding');
   if (!wrap) return;
@@ -3049,23 +2896,17 @@ async function loadOnboardingChecklist(clientBoardItemId) {
 }
 
 // Swap the detail view's right column between the default notes/projects
-// column and one of the toggle panels ('onboarding' | 'billing'). Passing
-// 'notes' (the default) restores the sticky-notes/projects column.
+// column and the onboarding panel. Passing 'notes' (the default) restores the
+// sticky-notes/projects column. (Billing info opens in the dashboard, not here.)
 function setDetailPanel(which) {
   const aside = document.querySelector('#client-detail .detail-notes');
   const onb = document.getElementById('detail-onboarding');
-  const bill = document.getElementById('detail-billing');
   const onbBtn = document.getElementById('detail-onboarding-btn');
-  const billBtn = document.getElementById('detail-billing-btn');
   const showOnb = which === 'onboarding';
-  const showBill = which === 'billing';
-  if (aside) aside.hidden = showOnb || showBill;
+  if (aside) aside.hidden = showOnb;
   if (onb) onb.hidden = !showOnb;
-  if (bill) bill.hidden = !showBill;
   if (onbBtn) onbBtn.classList.toggle('is-active', showOnb);
-  if (billBtn) billBtn.classList.toggle('is-active', showBill);
   if (showOnb && activeClientId) void loadOnboardingChecklist(activeClientId);
-  if (showBill) renderBillingPanel(activeClientData);
 }
 
 async function showClientDetail(clientStub, origin) {
@@ -3143,10 +2984,9 @@ async function showClientDetail(clientStub, origin) {
   // Remember this client so closing + reopening the popup lands back here.
   saveLastClient(clientStub);
 
-  // Reset the right column to the notes view on each open, clear the previous
-  // client's data, and reveal the gated toggles the user is entitled to:
-  // Onboarding (admins) and Billing info (DocuSign-access users).
-  activeClientData = null;
+  // Reset the right column to the notes view on each open, and reveal the gated
+  // controls the user is entitled to: the Onboarding panel toggle (admins) and
+  // the Billing info button (DocuSign-access users).
   setDetailPanel('notes');
   void fetchAccountStatus().then(({ isAdmin, canDocusign }) => {
     const onbBtn = document.getElementById('detail-onboarding-btn');
@@ -3431,12 +3271,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     setDetailPanel(onb && onb.hidden ? 'onboarding' : 'notes');
   });
 
-  // Restricted Billing info toggle: swaps in the read-only billing view for
-  // DocuSign-access users (the button is hidden for everyone else).
+  // Restricted Billing info: opens the client's full Billing tab in the
+  // dashboard in a NEW TAB, so the whole billing section is available —
+  // billing address, payments / ACH, and pricing. The button is hidden for
+  // non-authorized users, and the dashboard re-checks DocuSign access before
+  // rendering the tab.
   const billBtn = document.getElementById('detail-billing-btn');
   if (billBtn) billBtn.addEventListener('click', () => {
-    const bill = document.getElementById('detail-billing');
-    setDetailPanel(bill && bill.hidden ? 'billing' : 'notes');
+    if (!activeClientId) return;
+    void openPath(`/customer-service?clientId=${encodeURIComponent(activeClientId)}&expanded=1&tab=billing`);
   });
 
   // ── Sticky-note composer: add a note without leaving the popup ─────────

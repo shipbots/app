@@ -1,8 +1,8 @@
 # ShipBots Customer Service — extension changelog
 
 Release notes for the Chrome extension. The current store build is
-**v0.44.0**. Upload the matching zip from
-`docs/store-listing/zips/shipbots-cs-v0.44.0.zip` (manifest sits at the zip
+**v0.45.0**. Upload the matching zip from
+`docs/store-listing/zips/shipbots-cs-v0.45.0.zip` (manifest sits at the zip
 root, as the Web Store requires). Teammates auto-update within ~5 hours
 of a new upload — no action on their end.
 
@@ -46,10 +46,11 @@ admin panel — without ever leaving the popup.
 
 ---
 
-## Version history (v0.24.0 → v0.44.0)
+## Version history (v0.24.0 → v0.45.0)
 
 | Version | Date | What changed |
 |--------:|------|--------------|
+| **0.45.0** | 2026-07-29 | **Billing info** now opens the client's full Billing tab in the dashboard in a **new tab** (everything — billing address, payments/ACH, pricing) via a `?tab=billing` deep-link, instead of the in-popup read-only panel. Still restricted to DocuSign-access users. |
 | **0.44.0** | 2026-07-29 | New **Billing info** button next to Onboarding in the client header — a read-only billing view (address, legal/tax, contract, and SOW pricing). Restricted to DocuSign-access users; hidden for everyone else. |
 | **0.43.0** | 2026-07-29 | Restored client opens **instantly** from a cached payload (no "Loading…" on reopen); the remembered view now expires after **15 min** so a stale open starts on the main menu. |
 | **0.42.0** | 2026-07-24 | Sections open collapsed; in-detail "switch client" search matches the main search (rich rows, arrow keys, Enter → top result). |

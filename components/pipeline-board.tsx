@@ -69,6 +69,11 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
   })();
   const [viewMode, setViewMode] = useState<'home' | 'pipeline' | 'calendar' | 'tasks' | 'clients' | 'apps' | 'notes' | 'projects'>(initialView);
 
+  // Tab to open the deep-linked client on (e.g. ?tab=billing from the Chrome
+  // extension's "Billing info" button). Captured once on mount and applied
+  // only to that client, so navigating to other clients still defaults to Info.
+  const [deepLinkTab, setDeepLinkTab] = useState<{ id: string; tab: string } | null>(null);
+
   // Auto-open a client's detail panel when the URL carries
   // ?clientId=<id>. The id can be either an onboarding-board item id OR
   // a clients-board item id, since the extension's search-index returns
@@ -86,6 +91,10 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
       // the client opens in the full expanded view (all sections + sticky
       // notes) rather than the narrow side panel.
       if (sp.get('expanded') === '1') setDetailFullscreen(true);
+      // ?tab=<id> (e.g. tab=billing from the extension's Billing info button)
+      // opens the client straight on that tab.
+      const tab = sp.get('tab');
+      if (tab) setDeepLinkTab({ id: match.id, tab });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -927,6 +936,7 @@ export function PipelineBoard({ items, alerts, appMode = 'onboarding' }: Pipelin
           onClose={() => { setSelectedItem(null); setDetailFullscreen(false); }}
           fullscreen={detailFullscreen}
           onFullscreenChange={setDetailFullscreen}
+          initialTab={deepLinkTab && selectedItem.id === deepLinkTab.id ? deepLinkTab.tab : undefined}
           onAgentAssigned={(clientBoardItemId, email) =>
             setAgentEmailMap(prev => ({ ...prev, [clientBoardItemId]: email }))
           }

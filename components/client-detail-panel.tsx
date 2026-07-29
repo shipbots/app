@@ -637,6 +637,9 @@ interface ClientDetailPanelProps {
    *  in-panel client switcher, in both Onboarding and Customer Service. */
   fullscreen?: boolean;
   onFullscreenChange?: (fullscreen: boolean) => void;
+  /** Tab to open on initially (e.g. from a ?tab=billing deep-link). Validated
+   *  against the allowed tabs for this surface; ignored if not permitted. */
+  initialTab?: string;
   /** Projects (scaffold) + opener for the "Projects for this client" box in
    *  the CS expanded view. Opening a project shows the modal over the panel. */
   projects?: Project[];
@@ -652,6 +655,10 @@ type Tab = 'info' | 'billing' | 'onboarding' | 'meetings' | 'emails' | 'pos' | '
 // calendar context. 'billing' is further gated to DocuSign-access viewers
 // (see canViewBilling) since it exposes EIN / the contract / billing address.
 const CUSTOMER_SERVICE_TABS: ReadonlyArray<Tab> = ['info', 'billing', 'tasks', 'docs', 'bols'];
+
+// Every valid tab id — used to validate an untrusted `initialTab` deep-link
+// param (e.g. ?tab=billing from the Chrome extension) before honoring it.
+const ALL_TABS: ReadonlyArray<Tab> = ['info', 'billing', 'onboarding', 'meetings', 'emails', 'pos', 'tasks', 'docs', 'bols'];
 
 // ── Persisted layout sizes for the CS expanded view ──────────────────────
 // Keyed in localStorage so the rep's chosen split sticks across sessions /
@@ -676,7 +683,7 @@ function readPersistedNumber(key: string, fallback: number): number {
   }
 }
 
-export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onItemUpdate, onClientTasksChange, onNavigate, appMode = 'onboarding', onClientActiveChanged, fullscreen: fullscreenProp, onFullscreenChange, projects = [], onOpenProject, onCreateProject }: ClientDetailPanelProps) {
+export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', onClose, onAgentAssigned, onStatusChanged, onItemUpdate, onClientTasksChange, onNavigate, appMode = 'onboarding', onClientActiveChanged, fullscreen: fullscreenProp, onFullscreenChange, initialTab, projects = [], onOpenProject, onCreateProject }: ClientDetailPanelProps) {
   const isCustomerService = appMode === 'customer-service';
   // The Billing Info tab exposes sensitive data (EIN, the DocuSign contract,
   // billing address), so it's gated to the DocuSign-access group — the same
@@ -737,7 +744,16 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
     return () => window.clearTimeout(id);
   }, [stickyHeight]);
 
-  const [activeTab, setActiveTab] = useState<Tab>(isCustomerService ? 'info' : 'onboarding');
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    const fallback: Tab = isCustomerService ? 'info' : 'onboarding';
+    const t = initialTab as Tab | undefined;
+    if (!t || !ALL_TABS.includes(t)) return fallback;
+    // Only honor a deep-linked tab this surface actually exposes, and never
+    // land on Billing for a viewer who isn't allowed to see it.
+    if (isCustomerService && !CUSTOMER_SERVICE_TABS.includes(t)) return fallback;
+    if (t === 'billing' && !canViewBilling) return fallback;
+    return t;
+  });
   // Stale-while-revalidate over Monday's slow GraphQL fetch. Cached
   // payload paints synchronously on mount from localStorage; a fresh
   // request runs in the background and swaps in when it lands. The

@@ -1722,31 +1722,3 @@ body.calendar-open { width: 760px; }
   transition: background .12s;
 }
 .onb-open-app:hover { background: #e0f6ff; }
-
-/* ── Restricted Billing info panel ─────────────────────────────────────────── */
-/* Shares .detail-onboarding for the column shell + .onb-head for the header. */
-.bill-group-title {
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  color: #6b7280;
-  margin: 14px 0 4px;
-}
-.bill-group-title:first-of-type { margin-top: 10px; }
-.bill-list { margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.bill-row {
-  display: grid;
-  grid-template-columns: 128px minmax(0, 1fr);
-  gap: 8px;
-  padding: 4px 6px;
-  border-radius: 6px;
-  font-size: 12px;
-}
-.bill-row:nth-child(odd) { background: #f9fafb; }
-.bill-dt { margin: 0; color: #6b7280; overflow: hidden; text-overflow: ellipsis; }
-.bill-dd { margin: 0; color: #111827; min-width: 0; overflow-wrap: anywhere; }
-.bill-dd a { color: #015280; text-decoration: none; }
-.bill-dd a:hover { text-decoration: underline; }
-.bill-dd.bill-muted { color: #9ca3af; font-style: italic; }
-.bill-dd.bill-multiline { white-space: pre-line; }
