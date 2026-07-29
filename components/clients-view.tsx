@@ -42,6 +42,18 @@ type SortConfig = { column: SortColumn; dir: SortDir };
 
 const UNASSIGNED_KEY = '__unassigned__';
 
+// Show just the person's name from their work email — "gera@shipbots.com" → "Gera",
+// "maria.lopez@shipbots.com" → "Maria Lopez". The full email stays available on hover.
+function agentName(email: string): string {
+  const local = (email || '').split('@')[0];
+  if (!local) return email;
+  return local
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 function compareStrings(a: string, b: string, dir: SortDir): number {
   // Empty strings go to the bottom in ASC, top in DESC — so unassigned /
   // missing values aren't interleaved with real names.
@@ -516,9 +528,9 @@ function ClientRow({
       </td>
       <td className="px-4 py-2.5">
         {agentEmail ? (
-          <span className="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-gray-100 rounded-full px-2 py-0.5">
+          <span className="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-gray-100 rounded-full px-2 py-0.5" title={agentEmail}>
             <User className="w-3 h-3 text-gray-400" />
-            <span className="truncate max-w-[180px]">{agentEmail}</span>
+            <span className="truncate max-w-[180px]">{agentName(agentEmail)}</span>
           </span>
         ) : (
           <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
@@ -1410,7 +1422,7 @@ export function ClientsView({
                 )}
                 <FilterButton
                   facets={[
-                    { key: 'manager', label: 'Account Manager', options: managers, selected: selectedManagers, onChange: setSelectedManagers, display: (m) => (m === UNASSIGNED_KEY ? 'Unassigned' : m) },
+                    { key: 'manager', label: 'Account Manager', options: managers, selected: selectedManagers, onChange: setSelectedManagers, display: (m) => (m === UNASSIGNED_KEY ? 'Unassigned' : agentName(m)) },
                     { key: 'warehouse', label: 'Warehouse', options: facetOptions.warehouses, selected: selectedWarehouses, onChange: setSelectedWarehouses, display: (v) => (v === UNASSIGNED_KEY ? 'Unassigned' : v) },
                     { key: 'subwarehouse', label: 'Sub Warehouse', options: facetOptions.subWarehouses, selected: selectedSubWarehouses, onChange: setSelectedSubWarehouses, display: (v) => (v === UNASSIGNED_KEY ? 'Unassigned' : subLetter(v)) },
                     { key: 'portal', label: 'AppDot / Portal', options: facetOptions.portals, selected: selectedPortals, onChange: setSelectedPortals, display: (v) => (v === UNASSIGNED_KEY ? 'Unassigned' : v) },
