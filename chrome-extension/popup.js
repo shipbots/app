@@ -2809,82 +2809,54 @@ async function onboardingItemForClient(clientBoardItemId) {
   return (items || []).find(it => it.clientBoardItemId === clientBoardItemId) || null;
 }
 
-// ── Billing info panel (restricted) ────────────────────────────────────────
-// In-popup mirror of the dashboard's Billing tab, shown only to DocuSign-access
-// users (the button is hidden otherwise, and EIN + the DocuSign file are also
-// redacted server-side for anyone without access). Most fields read straight
-// from the already-fetched client payload; the Payment Method section fetches
-// ACH details from /api/client/ach (same DocuSign gate). Empty rows/groups are
-// skipped so it stays compact. `kind: 'payment'` is a placeholder group filled
-// by a dedicated async routine rather than the plain field mapper.
-const BILLING_GROUPS = [
-  {
-    title: 'Account',
-    fields: [
-      { key: 'shipHeroName',    label: 'ShipHero name' },
-      { key: 'shipHeroId',      label: 'ShipHero account ID' },
-      { key: 'umbrellaCompany', label: 'Umbrella company' },
-    ],
-  },
-  {
-    title: 'Billing Address',
-    fields: [
-      { key: 'billingNameUpdated', label: 'Name updated?' },
-      { key: 'billingStreet1',     label: 'Street 1' },
-      { key: 'billingStreet2',     label: 'Street 2' },
-      { key: 'billingCity',        label: 'City' },
-      { key: 'billingState',       label: 'State' },
-      { key: 'billingZip',         label: 'ZIP' },
-      { key: 'billingCountry',     label: 'Country' },
-    ],
-  },
-  {
-    title: 'Legal & Tax',
-    fields: [
-      { key: 'legalEntity',    label: 'Legal entity' },
-      { key: 'quickbooksName', label: 'QuickBooks name' },
-      { key: 'ein',            label: 'EIN', kind: 'ein' },
-      { key: 'invoicingEmail', label: 'Invoicing email', type: 'email' },
-    ],
-  },
-  {
-    title: 'Contract',
-    fields: [
-      { key: 'dateDocusignSigned', label: 'DocuSign signed' },
-      { key: 'docusignFile',       label: 'DocuSign file', kind: 'docusign' },
-      { key: 'pricingProposal',    label: 'Pricing proposal', type: 'link' },
-    ],
-  },
-  { title: 'Payment Method', kind: 'payment' },
-  {
-    title: 'Pricing (from SOW)',
-    fields: [
-      { key: 'receivingPricing',     label: '📥 Receiving' },
-      { key: 'floorLoadedFee',       label: '🚛 Floor-loaded unload' },
-      { key: 'binStorage',           label: '🗄️ Bin storage' },
-      { key: 'palletStorage',        label: '🟫 Pallet storage' },
-      { key: 'dtcPickPackPricing',   label: '🏬 DTC pick & pack' },
-      { key: 'b2bPickPack',          label: '🏭 B2B pick & pack' },
-      { key: 'shippingUpcharge',     label: '🚚 Shipping upcharge' },
-      { key: 'intlShippingUpcharge', label: '🌐 Intl shipping upcharge' },
-      { key: 'returnsFee',           label: '↩️ Returns fee' },
-      { key: 'accountManagerFee',    label: '👤 Account manager fee' },
-      { key: 'platformFee',          label: '🧾 Platform fee' },
-      { key: 'paymentTerms',         label: '📆 Payment terms' },
-      { key: 'otherNotes',           label: '📝 Other notes / promos', type: 'multiline' },
-    ],
-  },
+// ── Billing info panel (restricted, full-page) ──────────────────────────────
+// Full-width in-popup mirror of the dashboard's Billing tab, shown only to
+// DocuSign-access users. Grouped exactly like the CS app — General Billing Info,
+// Payment Method, Pricing Info — each an expand/collapse section. Most fields
+// read from the already-fetched client payload; ACH is fetched from
+// /api/client/ach (same DocuSign gate). EIN + the DocuSign file are also
+// redacted server-side for anyone without access.
+
+// General Billing Info fields, in the CS app's order. `sub` prints a small
+// sub-heading (e.g. "Billing Address") just before that field.
+const BILL_GENERAL_FIELDS = [
+  { key: 'shipHeroName',       label: 'ShipHero name' },
+  { key: 'shipHeroId',         label: 'ShipHero account ID' },
+  { key: 'umbrellaCompany',    label: 'Umbrella company' },
+  { key: 'legalEntity',        label: 'Legal entity' },
+  { key: 'ein',                label: 'EIN', kind: 'ein' },
+  { key: 'quickbooksName',     label: 'QuickBooks name' },
+  { key: 'invoicingEmail',     label: 'Invoicing email', type: 'email' },
+  { key: 'billingNameUpdated', label: 'Name updated?', sub: 'Billing Address' },
+  { key: 'billingStreet1',     label: 'Street 1' },
+  { key: 'billingStreet2',     label: 'Street 2' },
+  { key: 'billingCity',        label: 'City' },
+  { key: 'billingState',       label: 'State' },
+  { key: 'billingZip',         label: 'ZIP' },
+  { key: 'billingCountry',     label: 'Country' },
+  { key: 'docusignFile',       label: 'DocuSign contract', kind: 'docusign', sub: 'Contract' },
+  { key: 'dateDocusignSigned', label: 'DocuSign signed' },
+  { key: 'pricingProposal',    label: 'Pricing proposal', type: 'link' },
 ];
 
-function billGroupTitle(text) {
-  const gh = document.createElement('div');
-  gh.className = 'bill-group-title';
-  gh.textContent = text;
-  return gh;
-}
+const BILL_PRICING_FIELDS = [
+  { key: 'receivingPricing',     label: '📥 Receiving' },
+  { key: 'floorLoadedFee',       label: '🚛 Floor-loaded unload' },
+  { key: 'binStorage',           label: '🗄️ Bin storage' },
+  { key: 'palletStorage',        label: '🟫 Pallet storage' },
+  { key: 'dtcPickPackPricing',   label: '🏬 DTC pick & pack' },
+  { key: 'b2bPickPack',          label: '🏭 B2B pick & pack' },
+  { key: 'shippingUpcharge',     label: '🚚 Shipping upcharge' },
+  { key: 'intlShippingUpcharge', label: '🌐 Intl shipping upcharge' },
+  { key: 'returnsFee',           label: '↩️ Returns fee' },
+  { key: 'accountManagerFee',    label: '👤 Account manager fee' },
+  { key: 'platformFee',          label: '🧾 Platform fee' },
+  { key: 'paymentTerms',         label: '📆 Payment terms' },
+  { key: 'otherNotes',           label: '📝 Other notes / promos', type: 'multiline' },
+];
 
-// A single dt/dd row. valueNode may be a string or a DOM node. opts: {muted,
-// mono, multiline} toggle the matching .bill-dd modifiers.
+// A dt/dd row. valueNode may be a string or a DOM node. opts: {muted, mono,
+// multiline} toggle the matching .bill-dd modifiers.
 function billRow(label, valueNode, opts) {
   const o = opts || {};
   const row = document.createElement('div');
@@ -2904,7 +2876,7 @@ function billRow(label, valueNode, opts) {
   return row;
 }
 
-// Build a client-payload field row (reuses the detail-section renderer), or
+// A field row from the client payload (reuses the detail-section renderer), or
 // null when empty. EIN / DocuSign fall back to the API's on-file flags.
 function billingFieldRow(client, f) {
   const raw = client[f.key];
@@ -2927,47 +2899,72 @@ function billingFieldRow(client, f) {
   return billRow(f.label, renderField(client, f), { multiline: f.type === 'multiline' });
 }
 
-function renderBillingPanel(client) {
-  const wrap = document.getElementById('detail-billing');
-  if (!wrap) return;
-  wrap.innerHTML = '';
+// Small sub-heading inside a section body (e.g. "Billing Address").
+function billSubHead(text) {
+  const el = document.createElement('div');
+  el.className = 'bill-subhead';
+  el.textContent = text;
+  return el;
+}
 
-  const head = document.createElement('div');
-  head.className = 'onb-head';
-  head.innerHTML =
-    `<div class="onb-head-row"><span class="onb-title">Billing info</span>` +
-    `<button id="bill-open-app" class="onb-open-app" type="button" title="Open this client's Billing tab in the dashboard to edit">Edit in dashboard ↗</button></div>` +
-    `<div class="onb-sub">Restricted — visible only to authorized billing users.</div>`;
-  wrap.appendChild(head);
-  const openBtn = head.querySelector('#bill-open-app');
-  if (openBtn && client && client.id) {
-    openBtn.addEventListener('click', () => void openPath(`/customer-service?clientId=${encodeURIComponent(client.id)}&expanded=1&tab=billing`));
-  }
+// A collapsible section: a header (title + row count + chevron) that toggles the
+// body open/closed. Starts expanded. buildBody(bodyEl) fills the body.
+function billSection(title, buildBody) {
+  const sec = document.createElement('section');
+  sec.className = 'bill-sec';
+  const head = document.createElement('button');
+  head.type = 'button';
+  head.className = 'bill-sec-head';
+  const t = document.createElement('span');
+  t.className = 'bill-sec-title';
+  t.textContent = title;
+  const chev = document.createElement('span');
+  chev.className = 'bill-sec-chev';
+  chev.setAttribute('aria-hidden', 'true');
+  chev.textContent = '▾';
+  head.appendChild(t);
+  head.appendChild(chev);
+  const body = document.createElement('div');
+  body.className = 'bill-sec-body';
+  buildBody(body);
+  head.addEventListener('click', () => sec.classList.toggle('collapsed'));
+  sec.appendChild(head);
+  sec.appendChild(body);
+  return sec;
+}
 
-  if (!client) {
-    const empty = document.createElement('p');
-    empty.className = 'onb-empty';
-    empty.textContent = 'Loading billing info…';
-    wrap.appendChild(empty);
-    return;
+// General Billing Info rows (with the Billing Address / Contract sub-headings).
+function appendGeneralBody(body, client) {
+  const dl = document.createElement('dl');
+  dl.className = 'bill-list';
+  let shown = 0;
+  for (const f of BILL_GENERAL_FIELDS) {
+    const row = billingFieldRow(client, f);
+    if (!row) continue;
+    if (f.sub) dl.appendChild(billSubHead(f.sub));
+    dl.appendChild(row);
+    shown++;
   }
+  if (!shown) dl.appendChild(billRow('—', 'No billing info on file', { muted: true }));
+  body.appendChild(dl);
+}
 
-  for (const group of BILLING_GROUPS) {
-    if (group.kind === 'payment') { appendPaymentSection(wrap, client); continue; }
-    const rows = group.fields.map(f => billingFieldRow(client, f)).filter(Boolean);
-    if (!rows.length) continue;
-    wrap.appendChild(billGroupTitle(group.title));
-    const dl = document.createElement('dl');
-    dl.className = 'bill-list';
-    rows.forEach(r => dl.appendChild(r));
-    wrap.appendChild(dl);
+// Pricing Info rows, laid out two-per-row on the wide page (like the CS app).
+function appendPricingBody(body, client) {
+  const dl = document.createElement('dl');
+  dl.className = 'bill-list bill-grid';
+  let shown = 0;
+  for (const f of BILL_PRICING_FIELDS) {
+    const row = billingFieldRow(client, f);
+    if (row) { dl.appendChild(row); shown++; }
   }
+  if (!shown) dl.appendChild(billRow('—', 'No pricing on file', { muted: true }));
+  body.appendChild(dl);
 }
 
 // Payment Method: "Payment on file?" from the client payload + the ACH bank
 // details fetched from /api/client/ach (server-gated to DocuSign access).
-function appendPaymentSection(wrap, client) {
-  wrap.appendChild(billGroupTitle('Payment Method'));
+function appendPaymentBody(body, client) {
   const dl = document.createElement('dl');
   dl.className = 'bill-list';
   if (fieldHasValue(client, { key: 'paymentOnFile' })) {
@@ -2975,7 +2972,7 @@ function appendPaymentSection(wrap, client) {
   }
   const loadingRow = billRow('Bank (ACH)', 'Loading…', { muted: true });
   dl.appendChild(loadingRow);
-  wrap.appendChild(dl);
+  body.appendChild(dl);
   void loadAchIntoBilling(client, loadingRow);
 }
 
@@ -3000,13 +2997,51 @@ async function loadAchIntoBilling(client, loadingRow) {
     const signer = [ach.firstName, ach.lastName].filter(Boolean).join(' ').trim();
     if (signer)                   rows.push(billRow('✍️ Signer', signer));
     if (!rows.length) rows.push(billRow('Bank (ACH)', 'On file (no details)', { muted: true }));
-    // Swap the loading row for the first result, then chain the rest after it.
     loadingRow.replaceWith(rows[0]);
     let anchor = rows[0];
     for (let i = 1; i < rows.length; i++) { anchor.after(rows[i]); anchor = rows[i]; }
   } catch {
     loadingRow.replaceWith(billRow('Bank (ACH)', "Couldn't load", { muted: true }));
   }
+}
+
+function renderBillingPanel(client) {
+  const wrap = document.getElementById('detail-billing');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  const head = document.createElement('div');
+  head.className = 'bill-head';
+  const title = document.createElement('span');
+  title.className = 'bill-head-title';
+  title.textContent = 'Billing info';
+  const note = document.createElement('span');
+  note.className = 'bill-head-note';
+  note.textContent = 'Restricted';
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'onb-open-app';
+  editBtn.textContent = 'Edit in dashboard ↗';
+  editBtn.title = "Open this client's Billing tab in the dashboard to edit";
+  head.appendChild(title);
+  head.appendChild(note);
+  head.appendChild(editBtn);
+  wrap.appendChild(head);
+  if (client && client.id) {
+    editBtn.addEventListener('click', () => void openPath(`/customer-service?clientId=${encodeURIComponent(client.id)}&expanded=1&tab=billing`));
+  }
+
+  if (!client) {
+    const empty = document.createElement('p');
+    empty.className = 'onb-empty';
+    empty.textContent = 'Loading billing info…';
+    wrap.appendChild(empty);
+    return;
+  }
+
+  wrap.appendChild(billSection('General Billing Info', body => appendGeneralBody(body, client)));
+  wrap.appendChild(billSection('Payment Method',       body => appendPaymentBody(body, client)));
+  wrap.appendChild(billSection('Pricing Info',         body => appendPricingBody(body, client)));
 }
 
 function renderOnboardingChecklist(item) {
@@ -3111,6 +3146,7 @@ async function loadOnboardingChecklist(clientBoardItemId) {
 // 'notes' (the default) restores the sticky-notes/projects column.
 function setDetailPanel(which) {
   const aside = document.querySelector('#client-detail .detail-notes');
+  const sections = document.getElementById('detail-sections');
   const onb = document.getElementById('detail-onboarding');
   const bill = document.getElementById('detail-billing');
   const onbBtn = document.getElementById('detail-onboarding-btn');
@@ -3120,6 +3156,9 @@ function setDetailPanel(which) {
   if (aside) aside.hidden = showOnb || showBill;
   if (onb) onb.hidden = !showOnb;
   if (bill) bill.hidden = !showBill;
+  // Billing takes over the whole page — hide the left client-info column so it
+  // spans full width. (Onboarding keeps the left column and sits beside it.)
+  if (sections) sections.hidden = showBill;
   if (onbBtn) onbBtn.classList.toggle('is-active', showOnb);
   if (billBtn) billBtn.classList.toggle('is-active', showBill);
   if (showOnb && activeClientId) void loadOnboardingChecklist(activeClientId);
