@@ -1729,10 +1729,16 @@ body.calendar-open { width: 760px; }
 .detail-sections[hidden] { display: none !important; }
 .detail-billing {
   flex: 1 1 100%;
+  /* Override .detail-onboarding's flex column: as flex children the sections
+     would shrink and get clipped by their own overflow:hidden when the content
+     is tall. Plain block flow lets each section keep its full height and the
+     panel scrolls (overflow-y:auto is inherited from .detail-onboarding). */
+  display: block;
   border-left: none;
   background: #f7f8fa;
   padding: 12px 16px 20px;
 }
+.bill-sec { flex: none; }
 
 .bill-head {
   display: flex;
@@ -1810,3 +1816,38 @@ body.calendar-open { width: 760px; }
 .bill-dd.bill-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -.2px; }
 .bill-dd.bill-multiline { white-space: pre-line; }
 .bill-subhead { grid-column: 1 / -1; }
+
+/* Inline editing inside the billing panel (reuses attachInlineEdit; the base
+   edit CSS is scoped to .detail-section-body, so re-declare for .bill-dd). */
+.bill-dd.editable { cursor: text; border-radius: 4px; padding: 1px 4px; margin: -1px -4px; transition: background .1s; }
+.bill-dd.editable:hover { background: #eaf0f6; }
+.bill-dd.editable:hover .edit-trigger { opacity: 1; }
+.bill-dd.bill-add { color: #9ca3af; font-style: italic; }
+.bill-dd .edit-trigger {
+  opacity: 0;
+  margin-left: 6px;
+  border: 0;
+  background: none;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 12px;
+  transition: opacity .1s, color .1s;
+}
+.bill-dd .edit-trigger:hover { color: #015280; }
+.bill-dd .edit-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: #111827;
+  border: 1px solid #43c7ff;
+  border-radius: 4px;
+  padding: 3px 5px;
+  box-sizing: border-box;
+  background: #fff;
+}
+.bill-dd textarea.edit-input { min-height: 48px; resize: vertical; line-height: 1.4; }
+.bill-dd .edit-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(67,199,255,.25); }
+.bill-dd .edit-status { font-size: 11px; }
+.bill-dd .edit-status.saving { color: #6b7280; font-style: italic; }
+.bill-dd .edit-status.ok { color: #059669; }
+.bill-dd .edit-status.err { color: #b91c1c; }

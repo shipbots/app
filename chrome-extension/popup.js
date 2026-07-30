@@ -574,6 +574,22 @@ const EDITABLE_KEYS = {
   billingState:   { columnId: 'text_mkx5er1a' },
   billingZip:     { columnId: 'text_mkx5tjd7' },
   billingCountry: { columnId: 'text_mkx5kyv4' },
+  // Pricing (Billing tab) — mirror the dashboard's Pricing Info columns so reps
+  // can edit rates in-popup. shippingUpcharge shares text_mktqa6sm with
+  // shippingVolume (same Monday column).
+  receivingPricing:     { columnId: 'text_mm5hpark', multiline: true },
+  floorLoadedFee:       { columnId: 'text_mm5hxygd', multiline: true },
+  binStorage:           { columnId: 'text_mm5hwtkt', multiline: true },
+  palletStorage:        { columnId: 'text_mm5h6606', multiline: true },
+  dtcPickPackPricing:   { columnId: 'text_mm5hc2dg', multiline: true },
+  b2bPickPack:          { columnId: 'text_mm5h4938', multiline: true },
+  shippingUpcharge:     { columnId: 'text_mktqa6sm', multiline: true },
+  intlShippingUpcharge: { columnId: 'text_mm5h1w32', multiline: true },
+  returnsFee:           { columnId: 'text_mm5hzk9n', multiline: true },
+  accountManagerFee:    { columnId: 'text_mm5hb9',   multiline: true },
+  platformFee:          { columnId: 'text_mm5hq2xy', multiline: true },
+  paymentTerms:         { columnId: 'text_mm5hgn1k' },
+  otherNotes:           { columnId: 'long_text_mm5hy744', multiline: true },
   // Receiving
   initialInventoryMethod:       { columnId: 'text_mktrm9jx' },
   initialInventoryQty:          { columnId: 'text_mktravgn' },
@@ -2817,26 +2833,31 @@ async function onboardingItemForClient(clientBoardItemId) {
 // /api/client/ach (same DocuSign gate). EIN + the DocuSign file are also
 // redacted server-side for anyone without access.
 
-// General Billing Info fields, in the CS app's order. `sub` prints a small
-// sub-heading (e.g. "Billing Address") just before that field.
-const BILL_GENERAL_FIELDS = [
-  { key: 'shipHeroName',       label: 'ShipHero name' },
-  { key: 'shipHeroId',         label: 'ShipHero account ID' },
-  { key: 'umbrellaCompany',    label: 'Umbrella company' },
-  { key: 'legalEntity',        label: 'Legal entity' },
-  { key: 'ein',                label: 'EIN', kind: 'ein' },
-  { key: 'quickbooksName',     label: 'QuickBooks name' },
-  { key: 'invoicingEmail',     label: 'Invoicing email', type: 'email' },
-  { key: 'billingNameUpdated', label: 'Name updated?', sub: 'Billing Address' },
-  { key: 'billingStreet1',     label: 'Street 1' },
-  { key: 'billingStreet2',     label: 'Street 2' },
-  { key: 'billingCity',        label: 'City' },
-  { key: 'billingState',       label: 'State' },
-  { key: 'billingZip',         label: 'ZIP' },
-  { key: 'billingCountry',     label: 'Country' },
-  { key: 'docusignFile',       label: 'DocuSign contract', kind: 'docusign', sub: 'Contract' },
-  { key: 'dateDocusignSigned', label: 'DocuSign signed' },
-  { key: 'pricingProposal',    label: 'Pricing proposal', type: 'link' },
+// General Billing Info, split into sub-groups so each sub-heading shows even
+// when its first field happens to be empty. Order mirrors the CS app.
+const BILL_GENERAL_GROUPS = [
+  { fields: [
+    { key: 'shipHeroName',    label: 'ShipHero name' },
+    { key: 'shipHeroId',      label: 'ShipHero account ID' },
+    { key: 'umbrellaCompany', label: 'Umbrella company' },
+    { key: 'legalEntity',     label: 'Legal entity' },
+    { key: 'ein',             label: 'EIN', kind: 'ein' },
+    { key: 'quickbooksName',  label: 'QuickBooks name' },
+    { key: 'invoicingEmail',  label: 'Invoicing email', type: 'email' },
+  ] },
+  { sub: 'Billing Address', fields: [
+    { key: 'billingStreet1', label: 'Street 1' },
+    { key: 'billingStreet2', label: 'Street 2' },
+    { key: 'billingCity',    label: 'City' },
+    { key: 'billingState',   label: 'State' },
+    { key: 'billingZip',     label: 'ZIP' },
+    { key: 'billingCountry', label: 'Country' },
+  ] },
+  { sub: 'Contract', fields: [
+    { key: 'docusignFile',       label: 'DocuSign contract', kind: 'docusign' },
+    { key: 'dateDocusignSigned', label: 'DocuSign signed' },
+    { key: 'pricingProposal',    label: 'Pricing proposal', type: 'link' },
+  ] },
 ];
 
 const BILL_PRICING_FIELDS = [
@@ -2876,14 +2897,35 @@ function billRow(label, valueNode, opts) {
   return row;
 }
 
-// A field row from the client payload (reuses the detail-section renderer), or
-// null when empty. EIN / DocuSign fall back to the API's on-file flags.
+// Make a billing row's value click-to-edit when the field maps to an editable
+// Monday text column (reuses the same inline editor as the main client page).
+function makeBillRowEditable(row, client, f) {
+  const spec = EDITABLE_KEYS[f.key];
+  if (!spec) return row;
+  const dd = row.querySelector('.bill-dd');
+  if (dd) attachInlineEdit(dd, client, f, spec);
+  return row;
+}
+
+// An "Add…" affordance for an empty but editable field, so reps can fill it in
+// right here instead of opening the dashboard.
+function billAddRow(client, f) {
+  const row = billRow(f.label, 'Add…', { muted: true });
+  row.querySelector('.bill-dd').classList.add('bill-add');
+  return makeBillRowEditable(row, client, f);
+}
+
+// A field row from the client payload. Editable text fields render click-to-edit
+// (and show an "Add…" row when empty); non-editable fields (files, dropdowns,
+// dates, links) show only when they have a value. EIN / DocuSign respect the
+// API's on-file redaction flags.
 function billingFieldRow(client, f) {
   const raw = client[f.key];
+  const editable = !!EDITABLE_KEYS[f.key];
   if (f.kind === 'ein') {
-    if (raw) return billRow(f.label, String(raw));
+    if (raw) return makeBillRowEditable(billRow(f.label, String(raw)), client, f);
     if (client.einOnFile) return billRow(f.label, 'On file (hidden)', { muted: true });
-    return null;
+    return editable ? billAddRow(client, f) : null;
   }
   if (f.kind === 'docusign') {
     if (raw && raw.url) {
@@ -2893,10 +2935,14 @@ function billingFieldRow(client, f) {
       return billRow(f.label, a);
     }
     if (client.docusignOnFile) return billRow(f.label, 'On file — open in dashboard', { muted: true });
-    return null;
+    return null; // upload happens in the dashboard
   }
-  if (!fieldHasValue(client, f)) return null;
-  return billRow(f.label, renderField(client, f), { multiline: f.type === 'multiline' });
+  if (fieldHasValue(client, f)) {
+    const row = billRow(f.label, renderField(client, f), { multiline: f.type === 'multiline' });
+    return editable ? makeBillRowEditable(row, client, f) : row;
+  }
+  // Empty: offer an inline "Add…" for editable fields; hide non-editable ones.
+  return editable ? billAddRow(client, f) : null;
 }
 
 // Small sub-heading inside a section body (e.g. "Billing Address").
@@ -2933,17 +2979,18 @@ function billSection(title, buildBody) {
   return sec;
 }
 
-// General Billing Info rows (with the Billing Address / Contract sub-headings).
+// General Billing Info rows, grouped with the Billing Address / Contract
+// sub-headings. A sub-heading shows whenever its group has any visible row.
 function appendGeneralBody(body, client) {
   const dl = document.createElement('dl');
   dl.className = 'bill-list';
   let shown = 0;
-  for (const f of BILL_GENERAL_FIELDS) {
-    const row = billingFieldRow(client, f);
-    if (!row) continue;
-    if (f.sub) dl.appendChild(billSubHead(f.sub));
-    dl.appendChild(row);
-    shown++;
+  for (const group of BILL_GENERAL_GROUPS) {
+    const rows = group.fields.map(f => billingFieldRow(client, f)).filter(Boolean);
+    if (!rows.length) continue;
+    if (group.sub) dl.appendChild(billSubHead(group.sub));
+    rows.forEach(r => dl.appendChild(r));
+    shown += rows.length;
   }
   if (!shown) dl.appendChild(billRow('—', 'No billing info on file', { muted: true }));
   body.appendChild(dl);
@@ -3021,8 +3068,8 @@ function renderBillingPanel(client) {
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
   editBtn.className = 'onb-open-app';
-  editBtn.textContent = 'Edit in dashboard ↗';
-  editBtn.title = "Open this client's Billing tab in the dashboard to edit";
+  editBtn.textContent = 'Open in dashboard ↗';
+  editBtn.title = "Most fields are editable here — click a value to edit. Opens the dashboard Billing tab for files, dropdowns, and dates.";
   head.appendChild(title);
   head.appendChild(note);
   head.appendChild(editBtn);
