@@ -14,7 +14,9 @@
  * ("not initialized") so callers use their seed list, and writes throw a clear
  * error the API surfaces to the UI.
  */
-import { put, list } from '@vercel/blob';
+// @vercel/blob is imported dynamically inside the read/write helpers (not at the
+// top level) so it stays out of the edge proxy's static bundle — this module is
+// reachable from the auth `jwt` callback, which runs at the edge.
 
 const BLOB_PATHNAME = 'access/access-lists.json';
 const CACHE_TTL_MS = 30_000;
@@ -46,6 +48,7 @@ function normalizeEmails(input: unknown): string[] {
 
 async function readFromBlob(): Promise<AccessLists | null> {
   if (!isBlobConfigured()) return null;
+  const { list } = await import('@vercel/blob');
   const { blobs } = await list({ prefix: BLOB_PATHNAME, limit: 1 });
   const hit = blobs.find(b => b.pathname === BLOB_PATHNAME);
   if (!hit) return null;
@@ -55,28 +58,56 @@ async function readFromBlob(): Promise<AccessLists | null> {
   return { docusign: normalizeEmails(json?.docusign) };
 }
 
+let refreshing: Promise<void> | null = null;
+function refreshInBackground(): void {
+  if (refreshing) return;
+  refreshing = (async () => {
+    try {
+      const value = await readFromBlob();
+      cache = { at: Date.now(), value };
+      primed = true;
+    } catch {
+      // Keep whatever we last had (may be null) instead of dropping access.
+    } finally {
+      refreshing = null;
+    }
+  })();
+}
+
 /**
  * The full stored access map, or null when the store hasn't been initialized
- * yet (no blob, or Blob not configured). Cached for CACHE_TTL_MS. Transient
- * read errors serve the last-known cached value rather than dropping access.
+ * yet (no blob, or Blob not configured).
+ *
+ * NON-BLOCKING by default: returns the last-known cached value immediately and
+ * kicks off a background refresh when stale. This matters because the auth
+ * `jwt` callback (which gates canDocusign) runs on EVERY request — including in
+ * the edge proxy — so it must never wait on a Blob round-trip. Worst case the
+ * value is a few seconds stale, or seeds-only until the first refresh warms the
+ * cache after a cold start.
+ *
+ * Pass force=true to await a fresh read — used by the admin Settings GET and
+ * right after a write, where the caller wants the authoritative current list.
  */
 export async function getAccessLists(force = false): Promise<AccessLists | null> {
   const now = Date.now();
-  if (!force && primed && now - cache.at < CACHE_TTL_MS) return cache.value;
-  try {
-    const value = await readFromBlob();
-    cache = { at: now, value };
-    primed = true;
-    return value;
-  } catch {
-    // Keep whatever we last had (may be null) instead of hard-failing auth.
-    return cache.value;
+  if (force) {
+    try {
+      const value = await readFromBlob();
+      cache = { at: now, value };
+      primed = true;
+      return value;
+    } catch {
+      return cache.value;
+    }
   }
+  if (!primed || now - cache.at >= CACHE_TTL_MS) refreshInBackground();
+  return cache.value;
 }
 
 /** Overwrite the whole access map. Throws if Blob isn't configured. */
 export async function saveAccessLists(next: AccessLists): Promise<void> {
   if (!isBlobConfigured()) throw new Error('BLOB_READ_WRITE_TOKEN is not set');
+  const { put } = await import('@vercel/blob');
   const clean: AccessLists = { docusign: normalizeEmails(next.docusign) };
   await put(BLOB_PATHNAME, JSON.stringify(clean, null, 2), {
     access: 'public',

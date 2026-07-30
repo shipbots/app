@@ -56,7 +56,7 @@ export async function getDocusignAccessState(): Promise<{
   source: 'store' | 'seed';
   writable: boolean;
 }> {
-  const stored = await getAccessLists();
+  const stored = await getAccessLists(true); // authoritative read for the admin UI
   return {
     emails: stored ? stored.docusign : getSeedDocusignEmails(),
     seeds: getSeedDocusignEmails(),
