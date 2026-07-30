@@ -147,7 +147,7 @@ export async function POST(req: Request) {
   let authed = !!(secret && typeof body.secret === 'string' && body.secret === secret);
   if (!authed) {
     const session = await auth();
-    authed = !!(session?.user?.email && canUseDocusign(session.user.email));
+    authed = !!session?.user?.email && (await canUseDocusign(session.user.email));
   }
   if (!authed) {
     // secretConfigured tells you (without leaking the value) whether

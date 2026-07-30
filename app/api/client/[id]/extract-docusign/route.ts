@@ -25,7 +25,7 @@ export async function POST(
   // DocuSign is restricted to a specific group — enforce it server-side, not
   // just by hiding the UI (see lib/docusign-access.ts).
   const session = await auth();
-  if (!canUseDocusign(session?.user?.email)) {
+  if (!(await canUseDocusign(session?.user?.email))) {
     return NextResponse.json({ error: 'Not authorized for DocuSign' }, { status: 403 });
   }
 

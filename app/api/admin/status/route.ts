@@ -21,7 +21,7 @@ export async function GET() {
   const email = session?.user?.email ?? null;
   if (!email) return NextResponse.json({ isAdmin: false, canDocusign: false, email: null }, { status: 401 });
   return NextResponse.json(
-    { isAdmin: isAdminEmail(email), canDocusign: canUseDocusign(email), email },
+    { isAdmin: isAdminEmail(email), canDocusign: await canUseDocusign(email), email },
     { headers: { 'Cache-Control': 'private, max-age=300' } },
   );
 }

@@ -42,11 +42,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return allowedEmails.includes(email);
     },
 
-    // Stamp the JWT with isAdmin so we don't re-check the env on every request.
-    // Re-computed on token refresh (next sign-in or session refresh).
-    jwt({ token }) {
+    // Stamp the JWT with isAdmin + canDocusign. Runs whenever the token is read,
+    // so runtime changes to the DocuSign allowlist (edited in Settings) take
+    // effect within the access-store cache TTL — no re-login needed. The store
+    // read is cached in-process, so this stays fast.
+    async jwt({ token }) {
       token.isAdmin = isAdminEmail(token.email as string | undefined);
-      token.canDocusign = canUseDocusign(token.email as string | undefined);
+      token.canDocusign = await canUseDocusign(token.email as string | undefined);
       return token;
     },
 

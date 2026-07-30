@@ -47,7 +47,7 @@ export async function POST(req: Request) {
   const session = await auth();
   const email = session?.user?.email;
   if (!email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (!canUseDocusign(email)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!(await canUseDocusign(email))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const key = process.env.MONDAY_API_KEY;
   if (!key) return NextResponse.json({ error: 'MONDAY_API_KEY not set' }, { status: 500 });
 

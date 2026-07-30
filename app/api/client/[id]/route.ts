@@ -22,7 +22,7 @@ export async function GET(
     // still write (blindly) a new EIN. See lib/docusign-access.ts.
     if (surface !== 'onboarding') {
       const session = await auth();
-      if (!canUseDocusign(session?.user?.email)) {
+      if (!(await canUseDocusign(session?.user?.email))) {
         client.einOnFile = !!client.ein;
         client.docusignOnFile = !!client.docusignFile;
         client.ein = '';

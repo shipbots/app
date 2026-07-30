@@ -66,7 +66,7 @@ export async function POST(
   const { id } = await params;
 
   const session = await auth();
-  if (!canUseDocusign(session?.user?.email)) {
+  if (!(await canUseDocusign(session?.user?.email))) {
     return NextResponse.json({ error: 'Not authorized for DocuSign' }, { status: 403 });
   }
   if (!/^\d+$/.test(id)) {

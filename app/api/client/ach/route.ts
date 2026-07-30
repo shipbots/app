@@ -68,7 +68,7 @@ async function gate(): Promise<{ ok: true; key: string } | { ok: false; res: Nex
   const session = await auth();
   const email = session?.user?.email;
   if (!email) return { ok: false, res: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
-  if (!canUseDocusign(email)) return { ok: false, res: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
+  if (!(await canUseDocusign(email))) return { ok: false, res: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
   const key = process.env.MONDAY_API_KEY;
   if (!key) return { ok: false, res: NextResponse.json({ error: 'MONDAY_API_KEY not set' }, { status: 500 }) };
   return { ok: true, key };

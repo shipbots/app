@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { redirect } from 'next/navigation';
 import { getAdminEmails } from '@/lib/admins';
+import { BillingAccessManager } from '@/components/billing-access-manager';
 import { ShieldCheck, AlertTriangle, ExternalLink } from 'lucide-react';
 
 // Admin-only settings page. The proxy already gates /settings to admins so
@@ -52,6 +53,8 @@ export default async function SettingsPage() {
           ))}
         </ul>
       </section>
+
+      <BillingAccessManager currentEmail={currentEmail} />
 
       <section className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
         <div className="flex items-start gap-2.5">
