@@ -111,12 +111,38 @@ export function SectionDocuments({
     setUploading(true);
     setErrorMsg('');
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await fetch(`/api/client/${clientBoardItemId}/section-files/${category}`, {
-        method: 'POST',
-        body: fd,
-      });
+      // Vercel caps a function's request body at 4.5MB, so anything near/over
+      // that is uploaded straight to Vercel Blob from the browser and then
+      // attached to Monday server-side. Small files use the simple multipart
+      // path. Threshold at 4MB to leave headroom for multipart overhead.
+      const BLOB_THRESHOLD = 4 * 1024 * 1024;
+      let res: Response;
+      if (file.size > BLOB_THRESHOLD) {
+        let blobUrl: string;
+        try {
+          const { upload: blobUpload } = await import('@vercel/blob/client');
+          const blob = await blobUpload(file.name, file, {
+            access: 'public',
+            handleUploadUrl: '/api/documents/blob-upload',
+            clientPayload: JSON.stringify({ clientId: clientBoardItemId, category }),
+          });
+          blobUrl = blob.url;
+        } catch {
+          throw new Error(`This file is ${(file.size / 1048576).toFixed(1)}MB. Large-file upload isn't available (Blob storage not configured) — files up to ~4MB work directly.`);
+        }
+        res = await fetch(`/api/client/${clientBoardItemId}/section-files/${category}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ blobUrl, name: file.name }),
+        });
+      } else {
+        const fd = new FormData();
+        fd.append('file', file);
+        res = await fetch(`/api/client/${clientBoardItemId}/section-files/${category}`, {
+          method: 'POST',
+          body: fd,
+        });
+      }
       if (res.status === 503) { setStatus('unconfigured'); return; }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));

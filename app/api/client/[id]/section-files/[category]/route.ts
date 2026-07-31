@@ -221,10 +221,36 @@ export async function POST(
     );
   }
 
-  let formData: FormData;
-  try { formData = await request.formData(); }
-  catch { return NextResponse.json({ error: 'Invalid multipart body' }, { status: 400 }); }
-  const file = formData.get('file') as File | null;
+  // Two upload modes:
+  //  • multipart form-data — small files (≤~4.5MB) ride in the request body.
+  //  • JSON { blobUrl, name } — large files were uploaded straight to Vercel
+  //    Blob by the browser (bypassing Vercel's 4.5MB function-body cap that
+  //    otherwise 413s the request). We pull the file server-side (no inbound
+  //    limit on a server fetch) and delete the temp blob afterwards.
+  let file: File | null = null;
+  let tempBlobUrl: string | null = null;
+  const contentType = request.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const body = (await request.json().catch(() => null)) as { blobUrl?: string; name?: string } | null;
+    const blobUrl = body?.blobUrl;
+    const name = body?.name;
+    if (!blobUrl || !name) return NextResponse.json({ error: 'Missing blobUrl or name' }, { status: 400 });
+    try {
+      const fileRes = await fetch(blobUrl);
+      if (!fileRes.ok) throw new Error(`blob fetch ${fileRes.status}`);
+      const buf = await fileRes.arrayBuffer();
+      file = new File([buf], name, { type: fileRes.headers.get('content-type') || 'application/octet-stream' });
+      tempBlobUrl = blobUrl;
+    } catch (err) {
+      console.error(`[section-files POST ${category}] blob fetch failed:`, err);
+      return NextResponse.json({ error: 'Could not retrieve the uploaded file' }, { status: 502 });
+    }
+  } else {
+    let formData: FormData;
+    try { formData = await request.formData(); }
+    catch { return NextResponse.json({ error: 'Invalid multipart body' }, { status: 400 }); }
+    file = formData.get('file') as File | null;
+  }
   if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
 
   try {
@@ -258,6 +284,11 @@ export async function POST(
       fileType: file.name.split('.').pop() || '',
       category,
     };
+    // Monday now owns the file — delete the temporary Blob copy (best-effort).
+    if (tempBlobUrl) {
+      try { const { del } = await import('@vercel/blob'); await del(tempBlobUrl); }
+      catch (e) { console.error('[section-files] temp blob cleanup failed:', e); }
+    }
     return NextResponse.json(newFile, { status: 201 });
   } catch (err) {
     console.error(`[section-files POST ${category}] failed:`, err);
