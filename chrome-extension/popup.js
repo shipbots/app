@@ -137,6 +137,32 @@ function openExternal(url) {
   window.close();
 }
 
+// Portal auto-fill: stash this client's portal credentials in session storage
+// (readable by the shipsfor.us content script), then open the portal's logout
+// URL so it lands on a fresh login form the content script fills. The stash is
+// memory-only (session storage), one-shot (the content script clears it after
+// filling), and TTL-capped in the content script. Never auto-submits.
+const PORTAL_LOGOUT_URL = 'https://shipsfor.us/account/logout/';
+const PORTAL_AUTOFILL_KEY = 'portalAutofillV1';
+async function openPortalWithAutofill(client) {
+  const login = String(client.portalLogin || client.portalEmail || '').trim();
+  const password = String(client.portalPassword || '').trim();
+  try {
+    // Session storage is trusted-contexts-only by default; open it to the
+    // content script (an untrusted context) so it can read the stash.
+    if (chrome.storage.session.setAccessLevel) {
+      try { await chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' }); }
+      catch { /* older Chrome — content script may not be able to read; opens anyway */ }
+    }
+    await new Promise(resolve => {
+      try { chrome.storage.session.set({ [PORTAL_AUTOFILL_KEY]: { login, password, at: Date.now() } }, () => resolve()); }
+      catch { resolve(); }
+    });
+  } catch { /* if session storage is unavailable, still open the portal */ }
+  chrome.tabs.create({ url: PORTAL_LOGOUT_URL });
+  window.close();
+}
+
 // ── Client search-index ────────────────────────────────────────────────────
 // Fetches the dashboard's already-built search index (~340 clients) once
 // per popup open and filters client-side. Requires a valid NextAuth
@@ -898,6 +924,22 @@ function buildSection(section, client) {
       renderBody();
     });
     header.appendChild(editBtn);
+  }
+
+  // Portal section: a header "Open & sign in" that opens the client portal and
+  // auto-fills this client's stored credentials (via the shipsfor.us content
+  // script). Shown only when there's something to fill.
+  if (section.id === 'portal' && (client.portalLogin || client.portalEmail || client.portalPassword)) {
+    const signInBtn = document.createElement('button');
+    signInBtn.className = 'detail-section-signin';
+    signInBtn.type = 'button';
+    signInBtn.textContent = '🔓 Open & sign in';
+    signInBtn.title = "Open the client portal and fill this client's email + password";
+    signInBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      void openPortalWithAutofill(client);
+    });
+    header.appendChild(signInBtn);
   }
 
   toggle.addEventListener('click', () => {

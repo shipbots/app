@@ -956,6 +956,23 @@ body.projects-open {
   color: #fff;
   border-color: #015280;
 }
+/* Portal "Open & sign in" — a filled accent button in the section header. */
+.detail-section-signin {
+  flex-shrink: 0;
+  margin-right: 8px;
+  border: 1px solid #015280;
+  background: #015280;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, border-color .12s;
+}
+.detail-section-signin:hover { background: #013f63; border-color: #013f63; }
 .detail-section-body {
   padding: 10px 12px 12px;
   display: grid;

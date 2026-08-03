@@ -1,8 +1,8 @@
 # ShipBots Customer Service — extension changelog
 
 Release notes for the Chrome extension. The current store build is
-**v0.48.0**. Upload the matching zip from
-`docs/store-listing/zips/shipbots-cs-v0.48.0.zip` (manifest sits at the zip
+**v0.49.0**. Upload the matching zip from
+`docs/store-listing/zips/shipbots-cs-v0.49.0.zip` (manifest sits at the zip
 root, as the Web Store requires). Teammates auto-update within ~5 hours
 of a new upload — no action on their end.
 
@@ -46,10 +46,11 @@ admin panel — without ever leaving the popup.
 
 ---
 
-## Version history (v0.24.0 → v0.48.0)
+## Version history (v0.24.0 → v0.49.0)
 
 | Version | Date | What changed |
 |--------:|------|--------------|
+| **0.49.0** | 2026-07-30 | **Portal auto-sign-in.** The Portal Login section has an "🔓 Open & sign in" button that opens the client portal and auto-fills that client's stored email + password on the shipsfor.us login page (via a content script). Fills only — never auto-submits. Adds a new permission on `shipsfor.us`, so re-download/reload the extension and accept it. |
 | **0.48.0** | 2026-07-30 | **Billing info** fixes: sections no longer get clipped/squished (was a flex-shrink bug); sub-headings show even when their first field is empty. Billing fields are now **editable in-place** in the extension (click a value to edit; empty editable fields show "Add…") — no dashboard trip needed for most edits. |
 | **0.47.0** | 2026-07-30 | **Billing info** now fills the **whole popup page** (not a thin side column) and is split into the same collapsible groups as the CS app — **General Billing Info**, **Payment Method**, **Pricing Info** — each expandable/collapsible. |
 | **0.46.0** | 2026-07-29 | **Billing info** shows the full billing view **inside the popup** again (no new tab) — general info, **Payment Method / ACH**, and pricing — with an "Edit in dashboard ↗" link for changes. Still restricted to DocuSign-access users. |
