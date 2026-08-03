@@ -2611,11 +2611,11 @@ export function ClientInfoTab({ client, fullscreen, forceSingleColumn = false, h
             </div>
           </div>
           <a
-            href="https://www.shipbots.com/portal"
+            href="https://shipsfor.us/account/logout/"
             target="_blank"
             rel="noopener noreferrer"
             className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-[#0071BC] hover:bg-[#EAF3FA] px-2 py-1 rounded-md"
-            title="Open portal in new tab"
+            title="Open portal in new tab (signs out any current session first)"
           >
             <ExternalLink className="w-3 h-3" />
             Open
