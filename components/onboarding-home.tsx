@@ -14,6 +14,7 @@ import type { OnboardingItem, SubItem, BoardInfo } from '@/lib/types';
 import {
   CHECKLIST_STEPS, getStepState, PIPELINE_STAGES,
   INVENTORY_NEVER_ARRIVED_GROUP_ID, INVENTORY_NEVER_ARRIVED_STATUS,
+  conditionalNaStepIds,
 } from '@/lib/constants';
 import {
   UserX, CalendarClock, MailX, ListChecks, ChevronRight, Loader2, Check,
@@ -43,6 +44,12 @@ function formatDate(s: string | null): string {
 
 // A checklist step counts as handled when it's done OR N/A (nothing to do).
 function stepDone(item: OnboardingItem, stepId: string): boolean {
+  // Conditional-N/A steps (TikTok Shop, Lot Code, FBA, Intl shipping) are N/A —
+  // and therefore done — when the client doesn't use that capability, even if
+  // the step's own value is blank. Computed from the client-board settings the
+  // item carries, the same single source of truth the detail panel uses, so a
+  // non-TikTok client never shows as "missing" the TikTok step.
+  if (conditionalNaStepIds(item).has(stepId)) return true;
   const step = item.checklist.find(s => s.id === stepId);
   if (!step) return false;
   const st = getStepState(step.value, step.invertLogic, CHECKLIST_STEPS.find(c => c.id === stepId));

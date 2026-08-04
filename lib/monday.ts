@@ -222,6 +222,13 @@ export async function fetchOnboardingItems(): Promise<OnboardingItem[]> {
             if (naIds.has(step.id)) step.value = 'N/A';
           }
         }
+        // Carry the raw settings on the item too, so client-side views (e.g. the
+        // Onboarding Home "Missing a Checklist Step" box) can compute the same
+        // conditional-N/A set instead of relying only on the forced value above.
+        item.tikTokShop = j.settings.tikTokShop;
+        item.lotCodeExpiration = j.settings.lotCodeExpiration;
+        item.internationalFulfillment = j.settings.internationalFulfillment;
+        item.amazonFBA = j.settings.amazonFBA;
 
         // Recompute progress now that client-board steps have real values.
         const doneCount = item.checklist.filter(s => getStepState(s.value, s.invertLogic, CHECKLIST_STEPS.find(c => c.id === s.id)) === 'done').length;

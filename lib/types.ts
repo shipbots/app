@@ -26,6 +26,14 @@ export interface OnboardingItem {
   progress: number;
   checklist: ChecklistStep[];
   subitemCount: number;
+  // Client-board settings that drive the conditional-N/A checklist steps
+  // (joined from the Clients board). Let views compute which steps are auto-N/A
+  // the same way the detail panel does — via conditionalNaStepIds(). Optional:
+  // absent when the clients-board join didn't run for this item.
+  tikTokShop?: string;
+  lotCodeExpiration?: string;
+  internationalFulfillment?: string;
+  amazonFBA?: string;
 }
 
 export interface SubItem {
