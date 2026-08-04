@@ -145,7 +145,7 @@ function openExternal(url) {
 const PORTAL_LOGOUT_URL = 'https://shipsfor.us/account/logout/';
 const PORTAL_AUTOFILL_KEY = 'portalAutofillV1';
 async function openPortalWithAutofill(client) {
-  const login = String(client.portalLogin || client.portalEmail || '').trim();
+  const login = String(client.portalLogin || '').trim();
   const password = String(client.portalPassword || '').trim();
   try {
     // Session storage is trusted-contexts-only by default; open it to the
@@ -567,7 +567,6 @@ const DETAIL_SECTIONS = [
     id: 'portal',
     title: 'Portal Login',
     fields: [
-      { key: 'portalEmail',     label: 'Login email / username', type: 'email' },
       { key: 'portalLogin',     label: 'Username', copy: true },
       { key: 'portalPassword',  label: 'Password', copy: true },
     ],
@@ -640,7 +639,6 @@ const EDITABLE_KEYS = {
   // Portal / Support
   portalLogin:    { columnId: 'text_mktxxfch' },
   portalPassword: { columnId: 'text_mm28cz4g' },
-  portalEmail:    { columnId: 'text_mkwgke3w' },
 };
 
 async function patchClientField(clientId, columnId, value) {
@@ -929,7 +927,7 @@ function buildSection(section, client) {
   // Portal section: a header "Open & sign in" that opens the client portal and
   // auto-fills this client's stored credentials (via the shipsfor.us content
   // script). Shown only when there's something to fill.
-  if (section.id === 'portal' && (client.portalLogin || client.portalEmail || client.portalPassword)) {
+  if (section.id === 'portal' && (client.portalLogin || client.portalPassword)) {
     const signInBtn = document.createElement('button');
     signInBtn.className = 'detail-section-signin';
     signInBtn.type = 'button';
