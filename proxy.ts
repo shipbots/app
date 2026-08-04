@@ -12,6 +12,11 @@ export default auth((req) => {
   // (and so external monitors can probe without a session).
   if (pathname.startsWith('/api/health')) return NextResponse.next();
 
+  // DocuSign contract intake (Zapier POST → /api/docusign/ingest, or DocuSign
+  // Connect → /api/docusign/webhook). These are server-to-server callers with no
+  // NextAuth session; each authenticates itself (shared secret / HMAC signature).
+  if (pathname.startsWith('/api/docusign')) return NextResponse.next();
+
   // Always allow public static assets
   if (
     pathname.startsWith('/_next') ||
