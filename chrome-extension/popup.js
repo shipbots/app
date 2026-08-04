@@ -137,11 +137,11 @@ function openExternal(url) {
   window.close();
 }
 
-// Portal auto-fill: stash this client's portal credentials in session storage
-// (readable by the shipsfor.us content script), then open the portal's logout
-// URL so it lands on a fresh login form the content script fills. The stash is
-// memory-only (session storage), one-shot (the content script clears it after
-// filling), and TTL-capped in the content script. Never auto-submits.
+// Portal auto-sign-in: stash this client's portal credentials in session
+// storage (readable by the shipsfor.us content script), then open the portal's
+// logout URL so it lands on a fresh login form the content script fills AND
+// submits (one-click sign-in). The stash is memory-only (session storage),
+// one-shot (cleared once the form is submitted), and TTL-capped.
 const PORTAL_LOGOUT_URL = 'https://shipsfor.us/account/logout/';
 const PORTAL_AUTOFILL_KEY = 'portalAutofillV1';
 async function openPortalWithAutofill(client) {
@@ -934,7 +934,7 @@ function buildSection(section, client) {
     signInBtn.className = 'detail-section-signin';
     signInBtn.type = 'button';
     signInBtn.textContent = '🔓 Open & sign in';
-    signInBtn.title = "Open the client portal and fill this client's email + password";
+    signInBtn.title = "Open the client portal and sign in with this client's email + password";
     signInBtn.addEventListener('click', e => {
       e.stopPropagation();
       void openPortalWithAutofill(client);

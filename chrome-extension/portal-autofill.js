@@ -4,11 +4,12 @@
 // in the extension popup, the popup stashes that client's portal credentials in
 // chrome.storage.session and opens the portal's logout URL (which clears any
 // existing session and lands on the login form). This script reads the stashed
-// credentials and fills the email + password fields so the rep just clicks
-// "Sign in" — it does NOT auto-submit, so a wrong value can't trigger a lockout.
+// credentials, fills the email + password fields, and submits the form — a true
+// one-click sign-in. It only submits once the password field is present, so a
+// half-rendered or email-first page is never submitted prematurely.
 //
-// The credentials are one-shot: cleared as soon as they're filled, and they
-// carry a short TTL so a stale stash is never reused. Session storage is
+// The credentials are one-shot: cleared as soon as the form is submitted, and
+// they carry a short TTL so a stale stash is never reused. Session storage is
 // memory-only (gone when the browser closes) and never exposed to the page.
 
 (function () {
@@ -59,15 +60,49 @@
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  function tryFill(creds) {
+  // Find the button that submits the login form, scoped to the form when
+  // possible so we don't click an unrelated button elsewhere on the page.
+  function findSubmitControl(form) {
+    if (form) {
+      const direct = form.querySelector('button[type="submit"], input[type="submit"]');
+      if (isVisible(direct)) return direct;
+    }
+    const root = form || document;
+    const candidates = Array.from(root.querySelectorAll('button, input[type="submit"], input[type="button"]'));
+    return candidates.find(b => {
+      if (!isVisible(b)) return false;
+      const t = ((b.textContent || '') + ' ' + (b.value || '')).trim().toLowerCase();
+      return /\b(sign in|signin|log ?in|continue|next|submit)\b/.test(t);
+    }) || null;
+  }
+
+  function submitForm(anchorEl) {
+    const form = anchorEl && anchorEl.form;
+    const btn = findSubmitControl(form);
+    if (btn) { btn.click(); return; }
+    if (form) {
+      if (typeof form.requestSubmit === 'function') form.requestSubmit();
+      else form.submit();
+    }
+  }
+
+  // 'submitted' → password filled + form submitted (done);
+  // 'waiting'   → password field not present yet, keep retrying;
+  // 'none'      → no login form on this page at all.
+  function tryFillAndSubmit(creds) {
     const loginEl = findLoginField();
     const passEl = findPasswordField();
-    if (!loginEl && !passEl) return false;
+    if (!loginEl && !passEl) return 'none';
     if (loginEl && creds.login) setValue(loginEl, creds.login);
-    if (passEl && creds.password) setValue(passEl, creds.password);
-    // Leave the cursor on the submit-ready field; the rep clicks Sign in.
-    try { (passEl || loginEl).focus(); } catch { /* ignore */ }
-    return true;
+    // Only submit once the password field is present — never submit a half-filled
+    // form (e.g. the email-first step of a two-step flow, or a still-rendering
+    // page). On a two-step portal the password step reloads this script, which
+    // then fills + submits there.
+    if (!passEl) return 'waiting';
+    if (creds.password) setValue(passEl, creds.password);
+    // Let the input/change handlers settle for a tick, then submit.
+    setTimeout(() => { try { submitForm(passEl); } catch { /* ignore */ } }, 60);
+    return 'submitted';
   }
 
   function run() {
@@ -83,7 +118,10 @@
       }
       let tries = 0;
       const attempt = () => {
-        if (tryFill(creds)) { try { store.remove(KEY); } catch { /* ignore */ } return; }
+        if (tryFillAndSubmit(creds) === 'submitted') {
+          try { store.remove(KEY); } catch { /* ignore */ }
+          return;
+        }
         if (++tries < MAX_TRIES) setTimeout(attempt, 300);
       };
       attempt();
