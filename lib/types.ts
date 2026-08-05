@@ -34,6 +34,13 @@ export interface OnboardingItem {
   lotCodeExpiration?: string;
   internationalFulfillment?: string;
   amazonFBA?: string;
+  // Initial-delivery details for the Onboarding Home "Upcoming deliveries"
+  // cards — joined from the Clients board. Optional: absent when the join
+  // didn't run for this item.
+  deliveryMethod?: string;   // text_mktrm9jx — Initial Inventory Method
+  deliveryQty?: string;      // text_mktravgn — Initial Inventory Qty
+  warehouse?: string;        // dropdown_mktxaege — Warehouse Location
+  subWarehouse?: string;     // dropdown_mm5ftdxb — Sub Warehouse Location
 }
 
 export interface SubItem {

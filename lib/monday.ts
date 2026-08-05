@@ -202,6 +202,10 @@ export async function fetchOnboardingItems(): Promise<OnboardingItem[]> {
         if (!j) continue;
         item.estimatedDeliveryDate = j.estimatedDeliveryDate;
         item.estimatedDeliveryTime = j.estimatedDeliveryTime;
+        item.deliveryMethod = j.deliveryMethod;
+        item.deliveryQty = j.deliveryQty;
+        item.warehouse = j.warehouse;
+        item.subWarehouse = j.subWarehouse;
 
         // Patch in checklist steps whose value lives on the Clients board.
         // Each such step matches by id; we mutate it in place so the rest of
@@ -258,6 +262,12 @@ const CONDITIONAL_NA_SETTING_COLS = {
 type ClientBoardJoin = {
   estimatedDeliveryDate: string | null;
   estimatedDeliveryTime: string | null;
+  /** Initial-delivery details for the Onboarding Home "Upcoming deliveries"
+   *  cards. Dropdown labels (warehouse / sub-warehouse) come through as text. */
+  deliveryMethod: string;
+  deliveryQty: string;
+  warehouse: string;
+  subWarehouse: string;
   /** Raw text value (e.g. "Yes", "No", "") for every client-board checklist
    *  step, keyed by column id. */
   clientBoardColumns: Record<string, string>;
@@ -274,7 +284,13 @@ type ClientBoardJoin = {
 // Initial Inventory date, every checklist step configured with
 // `board: 'clients'`, and the conditional-N/A setting columns.
 function clientBoardJoinColumnIds(): string[] {
-  const set = new Set<string>(['date_mktrzhyk']);
+  const set = new Set<string>([
+    'date_mktrzhyk',    // Initial Inventory Est. Delivery Date
+    'text_mktrm9jx',    // Initial Inventory Method
+    'text_mktravgn',    // Initial Inventory Qty
+    'dropdown_mktxaege', // Warehouse Location
+    'dropdown_mm5ftdxb', // Sub Warehouse Location
+  ]);
   for (const step of CHECKLIST_STEPS) {
     if ((step.board ?? 'onboarding') === 'clients') set.add(step.id);
   }
@@ -338,7 +354,16 @@ async function fetchClientBoardJoins(itemIds: string[]): Promise<Record<string, 
           lotCodeExpiration: cvById[CONDITIONAL_NA_SETTING_COLS.lotCodeExpiration]?.text ?? '',
         };
 
-        result[it.id] = { estimatedDeliveryDate: date, estimatedDeliveryTime: time, clientBoardColumns, settings };
+        result[it.id] = {
+          estimatedDeliveryDate: date,
+          estimatedDeliveryTime: time,
+          deliveryMethod: cvById['text_mktrm9jx']?.text ?? '',
+          deliveryQty: cvById['text_mktravgn']?.text ?? '',
+          warehouse: cvById['dropdown_mktxaege']?.text ?? '',
+          subWarehouse: cvById['dropdown_mm5ftdxb']?.text ?? '',
+          clientBoardColumns,
+          settings,
+        };
       }
     })
   );

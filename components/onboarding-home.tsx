@@ -9,7 +9,7 @@
  * PipelineBoard without fullscreen).
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { OnboardingItem, SubItem, BoardInfo } from '@/lib/types';
 import {
   CHECKLIST_STEPS, getStepState, PIPELINE_STAGES,
@@ -18,8 +18,9 @@ import {
 } from '@/lib/constants';
 import {
   UserX, CalendarClock, MailX, ListChecks, ChevronRight, Loader2, Check,
-  User, ClipboardList, Plus, ArrowUpDown,
+  User, ClipboardList, Plus, ArrowUpDown, Truck, Package, Warehouse, ArrowDown,
 } from 'lucide-react';
+import { subLetter } from '@/lib/client-search';
 import { CreateTaskModal } from './tasks-view';
 
 // ─── stage helpers ──────────────────────────────────────────────────────────
@@ -73,6 +74,174 @@ function agentNameFromEmail(email: string): string {
 const isDoneStatus = (s: string) => /(done|complete|finished)/i.test(s || '');
 
 const CARD = 'rounded-2xl bg-white border border-gray-200/70 shadow-[0_1px_2px_rgba(20,24,40,.04),0_6px_16px_rgba(20,24,40,.04)] overflow-hidden flex flex-col';
+
+// ─── Upcoming Deliveries: a horizontal kanban of inbound initial inventory ────
+// Active (non-terminal) clients whose initial inventory hasn't been received
+// yet, ordered by estimated delivery date — soonest on the left. Once a client
+// has a delivered date (or reads as received) it drops off the board. Each card
+// opens the client in the side panel.
+function DeliveryCard({ item, agent, today, onSelectItem }: {
+  item: OnboardingItem;
+  agent: string;
+  today: Date;
+  onSelectItem: (item: OnboardingItem) => void;
+}) {
+  const d = parseYMD(item.estimatedDeliveryDate);
+  const overdue = !!d && d < today;
+  const wh = item.warehouse || '';
+  const sub = item.subWarehouse ? subLetter(item.subWarehouse) : '';
+  return (
+    <button
+      onClick={() => onSelectItem(item)}
+      className="group flex-shrink-0 w-56 text-left rounded-xl border border-gray-200 bg-white hover:border-gray-300 hover:shadow-md transition p-3 flex flex-col gap-2"
+    >
+      {/* Estimated delivery date — the sort key, up top and prominent. */}
+      <div className="flex items-center justify-between">
+        <span
+          className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${
+            overdue ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'
+          }`}
+        >
+          <CalendarClock className="w-3 h-3" />
+          {formatDate(item.estimatedDeliveryDate) || 'No date'}
+        </span>
+        {overdue && <span className="text-[10px] font-medium uppercase tracking-wide text-red-500">Overdue</span>}
+      </div>
+
+      {/* Client name */}
+      <div className="font-semibold text-gray-900 text-sm leading-tight line-clamp-2">{item.name}</div>
+
+      {/* Method + quantity */}
+      {(item.deliveryMethod || item.deliveryQty) && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-600">
+          {item.deliveryMethod && (
+            <span className="inline-flex items-center gap-1" title="Delivery method">
+              <Truck className="w-3 h-3 text-gray-400 flex-shrink-0" />
+              <span className="truncate">{item.deliveryMethod}</span>
+            </span>
+          )}
+          {item.deliveryQty && (
+            <span className="inline-flex items-center gap-1" title="Quantity">
+              <Package className="w-3 h-3 text-gray-400 flex-shrink-0" />
+              <span className="truncate">{item.deliveryQty}</span>
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Warehouse + sub-warehouse letter */}
+      {(wh || sub) && (
+        <div className="flex items-center gap-1 text-xs text-gray-600" title="Warehouse">
+          <Warehouse className="w-3 h-3 text-gray-400 flex-shrink-0" />
+          <span className="truncate">
+            {wh || '—'}
+            {sub && <span className="font-semibold text-gray-800">{wh ? ` · ${sub}` : sub}</span>}
+          </span>
+        </div>
+      )}
+
+      {/* Assigned agent */}
+      <div className="mt-auto pt-2 flex items-center gap-1.5 border-t border-gray-100">
+        {agent ? (
+          <>
+            <span className="w-5 h-5 rounded-full bg-gray-100 text-gray-600 text-[10px] font-semibold flex items-center justify-center flex-shrink-0">
+              {agent.charAt(0).toUpperCase()}
+            </span>
+            <span className="text-xs text-gray-600 truncate">{agent}</span>
+          </>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-xs text-gray-400">
+            <User className="w-3 h-3" /> Unassigned
+          </span>
+        )}
+      </div>
+    </button>
+  );
+}
+
+function DeliveryTimeline({
+  items, agentEmailMap, onSelectItem,
+}: {
+  items: OnboardingItem[];
+  agentEmailMap: Record<string, string>;
+  onSelectItem: (item: OnboardingItem) => void;
+}) {
+  const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
+  const todayLabel = today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const agentFor = (i: OnboardingItem) =>
+    (i.clientBoardItemId ? (agentEmailMap[i.clientBoardItemId] ?? '') : '') || (i.supportAgentEmail ?? '');
+
+  // Non-terminal clients whose inventory hasn't been received yet and that carry
+  // an estimated delivery date to place on the timeline. Sort soonest → latest,
+  // then split at Today: dates already gone by (should have arrived) sit to the
+  // left of the marker, everything still to come sits to the right.
+  const { pastDue, upcoming } = useMemo(() => {
+    const inbound = items
+      .filter(i => !isTerminal(i))
+      .filter(i => !inventoryReceived(i))
+      .filter(i => !!parseYMD(i.estimatedDeliveryDate))
+      .sort((a, b) => parseYMD(a.estimatedDeliveryDate)!.getTime() - parseYMD(b.estimatedDeliveryDate)!.getTime());
+    const past: OnboardingItem[] = [];
+    const up: OnboardingItem[] = [];
+    for (const i of inbound) (parseYMD(i.estimatedDeliveryDate)! < today ? past : up).push(i);
+    return { pastDue: past, upcoming: up };
+  }, [items, today]);
+
+  const total = pastDue.length + upcoming.length;
+
+  // Bring the Today marker into view on first paint — past-due scrolled off left,
+  // upcoming to the right. Adjusts only this row's scroll, never the page.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const markerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const box = scrollRef.current, mark = markerRef.current;
+    if (!box || !mark) return;
+    box.scrollLeft = mark.offsetLeft - box.clientWidth / 2 + mark.clientWidth / 2;
+  }, [total]);
+
+  const card = (i: OnboardingItem) => (
+    <DeliveryCard
+      key={i.id}
+      item={i}
+      agent={agentNameFromEmail(agentFor(i))}
+      today={today}
+      onSelectItem={onSelectItem}
+    />
+  );
+
+  return (
+    <section className={CARD}>
+      <header className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
+        <Truck className="w-4 h-4 text-gray-500" />
+        <h2 className="text-sm font-semibold text-gray-900">Delivery Timeline</h2>
+        {total > 0 && (
+          <span className="ml-1 flex items-center gap-2 text-[11px] font-medium">
+            {pastDue.length > 0 && <span className="text-red-500">{pastDue.length} past due</span>}
+            {upcoming.length > 0 && <span className="text-blue-500">{upcoming.length} upcoming</span>}
+          </span>
+        )}
+      </header>
+      {total === 0 ? (
+        <p className="px-4 py-6 text-sm text-gray-400">No inbound inventory deliveries scheduled.</p>
+      ) : (
+        <div ref={scrollRef} className="flex items-stretch gap-3 overflow-x-auto p-4">
+          {pastDue.map(card)}
+
+          {/* Today — the axis. Arrow points down at the timeline; a vertical line
+              runs the full height, splitting past-due (left) from upcoming (right). */}
+          <div ref={markerRef} className="flex-shrink-0 self-stretch flex flex-col items-center px-1.5 select-none">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-gray-900">Today</span>
+            <ArrowDown className="w-4 h-4 text-gray-900 -mt-0.5" />
+            <div className="flex-1 w-[3px] min-h-[2rem] rounded-full bg-gradient-to-b from-gray-800/60 via-gray-300 to-transparent my-1" />
+            <span className="text-[10px] font-medium text-gray-400 whitespace-nowrap">{todayLabel}</span>
+          </div>
+
+          {upcoming.map(card)}
+        </div>
+      )}
+    </section>
+  );
+}
 
 // ─── Attention box: a titled card with a scrollable list of client rows ──────
 function AttentionBox({
@@ -529,6 +698,10 @@ export function OnboardingHome({
 
   return (
     <div className="p-4 overflow-y-auto h-full bg-[#F2F2F7] space-y-4">
+      {/* Inbound inventory as a horizontal timeline: past-due deliveries left of
+          a "Today" marker, upcoming ones to the right. Delivered clients drop off. */}
+      <DeliveryTimeline items={items} agentEmailMap={agentEmailMap} onSelectItem={onSelectItem} />
+
       {/* Four attention boxes in one row (smaller) so they fit a single screen. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <AttentionBox
