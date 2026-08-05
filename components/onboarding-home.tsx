@@ -111,27 +111,25 @@ function DeliveryCard({ item, agent, today, onSelectItem }: {
       {/* Client name */}
       <div className="font-semibold text-gray-900 text-sm leading-tight line-clamp-2">{item.name}</div>
 
-      {/* Method + quantity */}
-      {(item.deliveryMethod || item.deliveryQty) && (
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-600">
-          {item.deliveryMethod && (
-            <span className="inline-flex items-center gap-1" title="Delivery method">
-              <Truck className="w-3 h-3 text-gray-400 flex-shrink-0" />
-              <span className="truncate">{item.deliveryMethod}</span>
-            </span>
-          )}
-          {item.deliveryQty && (
-            <span className="inline-flex items-center gap-1" title="Quantity">
-              <Package className="w-3 h-3 text-gray-400 flex-shrink-0" />
-              <span className="truncate">{item.deliveryQty}</span>
-            </span>
-          )}
+      {/* Delivery method — its own row so a long value truncates to the card. */}
+      {item.deliveryMethod && (
+        <div className="flex items-center gap-1 text-xs text-gray-600 min-w-0" title={`Delivery method: ${item.deliveryMethod}`}>
+          <Truck className="w-3 h-3 text-gray-400 flex-shrink-0" />
+          <span className="truncate">{item.deliveryMethod}</span>
+        </div>
+      )}
+
+      {/* Quantity — often long free-text; truncate to the card, full value on hover. */}
+      {item.deliveryQty && (
+        <div className="flex items-center gap-1 text-xs text-gray-600 min-w-0" title={`Quantity: ${item.deliveryQty}`}>
+          <Package className="w-3 h-3 text-gray-400 flex-shrink-0" />
+          <span className="truncate">{item.deliveryQty}</span>
         </div>
       )}
 
       {/* Warehouse + sub-warehouse letter */}
       {(wh || sub) && (
-        <div className="flex items-center gap-1 text-xs text-gray-600" title="Warehouse">
+        <div className="flex items-center gap-1 text-xs text-gray-600 min-w-0" title="Warehouse">
           <Warehouse className="w-3 h-3 text-gray-400 flex-shrink-0" />
           <span className="truncate">
             {wh || '—'}
@@ -225,7 +223,13 @@ function DeliveryTimeline({
         <p className="px-4 py-6 text-sm text-gray-400">No inbound inventory deliveries scheduled.</p>
       ) : (
         <div ref={scrollRef} className="flex items-stretch gap-3 overflow-x-auto p-4">
-          {pastDue.map(card)}
+          {/* Left of Today: past-due deliveries — or a reassuring note when none. */}
+          {pastDue.length > 0 ? pastDue.map(card) : (
+            <div className="flex-shrink-0 self-stretch w-40 flex flex-col items-center justify-center text-center gap-1 rounded-xl border border-dashed border-gray-200 text-gray-400">
+              <Check className="w-4 h-4 text-emerald-500" />
+              <span className="text-xs font-medium">Nothing overdue</span>
+            </div>
+          )}
 
           {/* Today — the axis. Arrow points down at the timeline; a vertical line
               runs the full height, splitting past-due (left) from upcoming (right). */}
@@ -236,7 +240,13 @@ function DeliveryTimeline({
             <span className="text-[10px] font-medium text-gray-400 whitespace-nowrap">{todayLabel}</span>
           </div>
 
-          {upcoming.map(card)}
+          {/* Right of Today: upcoming deliveries — or a note when none scheduled. */}
+          {upcoming.length > 0 ? upcoming.map(card) : (
+            <div className="flex-shrink-0 self-stretch w-40 flex flex-col items-center justify-center text-center gap-1 rounded-xl border border-dashed border-gray-200 text-gray-400">
+              <CalendarClock className="w-4 h-4 text-gray-300" />
+              <span className="text-xs font-medium">Nothing upcoming</span>
+            </div>
+          )}
         </div>
       )}
     </section>
