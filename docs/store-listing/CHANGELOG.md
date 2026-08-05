@@ -1,8 +1,8 @@
 # ShipBots Customer Service — extension changelog
 
 Release notes for the Chrome extension. The current store build is
-**v0.51.0**. Upload the matching zip from
-`docs/store-listing/zips/shipbots-cs-v0.51.0.zip` (manifest sits at the zip
+**v0.52.0**. Upload the matching zip from
+`docs/store-listing/zips/shipbots-cs-v0.52.0.zip` (manifest sits at the zip
 root, as the Web Store requires). Teammates auto-update within ~5 hours
 of a new upload — no action on their end.
 
@@ -46,10 +46,11 @@ admin panel — without ever leaving the popup.
 
 ---
 
-## Version history (v0.24.0 → v0.51.0)
+## Version history (v0.24.0 → v0.52.0)
 
 | Version | Date | What changed |
 |--------:|------|--------------|
+| **0.52.0** | 2026-07-30 | Billing → Pricing Info gains an **"Extract from agreement on file"** button that runs the SOW pricing extraction and fills the fields in place (hidden when no agreement is on file). Detail header now shows the **sub-warehouse letter** (A/B/C) next to the warehouse. Portal "Open & sign in" is **hidden for AppDot** clients (it only applies to the ShipHero Portal). |
 | **0.51.0** | 2026-07-30 | Portal Login section now shows only the portal **Username** (`support+…@shipbots.com`) + Password — dropped the "Login email / username" field (that's the client's own login, not the portal's). Auto-sign-in uses the portal username. |
 | **0.50.0** | 2026-07-30 | Portal "Open & sign in" now **auto-submits** after filling — true one-click sign-in. Only submits once the password field is present (never a half-filled/email-first page). |
 | **0.49.0** | 2026-07-30 | **Portal auto-sign-in.** The Portal Login section has an "🔓 Open & sign in" button that opens the client portal and auto-fills that client's stored email + password on the shipsfor.us login page (via a content script). Adds a new permission on `shipsfor.us`, so re-download/reload the extension and accept it. |

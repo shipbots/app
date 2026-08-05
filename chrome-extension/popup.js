@@ -927,7 +927,12 @@ function buildSection(section, client) {
   // Portal section: a header "Open & sign in" that opens the client portal and
   // auto-fills this client's stored credentials (via the shipsfor.us content
   // script). Shown only when there's something to fill.
-  if (section.id === 'portal' && (client.portalLogin || client.portalPassword)) {
+  // The "Open & sign in" auto-fills the ShipHero Portal (shipsfor.us). It does
+  // NOT apply to AppDot clients (AppDot is a different backend), so hide it when
+  // the portal type is AppDot without ShipHero Portal access.
+  const portalTypes = String(client.portalDropdown || '').toLowerCase();
+  const isAppDotOnly = portalTypes.includes('appdot') && !portalTypes.includes('portal') && !portalTypes.includes('both');
+  if (section.id === 'portal' && (client.portalLogin || client.portalPassword) && !isAppDotOnly) {
     const signInBtn = document.createElement('button');
     signInBtn.className = 'detail-section-signin';
     signInBtn.type = 'button';
@@ -1137,10 +1142,12 @@ function renderClientDetail(client) {
 
   nameEl.textContent = client.name || '(unnamed)';
 
-  // Meta line: primary email + warehouse + portal at a glance.
+  // Meta line: primary email + warehouse + sub-warehouse letter at a glance.
   const metaParts = [];
   if (client.contactEmail) metaParts.push(client.contactEmail);
   if (client.warehouseLocation) metaParts.push(client.warehouseLocation);
+  // Sub warehouse as just its letter (A/B/C), like the search rows + table.
+  if (client.subWarehouse) metaParts.push(subLetter(client.subWarehouse));
   metaEl.textContent = metaParts.join(' · ');
 
   // Pills row at the top of the scroll area.
@@ -3037,7 +3044,25 @@ function appendGeneralBody(body, client) {
 }
 
 // Pricing Info rows, laid out two-per-row on the wide page (like the CS app).
+// When a DocuSign agreement is on file, an "Extract from agreement on file"
+// button runs the SOW pricing extraction and fills these fields in place.
 function appendPricingBody(body, client) {
+  const hasAgreement = !!(client.docusignFile || client.docusignOnFile || client.dateDocusignSigned);
+  if (hasAgreement) {
+    const bar = document.createElement('div');
+    bar.className = 'bill-extract-bar';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'bill-extract-btn';
+    btn.textContent = '✨ Extract from agreement on file';
+    btn.title = 'Read the SOW pricing from the signed DocuSign agreement and fill these fields';
+    const status = document.createElement('span');
+    status.className = 'bill-extract-status';
+    btn.addEventListener('click', () => void runPricingExtraction(client, btn, status));
+    bar.appendChild(btn);
+    bar.appendChild(status);
+    body.appendChild(bar);
+  }
   const dl = document.createElement('dl');
   dl.className = 'bill-list bill-grid';
   let shown = 0;
@@ -3047,6 +3072,47 @@ function appendPricingBody(body, client) {
   }
   if (!shown) dl.appendChild(billRow('—', 'No pricing on file', { muted: true }));
   body.appendChild(dl);
+}
+
+// Extract SOW pricing off the on-file DocuSign agreement and fill the pricing
+// fields in place — same endpoint the CS app uses, no leaving the popup.
+async function runPricingExtraction(client, btn, status) {
+  btn.disabled = true;
+  status.className = 'bill-extract-status loading';
+  status.textContent = 'Extracting…';
+  try {
+    const base = await getBaseUrl();
+    // The agreement PDF usually lives on the onboarding board; resolve its item
+    // so the endpoint can find the file (it also accepts the assetId directly).
+    const onb = await onboardingItemForClient(client.id).catch(() => null);
+    const res = await fetch(`${base}/api/client/${encodeURIComponent(client.id)}/extract-pricing`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        assetId: (client.docusignFile && client.docusignFile.assetId) || '',
+        onboardingItemId: (onb && onb.id) || '',
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      status.className = 'bill-extract-status error';
+      status.textContent = data && data.billing ? 'Out of AI credits'
+        : data && data.noFile ? 'No agreement PDF on file'
+        : (data && data.error) ? String(data.error).slice(0, 90)
+        : `Failed (${res.status})`;
+      btn.disabled = false;
+      return;
+    }
+    // Merge the saved (non-empty) values into the client and repaint the panel.
+    const saved = (data && data.saved) || {};
+    Object.keys(saved).forEach(k => { client[k] = saved[k]; });
+    renderBillingPanel(client);
+  } catch {
+    status.className = 'bill-extract-status error';
+    status.textContent = "Couldn't extract";
+    btn.disabled = false;
+  }
 }
 
 // Payment Method: "Payment on file?" from the client payload + the ACH bank
@@ -3294,7 +3360,8 @@ async function showClientDetail(clientStub, origin) {
   // something while the full fetch runs.
   document.getElementById('detail-name').textContent = clientStub.name || '(unnamed)';
   document.getElementById('detail-meta').textContent =
-    [clientStub.contactEmail, clientStub.warehouse].filter(Boolean).join(' · ');
+    [clientStub.contactEmail, clientStub.warehouse, clientStub.subWarehouse ? subLetter(clientStub.subWarehouse) : '']
+      .filter(Boolean).join(' · ');
   sectionsEl.innerHTML = '';
   statusEl.hidden = false;
   statusEl.classList.remove('error');
