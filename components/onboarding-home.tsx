@@ -18,7 +18,7 @@ import {
 } from '@/lib/constants';
 import {
   UserX, CalendarClock, MailX, ListChecks, ChevronRight, Loader2, Check,
-  User, ClipboardList, Plus, ArrowUpDown, Truck, Package, Warehouse, ArrowDown,
+  User, ClipboardList, Plus, ArrowUpDown, Truck, Package, Warehouse, ArrowDown, CreditCard,
 } from 'lucide-react';
 import { subLetter } from '@/lib/client-search';
 import { CreateTaskModal } from './tasks-view';
@@ -61,6 +61,14 @@ function stepDone(item: OnboardingItem, stepId: string): boolean {
 function inventoryReceived(item: OnboardingItem): boolean {
   if (item.deliveredDate) return true;
   return /^(yes|received|delivered|arrived|complete)/i.test((item.inventoryDelivered || '').trim());
+}
+// The "Retrieved payment information" checklist step mirrors the Clients-board
+// "Payment on File?" dropdown (dropdown_mm47xxjv). Payment is on file only when
+// it reads "Yes" — a deliberate "No" or an empty value both mean no payment yet.
+const PAYMENT_STEP_ID = 'dropdown_mm47xxjv';
+function paymentOnFile(item: OnboardingItem): boolean {
+  const v = item.checklist.find(s => s.id === PAYMENT_STEP_ID)?.value ?? '';
+  return /^yes$/i.test(v.trim());
 }
 function statusStyle(status: string): { color: string; bg: string } {
   const s = PIPELINE_STAGES.find(p => p.status === status);
@@ -684,7 +692,6 @@ export function OnboardingHome({
   onSelectItem: (item: OnboardingItem) => void;
   onTaskChange?: (task: SubItem) => void;
 }) {
-  const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
   const active = useMemo(() => items.filter(isActive), [items]);
   const agentFor = (i: OnboardingItem) => (i.clientBoardItemId ? (agentEmailMap[i.clientBoardItemId] ?? '') : '');
   const itemsById = useMemo(() => {
@@ -694,17 +701,16 @@ export function OnboardingHome({
   }, [items]);
 
   const noAgent = useMemo(() => active.filter(i => !agentFor(i)), [active, agentEmailMap]);
-  const pastDue = useMemo(() => active.filter(i => {
-    const d = parseYMD(i.estimatedDeliveryDate);
-    return d && d < today && !inventoryReceived(i);
-  }), [active, today]);
+  // Inventory has arrived but payment still isn't on file — the "Retrieved
+  // payment information" (Payment on File?) step isn't "Yes". Excludes terminal
+  // clients (completed / abandoned / inventory-never-arrived). Past-due
+  // deliveries now live in the Delivery Timeline at the top of the page.
+  const deliveredNoPayment = useMemo(() => items
+    .filter(i => !isTerminal(i))
+    .filter(inventoryReceived)
+    .filter(i => !paymentOnFile(i)),
+    [items]);
   const summaryNotSent = useMemo(() => active.filter(i => !stepDone(i, 'color_mm27gvc0')), [active]);
-
-  const daysLate = (i: OnboardingItem) => {
-    const d = parseYMD(i.estimatedDeliveryDate);
-    if (!d) return 0;
-    return Math.max(0, Math.round((today.getTime() - d.getTime()) / 86_400_000));
-  };
 
   return (
     <div className="p-4 overflow-y-auto h-full bg-[#F2F2F7] space-y-4">
@@ -723,11 +729,11 @@ export function OnboardingHome({
           onSelectItem={onSelectItem}
         />
         <AttentionBox
-          title="Past Due Deliveries"
-          icon={<CalendarClock className="w-4 h-4" />}
-          items={pastDue}
-          detail={i => `Est. ${formatDate(i.estimatedDeliveryDate)} · ${daysLate(i)} day${daysLate(i) === 1 ? '' : 's'} late`}
-          emptyText="No overdue inventory deliveries."
+          title="Delivered · No Payment"
+          icon={<CreditCard className="w-4 h-4" />}
+          items={deliveredNoPayment}
+          detail={i => `Delivered ${formatDate(i.deliveredDate) || formatDate(i.estimatedDeliveryDate) || '—'} · ${agentNameFromEmail(agentFor(i)) || 'Unassigned'}`}
+          emptyText="Every delivered client has payment on file."
           onSelectItem={onSelectItem}
         />
         <AttentionBox

@@ -13,6 +13,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { canUseDocusign } from '@/lib/docusign-access';
 import { extractACHFromFile } from '@/lib/billing-extraction';
+import { markPaymentRetrievedForClient } from '@/lib/monday';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -116,6 +117,12 @@ export async function POST(req: Request) {
       } catch (e) {
         console.error('[client/ach/file] extraction failed:', e);
       }
+    }
+
+    // If we pulled real bank details out of the doc, ACH is on file → set the
+    // client's "Retrieved payment information" step to "Yes" (best-effort).
+    if (/^\d+$/.test(clientId) && extracted?.accountNumber) {
+      await markPaymentRetrievedForClient(clientId);
     }
 
     return NextResponse.json({

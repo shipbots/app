@@ -18,6 +18,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { canUseDocusign } from '@/lib/docusign-access';
 import { matchClientForACH, type ClientCandidate } from '@/lib/ach-client-match';
+import { markPaymentRetrievedForClient } from '@/lib/monday';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -177,6 +178,10 @@ export async function POST(req: Request) {
       const match = await matchClientForACH({ company: t.name, firstName: t.first, lastName: t.last }, clients);
       if (match && (match.confidence === 'high' || match.confidence === 'medium')) {
         await setLink(t.id, match.clientId, key);
+        // An ACH record is now on file for this client → mark their "Retrieved
+        // payment information" checklist step "Yes" (best-effort). Doubles as a
+        // backfill during the sweep.
+        await markPaymentRetrievedForClient(match.clientId);
         results.push({ itemId: t.id, linked: true, clientId: match.clientId, clientName: match.clientName, confidence: match.confidence, reason: match.reason });
       } else {
         results.push({ itemId: t.id, linked: false, reason: match ? `low confidence: ${match.reason}` : 'no confident match' });

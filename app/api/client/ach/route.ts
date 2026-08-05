@@ -15,6 +15,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { canUseDocusign } from '@/lib/docusign-access';
+import { markPaymentRetrievedForClient } from '@/lib/monday';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -211,6 +212,24 @@ export async function PATCH(req: Request) {
       key,
       { val: value },
     );
+
+    // If the account number was just filled in, ACH info is on file → set the
+    // linked client's "Retrieved payment information" step to "Yes". Resolve the
+    // client from the ACH item's "✳️ CLIENTS" board-relation. Best-effort.
+    if (field === 'accountNumber' && value.trim()) {
+      try {
+        const linkData = await mondayQuery(
+          `query { items(ids: [${itemId}]) { column_values(ids: ["${COL_CLIENT_LINK}"]) { id ... on BoardRelationValue { linked_item_ids } } } }`,
+          key,
+        );
+        const linkedId = ((linkData.items as Array<{ column_values?: Array<{ id: string; linked_item_ids?: string[] | null }> }> | undefined)?.[0]
+          ?.column_values?.find(c => c.id === COL_CLIENT_LINK)?.linked_item_ids ?? [])[0];
+        if (linkedId) await markPaymentRetrievedForClient(String(linkedId));
+      } catch (e) {
+        console.error('[client/ach PATCH] payment-on-file mark failed:', e);
+      }
+    }
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[client/ach PATCH] failed:', err);

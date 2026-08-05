@@ -850,6 +850,28 @@ export async function updateClientField(
   console.log(`[updateClientField] saved OK`);
 }
 
+// The "Retrieved payment information" / "Payment on File?" dropdown on the
+// Clients board. Any value counts as done on the checklist, but "Yes" is the
+// canonical "we have their payment method" answer.
+export const PAYMENT_ON_FILE_COLUMN_ID = 'dropdown_mm47xxjv';
+
+/**
+ * Set a client's "Retrieved payment information" step to "Yes" on the Clients
+ * board. Called when payment info goes on file — ACH bank details today, and a
+ * credit card once that's supported — so the onboarding checklist reflects it
+ * automatically. Best-effort: logs and swallows errors so it can never fail the
+ * ACH save that triggered it.
+ */
+export async function markPaymentRetrievedForClient(clientBoardItemId: string): Promise<void> {
+  if (!/^\d+$/.test(clientBoardItemId)) return;
+  try {
+    await updateClientField(clientBoardItemId, PAYMENT_ON_FILE_COLUMN_ID, 'Yes');
+    console.log(`[markPaymentRetrieved] client=${clientBoardItemId} → Yes`);
+  } catch (err) {
+    console.error('[markPaymentRetrieved] failed for', clientBoardItemId, err);
+  }
+}
+
 // ─── Rename an item (updates the item name column on any board) ──────────────
 export async function renameItem(
   boardId: number | string,
