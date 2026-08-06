@@ -42,6 +42,18 @@ function formatDate(s: string | null): string {
   const d = parseYMD(s);
   return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
 }
+// The date `n` business days (Mon–Fri) after `start`, at local midnight. Used to
+// flag deliveries landing within the next few business days.
+function addBusinessDays(start: Date, n: number): Date {
+  const d = new Date(start);
+  let added = 0;
+  while (added < n) {
+    d.setDate(d.getDate() + 1);
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) added++;
+  }
+  return d;
+}
 
 // A checklist step counts as handled when it's done OR N/A (nothing to do).
 function stepDone(item: OnboardingItem, stepId: string): boolean {
@@ -692,6 +704,9 @@ export function OnboardingHome({
   onSelectItem: (item: OnboardingItem) => void;
   onTaskChange?: (task: SubItem) => void;
 }) {
+  const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
+  // Deliveries landing on/before this date count as "arriving soon".
+  const soonHorizon = useMemo(() => addBusinessDays(today, 3), [today]);
   const active = useMemo(() => items.filter(isActive), [items]);
   const agentFor = (i: OnboardingItem) => (i.clientBoardItemId ? (agentEmailMap[i.clientBoardItemId] ?? '') : '');
   const itemsById = useMemo(() => {
@@ -700,7 +715,13 @@ export function OnboardingHome({
     return m;
   }, [items]);
 
-  const noAgent = useMemo(() => active.filter(i => !agentFor(i)), [active, agentEmailMap]);
+  // Inventory has arrived but no agent is assigned — nobody's driving onboarding
+  // for a client whose product is already here. Excludes terminal clients.
+  const deliveredNoAgent = useMemo(() => items
+    .filter(i => !isTerminal(i))
+    .filter(inventoryReceived)
+    .filter(i => !agentFor(i)),
+    [items, agentEmailMap]);
   // Inventory has arrived but payment still isn't on file — the "Retrieved
   // payment information" (Payment on File?) step isn't "Yes". Excludes terminal
   // clients (completed / abandoned / inventory-never-arrived). Past-due
@@ -710,7 +731,17 @@ export function OnboardingHome({
     .filter(inventoryReceived)
     .filter(i => !paymentOnFile(i)),
     [items]);
-  const summaryNotSent = useMemo(() => active.filter(i => !stepDone(i, 'color_mm27gvc0')), [active]);
+  // Summary still not sent, but the moment is now: inventory already received,
+  // or an estimated delivery landing within the next 3 business days.
+  const summaryNotSent = useMemo(() => items
+    .filter(i => !isTerminal(i))
+    .filter(i => !stepDone(i, 'color_mm27gvc0'))
+    .filter(i => {
+      if (inventoryReceived(i)) return true;
+      const d = parseYMD(i.estimatedDeliveryDate);
+      return !!d && d >= today && d <= soonHorizon;
+    }),
+    [items, today, soonHorizon]);
 
   return (
     <div className="p-4 overflow-y-auto h-full bg-[#F2F2F7] space-y-4">
@@ -721,11 +752,11 @@ export function OnboardingHome({
       {/* Four attention boxes in one row (smaller) so they fit a single screen. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <AttentionBox
-          title="No Agent Assigned"
+          title="Delivered · No Agent"
           icon={<UserX className="w-4 h-4" />}
-          items={noAgent}
-          detail={i => `${i.status} · ${i.progress}%`}
-          emptyText="Every in-progress client has an agent."
+          items={deliveredNoAgent}
+          detail={i => `Delivered ${formatDate(i.deliveredDate) || formatDate(i.estimatedDeliveryDate) || '—'} · ${i.status}`}
+          emptyText="Every delivered client has an agent."
           onSelectItem={onSelectItem}
         />
         <AttentionBox
@@ -740,8 +771,8 @@ export function OnboardingHome({
           title="Email Onboarding Summary Not Sent"
           icon={<MailX className="w-4 h-4" />}
           items={summaryNotSent}
-          detail={i => `${agentNameFromEmail(agentFor(i)) || 'Unassigned'} · ${i.status}`}
-          emptyText="All in-progress clients have their summary sent."
+          detail={i => `${inventoryReceived(i) ? 'Delivered' : `Due ${formatDate(i.estimatedDeliveryDate) || '—'}`} · ${agentNameFromEmail(agentFor(i)) || 'Unassigned'}`}
+          emptyText="No arriving or delivered client is missing its summary."
           onSelectItem={onSelectItem}
         />
         <CustomChecklistBox activeItems={active} onSelectItem={onSelectItem} />
