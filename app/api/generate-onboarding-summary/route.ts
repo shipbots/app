@@ -168,6 +168,7 @@ function buildContext(client: Record<string, any>, meetings: FirefliesTranscript
 
   // Warehouse
   field('Warehouse Location', client.warehouseLocation);
+  field('Sub-Warehouse', client.subWarehouse);
   field('Additional Notes', client.additionalNotes);
 
   lines.push('');
@@ -254,6 +255,7 @@ RULES:
 - Always note the legal entity name if it differs from the brand/client name.
 - TIKTOK SHOP RULE: If "TikTok Shop" is "Yes", mention TikTok Shop prominently in the opening paragraph (e.g. "including **TikTok Shop**"). In the Platform & Operations section, add a bullet: "• 🛍️ **TikTok Shop**: Orders placed under the TikTok Shop status require **same-day shipping** and will appear under the TikTok Shop status in ShipHero."
 - LOT CODE RULE: If "Lot Code / Expiration Needed" is "Yes", add a bullet in Notes for Receiving: "• 🏷️ **Lot Code / Expiration Tracking**: This client requires lot code and expiration date tracking. Please ensure all receiving is done with lot codes and expiration dates recorded in ShipHero."
+- WAREHOUSE RULE (ALWAYS APPLY): Always include a **📍 Warehouse** bullet in Notes for Receiving that states the Warehouse Location and Sub-Warehouse and explicitly asks the team to confirm BOTH — e.g. "• 📍 **Warehouse**: Gardena — Sub-Warehouse **A**. *Please confirm warehouse + sub-warehouse.*". If the Sub-Warehouse is blank AND the Warehouse is Gardena (Gardena only), do NOT leave it empty — suggest one and ask the team to confirm: **Warehouse A** for smaller items / DTC businesses, or **Warehouse C** for bigger, bulkier items — choose based on what the client sells, and write it as a flagged suggestion, e.g. "• 📍 **Warehouse**: Gardena — *Sub-Warehouse not set; suggesting **A** (smaller DTC items) — please confirm, or **C** for bulkier items.*". For any warehouse other than Gardena with a blank sub-warehouse, just ask the team to confirm the sub-warehouse (no A/C suggestion).
 
 DO NOT INCLUDE — the fulfillment team already knows these are true for every client, so including them is just noise. Never write any of these:
 - That the store (Shopify/Amazon/etc.) is integrated/synced with ShipHero for order syncing or inventory management. Just list which stores are connected; do NOT explain that they sync or how orders flow into ShipHero — that is the standard setup for everyone.
@@ -266,6 +268,7 @@ DO NOT INCLUDE — the fulfillment team already knows these are true for every c
 - Order merging explanations (e.g. "uses manual order merging — same customer, same day, same address gets consolidated; merged orders don't affect Shopify records"). Standard behavior the team already knows — omit even if it comes up on the call.
 - Re-barcoding pricing and turnaround (e.g. "$0.25/item", "adds 1–2 business days to receiving"). The team already knows this — never include it.
 - The PO / shipping-plan number reconciliation note (e.g. "client will provide PO or shipping plan numbers with each drop-off — use these for reconciliation"). This is said to the client on the call so they bring the number; the team already knows the process — do not put it in the summary.
+- The same-day shipping cutoff time (e.g. "✂️ Same-day shipping cutoff: 3:00 PM Eastern"). The team already knows the standard cutoff — never include it. (This is separate from the TikTok Shop same-day SLA bullet, which still applies when TikTok Shop is "Yes".)
 
 PORTAL DETECTION RULES (these clues are for YOUR detection only — never print the URL or login in the summary):
 - It is the ShipHero Portal if the transcript mentions the login is www.shipbots.com/portal
@@ -292,6 +295,7 @@ Hi team! 👋 I just onboarded [Client Name]! [One sentence: what they sell + ma
 • [Loop returns — one line only if applicable]
 
 **📦 Notes for Receiving**
+• 📍 [Warehouse & Sub-Warehouse — ALWAYS include per the WAREHOUSE RULE; state both and ask the team to confirm]
 • 📅 [Expected arrival date and origin]
 • 🚚 [How inventory is arriving — freight/pallets/boxes/courier/etc.]
 • ✅ [Barcoding status]
