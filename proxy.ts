@@ -1,12 +1,21 @@
 import { auth } from '@/auth';
 import { NextResponse } from 'next/server';
+import { verifyMobileToken } from '@/lib/mobile-auth';
 
-export default auth((req) => {
+export default auth(async (req) => {
   const { pathname } = req.nextUrl;
   const isAuthenticated = !!req.auth;
 
   // Always allow NextAuth's own endpoints
   if (pathname.startsWith('/api/auth')) return NextResponse.next();
+
+  // Mobile app: a valid signed Bearer token authenticates API calls without a
+  // NextAuth session cookie. Only checked for /api/* requests that carry a
+  // Bearer, so web (cookie) traffic is unaffected and pays no verify cost.
+  if (pathname.startsWith('/api/')) {
+    const m = /^Bearer\s+(.+)$/i.exec(req.headers.get('authorization') || '');
+    if (m && (await verifyMobileToken(m[1]))) return NextResponse.next();
+  }
 
   // Always allow health-check endpoints so Vercel cron can hit them
   // (and so external monitors can probe without a session).
