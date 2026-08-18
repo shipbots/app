@@ -1,0 +1,5 @@
+# The Expo/React Native mobile app lives in this repo but is NOT part of the
+# Vercel (Next.js) deployment — Vercel only builds the web app from the root.
+# Keeping it out of the deployment bundle avoids Vercel tripping over the nested
+# package.json / React Native tooling.
+mobile
