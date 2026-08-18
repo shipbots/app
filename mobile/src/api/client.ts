@@ -4,8 +4,9 @@
  */
 
 import { API_BASE_URL, FORCE_MOCK } from '@/config';
+import { readCache } from './cache';
 import { MOCK_CLIENTS, MOCK_INDEX, MOCK_TASKS } from './mock';
-import type { ClientDetail, ClientDoc, ClientIndexEntry, DeliveryEvent, StickyNote, Task } from './types';
+import type { ClientDetail, ClientDoc, ClientIndexEntry, DeliveryEvent, StickyNote, Task, TaskBoardInfo } from './types';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 export class AuthError extends Error {
@@ -213,4 +214,40 @@ export async function getTasks(): Promise<Task[]> {
       clientName: s.parentItemName ?? '',
       notes: s.notes ?? '',
     }));
+}
+
+let taskBoardInfoCache: TaskBoardInfo | null = null;
+export async function fetchTaskBoardInfo(): Promise<TaskBoardInfo> {
+  if (useMock()) {
+    return { boardId: null, statusColumnId: null, statusOptions: ['Not Started', 'Working on it', 'Done'], dateColumnId: null, notesColumnId: null };
+  }
+  if (!taskBoardInfoCache) taskBoardInfoCache = await apiGet<TaskBoardInfo>('/api/subitems/board-info');
+  return taskBoardInfoCache;
+}
+
+export interface TaskPatch {
+  boardId: string;
+  name?: string;
+  status?: string;
+  statusColumnId?: string;
+  dueDate?: string;
+  dateColumnId?: string;
+  notes?: string;
+  notesColumnId?: string;
+}
+export async function updateTask(id: string, patch: TaskPatch): Promise<void> {
+  if (useMock()) return;
+  await apiPatch(`/api/subitems/${id}`, patch);
+}
+
+/** Resolve a client's Clients-board id from its name (for task → client link). */
+export async function findClientIdByName(name: string): Promise<string | null> {
+  const target = name.trim().toLowerCase();
+  if (!target) return null;
+  let index = (await readCache<ClientIndexEntry[]>('client-index'))?.value ?? null;
+  if (!index) {
+    try { index = await fetchClientIndex(); } catch { index = []; }
+  }
+  const hit = (index ?? []).find(c => c.name.trim().toLowerCase() === target);
+  return hit ? hit.id : null;
 }

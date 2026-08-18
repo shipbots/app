@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Pressable, Text } from 'react-native';
+import { Image, Pressable, Text, View } from 'react-native';
 
 import { useAuth } from '@/auth';
 import { ThemedText } from '@/components/themed-text';
@@ -9,6 +9,16 @@ import { useTheme } from '@/hooks/use-theme';
 /** Emoji tab icon — dependency-free; opacity conveys the focused state. */
 function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
   return <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.5 }}>{emoji}</Text>;
+}
+
+/** ShipBots robot + wordmark, centered in the header. */
+function LogoTitle() {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <Image source={require('@/assets/images/shipbots-logo.png')} style={{ width: 26, height: 26, borderRadius: 6 }} />
+      <Text style={{ color: '#fff', fontWeight: '800', fontSize: 18 }}>ShipBots</Text>
+    </View>
+  );
 }
 
 function SignOutButton() {
@@ -30,7 +40,8 @@ export default function TabsLayout() {
         tabBarStyle: { backgroundColor: theme.card, borderTopColor: theme.border },
         headerStyle: { backgroundColor: HeaderBg },
         headerTintColor: '#ffffff',
-        headerTitleStyle: { fontWeight: '700' },
+        headerTitleAlign: 'center',
+        headerTitle: () => <LogoTitle />,
       }}>
       <Tabs.Screen
         name="index"

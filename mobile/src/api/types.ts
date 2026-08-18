@@ -70,3 +70,12 @@ export interface Task {
   clientName: string;
   notes: string;
 }
+
+/** Subitem board metadata needed to edit a task. */
+export interface TaskBoardInfo {
+  boardId: string | null;
+  statusColumnId: string | null;
+  statusOptions: string[];
+  dateColumnId: string | null;
+  notesColumnId: string | null;
+}

@@ -4,19 +4,17 @@
     "slug": "andres",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/shipbots-logo.png",
     "scheme": "shipbotscs",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/shipbots-logo.png"
     },
     "android": {
       "package": "com.shipbots.cs",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#ffffff",
+        "foregroundImage": "./assets/images/shipbots-logo.png"
       },
       "predictiveBackGestureEnabled": false
     },
@@ -29,9 +27,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#ffffff",
+          "image": "./assets/images/shipbots-logo.png",
+          "imageWidth": 140
         }
       ],
       "expo-secure-store",

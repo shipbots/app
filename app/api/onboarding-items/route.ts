@@ -14,18 +14,15 @@
  */
 
 import { NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { fetchOnboardingItems } from '@/lib/monday';
 import { computeAlerts } from '@/lib/alerts';
 
 export const dynamic = 'force-dynamic';
 
+// Auth is enforced by the edge proxy (session cookie OR a valid mobile Bearer
+// token). No in-handler session check — that would reject mobile app requests,
+// which carry a Bearer instead of a NextAuth cookie.
 export async function GET() {
-  const session = await auth();
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   try {
     const items = await fetchOnboardingItems();
     const alerts = computeAlerts(items);
