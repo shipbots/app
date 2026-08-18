@@ -1,7 +1,7 @@
 /**
  * Types the app renders. Search rows come from /api/clients/search-index; the
- * detail is a subset of the web ClientInfo (normalized: warehouseLocation →
- * warehouse). All detail fields are optional so the UI just skips blanks.
+ * detail is the web ClientInfo, kept as a flexible string record so the field
+ * registry (fields.ts) can read/write any Monday-backed key by name.
  */
 
 /** One row of the Clients search index (see /api/clients/search-index). */
@@ -18,54 +18,41 @@ export interface ClientIndexEntry {
   portal: string;
 }
 
-/** A client's detail — normalized from the web ClientInfo. */
+/** A client's full detail — keys match the web ClientInfo field names. */
 export interface ClientDetail {
   id: string;
   name: string;
-  legalEntity?: string;
-  clientStatus?: string;
-  quickbooksName?: string;
-  shipHeroName?: string;
-  umbrellaCompany?: string;
-  businessHQ?: string;
-  productCategory?: string;
-  productDescription?: string;
-  // Contacts
-  contactName?: string;
-  contactEmail?: string;
-  contactPhone?: string;
-  contactLocation?: string;
-  contact2Name?: string;
-  contact2Email?: string;
-  contact2Phone?: string;
-  contact3Name?: string;
-  contact3Email?: string;
-  contact3Phone?: string;
-  // Fulfillment
-  warehouse?: string;
-  subWarehouse?: string;
-  portal?: string;
-  agentEmail?: string;
-  currentFulfillmentMethod?: string;
-  ecommercePlatforms?: string;
-  skuCount?: string;
-  packaging?: string;
-  kitsOrBundles?: string;
-  internationalFulfillment?: string;
-  amazonFBA?: string;
-  shippingMethod?: string;
-  // Receiving
-  initialInventoryDate?: string;
-  initialInventoryMethod?: string;
-  initialInventoryQty?: string;
-  itemsBarcoded?: string;
-  initialInventoryStoringNeeds?: string;
-  notesForReceiving?: string;
-  notesOnInitialInventory?: string;
-  // Onboarding / billing (non-sensitive)
-  paymentOnFile?: string;
-  invoicingEmail?: string;
-  additionalNotes?: string;
+  [key: string]: string | undefined;
+}
+
+/** Sticky note (matches /api/client/[id]/sticky-notes). */
+export interface StickyNote {
+  id: string;
+  text: string;
+  color: string;
+  createdAt?: string;
+  authorEmail?: string;
+  expiresAt?: string;
+  x?: number;
+  y?: number;
+}
+
+/** A document/link attached to a client. */
+export interface ClientDoc {
+  name: string;
+  url: string;
+  category: string;
+  assetId?: string;
+  kind: 'file' | 'link';
+}
+
+/** A delivery for the Calendar (from onboarding items). */
+export interface DeliveryEvent {
+  id: string;
+  clientId?: string; // Clients-board id (to open the client)
+  name: string;
+  date: string; // YYYY-MM-DD
+  delivered: boolean;
 }
 
 /** A task / subitem assigned to the agent. */

@@ -5,35 +5,58 @@
 
 import { Platform } from 'react-native';
 
+// Palette mirrors the Chrome extension (popup.css): ShipBots blue #015280,
+// cyan accent #43c7ff, #f9fafb page, white cards, warm notes column.
 export const Colors = {
   light: {
-    text: '#11181C',
-    background: '#F2F2F7',
-    backgroundElement: '#FFFFFF',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
-    // ShipBots brand + semantic
-    tint: '#0071BC',
-    border: '#E5E7EB',
-    card: '#FFFFFF',
-    success: '#00A15C',
-    danger: '#DC2626',
-    warning: '#D97706',
+    text: '#111827',
+    background: '#f9fafb',
+    backgroundElement: '#f3f4f6',
+    backgroundSelected: '#e5e7eb',
+    textSecondary: '#6b7280',
+    muted: '#9ca3af',
+    tint: '#015280',
+    accent: '#43c7ff',
+    border: '#e5e7eb',
+    inputBorder: '#d1d5db',
+    card: '#ffffff',
+    notesBg: '#fbfaf6',
+    success: '#059669',
+    danger: '#b91c1c',
+    warning: '#92400e',
   },
   dark: {
     text: '#ECEDEE',
-    background: '#000000',
-    backgroundElement: '#1C1C1E',
-    backgroundSelected: '#2E3135',
+    background: '#0b0f14',
+    backgroundElement: '#1b2530',
+    backgroundSelected: '#26313d',
     textSecondary: '#9BA1A6',
-    tint: '#3AA0E3',
-    border: '#2C2C2E',
-    card: '#1C1C1E',
+    muted: '#6b7280',
+    tint: '#43c7ff',
+    accent: '#43c7ff',
+    border: '#2b3542',
+    inputBorder: '#3a4653',
+    card: '#151b22',
+    notesBg: '#17130a',
     success: '#30D158',
     danger: '#FF453A',
     warning: '#FF9F0A',
   },
 } as const;
+
+/** Fixed ShipBots-blue header (extension look) regardless of color scheme. */
+export const HeaderBg = '#015280';
+
+/** Sticky-note colors (popup.css). */
+export const NoteColors: Record<string, { bg: string; border: string; text: string }> = {
+  yellow: { bg: '#fef9c3', border: '#facc15', text: '#713f12' },
+  pink:   { bg: '#fce7f3', border: '#f472b6', text: '#831843' },
+  blue:   { bg: '#dbeafe', border: '#60a5fa', text: '#1e3a8a' },
+  green:  { bg: '#d1fae5', border: '#34d399', text: '#064e3b' },
+  purple: { bg: '#ede9fe', border: '#a78bfa', text: '#4c1d95' },
+  orange: { bg: '#ffedd5', border: '#fb923c', text: '#7c2d12' },
+};
+export const NOTE_COLOR_KEYS = ['yellow', 'pink', 'blue', 'green', 'purple', 'orange'] as const;
 
 export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 

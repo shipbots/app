@@ -1,146 +1,229 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
-import { AuthError, getClient } from '@/api/client';
-import type { ClientDetail } from '@/api/types';
+import { writeCache } from '@/api/cache';
+import { AuthError, fetchAgents, fetchClientDocs, fetchColumnOptions, getClient, updateClientField } from '@/api/client';
+import { SECTIONS, valueTypeFor, type Field } from '@/api/fields';
+import type { ClientDetail, ClientDoc } from '@/api/types';
+import { API_BASE_URL } from '@/config';
+import { CollapsibleSection } from '@/components/collapsible-section';
+import { OptionPicker } from '@/components/option-picker';
+import { StickyNotes } from '@/components/sticky-notes';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useCached } from '@/hooks/use-cached';
 import { useTheme } from '@/hooks/use-theme';
 
-function subLetter(v: string): string {
+function subLetter(v: string) {
   const m = (v || '').trim().match(/[-\s]([A-Za-z0-9]{1,2})$/);
   return (m ? m[1] : v).toUpperCase();
 }
-
-type Item = [label: string, value: string | undefined, long?: boolean];
-
-function Field({ label, value, long }: { label: string; value: string; long?: boolean }) {
-  const theme = useTheme();
-  if (long) {
-    return (
-      <View style={[styles.block, { borderBottomColor: theme.border }]}>
-        <ThemedText type="small" themeColor="textSecondary">{label}</ThemedText>
-        <ThemedText type="small" style={{ marginTop: 2 }}>{value}</ThemedText>
-      </View>
-    );
-  }
-  return (
-    <View style={[styles.row, { borderBottomColor: theme.border }]}>
-      <ThemedText type="small" themeColor="textSecondary" style={styles.rowLabel}>{label}</ThemedText>
-      <ThemedText type="small" style={styles.rowValue}>{value}</ThemedText>
-    </View>
-  );
-}
-
-function Section({ title, rows }: { title: string; rows: Item[] }) {
-  const theme = useTheme();
-  const shown = rows.filter(([, v]) => v && String(v).trim());
-  if (!shown.length) return null;
-  return (
-    <ThemedView type="card" style={[styles.section, { borderColor: theme.border }]}>
-      <ThemedText type="smallBold" style={styles.sectionTitle}>{title}</ThemedText>
-      {shown.map(([label, value, long], i) => (
-        <Field key={label + i} label={label} value={String(value)} long={long} />
-      ))}
-    </ThemedView>
-  );
+function firstName(email?: string) {
+  const l = (email || '').split('@')[0];
+  return l ? l[0].toUpperCase() + l.slice(1) : '';
 }
 
 export default function ClientDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const clientId = String(id);
   const theme = useTheme();
-  const [client, setClient] = useState<ClientDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
 
-  const load = useCallback(async () => {
-    setError('');
-    try {
-      const c = await getClient(String(id));
-      setClient(c);
-      if (!c) setError('Client not found.');
-    } catch (e) {
-      setError(e instanceof AuthError ? 'Your session expired — sign out and back in.' : 'Couldn’t load this client.');
-    }
-  }, [id]);
+  const { data: fetched, loading, refreshing, error, refresh } = useCached(`client:${clientId}`, () => getClient(clientId));
+  const [local, setLocal] = useState<ClientDetail | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [picker, setPicker] = useState<Field | null>(null);
+  const [options, setOptions] = useState<Record<string, string[]>>({});
+  const [agents, setAgents] = useState<string[]>([]);
+  const [docs, setDocs] = useState<ClientDoc[]>([]);
 
+  useEffect(() => { if (fetched) setLocal(fetched); }, [fetched]);
   useEffect(() => {
-    let alive = true;
-    (async () => { await load(); if (alive) setLoading(false); })();
-    return () => { alive = false; };
-  }, [load]);
+    fetchColumnOptions().then(setOptions).catch(() => {});
+    fetchAgents().then(setAgents).catch(() => {});
+    fetchClientDocs(clientId).then(setDocs).catch(() => {});
+  }, [clientId]);
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  }, [load]);
+  const c = local ?? fetched;
+
+  const saveField = useCallback(async (field: Field, value: string) => {
+    setSavingKey(field.key);
+    const prev = c?.[field.key] ?? '';
+    setLocal(l => (l ? { ...l, [field.key]: value } : l));
+    try {
+      await updateClientField(clientId, field.columnId, value, valueTypeFor(field.type));
+      setLocal(l => { if (l) void writeCache(`client:${clientId}`, l); return l; });
+    } catch {
+      Alert.alert('Couldn’t save', 'Check your connection and try again.');
+      setLocal(l => (l ? { ...l, [field.key]: prev } : l));
+    } finally {
+      setSavingKey(null);
+    }
+  }, [clientId, c]);
+
+  const pickerOptions = useMemo(() => {
+    if (!picker) return [];
+    if (picker.type === 'agent') return agents;
+    return options[picker.columnId] ?? [];
+  }, [picker, agents, options]);
 
   if (loading) {
-    return (
-      <ThemedView style={styles.center}>
-        <ActivityIndicator color={theme.tint} />
-      </ThemedView>
-    );
+    return <ThemedView style={styles.center}><ActivityIndicator color={theme.tint} /></ThemedView>;
   }
-  if (!client) {
-    return (
-      <ThemedView style={styles.center}>
-        <ThemedText type="small" themeColor="textSecondary">{error || 'Client not found.'}</ThemedText>
-      </ThemedView>
-    );
+  if (!c) {
+    return <ThemedView style={styles.center}><ThemedText type="small" themeColor="textSecondary">{error ? 'Couldn’t load — pull to retry.' : 'Client not found.'}</ThemedText></ThemedView>;
   }
 
-  const c = client;
-  const warehouse = c.warehouse ? `${c.warehouse}${c.subWarehouse ? ` · ${subLetter(c.subWarehouse)}` : ''}` : '';
+  const warehouse = c.warehouseLocation ? `${c.warehouseLocation}${c.subWarehouse ? ` · ${subLetter(c.subWarehouse)}` : ''}` : '';
+  const agent = firstName(c.supportAgentEmail);
+  const openDoc = (d: ClientDoc) => {
+    const url = d.kind === 'file' && d.assetId
+      ? `${API_BASE_URL}/customer-service?clientId=${clientId}&expanded=1&previewAsset=${d.assetId}`
+      : d.url;
+    WebBrowser.openBrowserAsync(url).catch(() => {});
+  };
 
   return (
     <ThemedView style={styles.flex}>
-      <Stack.Screen options={{ title: c.name }} />
+      <Stack.Screen
+        options={{
+          title: c.name,
+          headerRight: () => (
+            <Pressable onPress={() => setEditing(e => !e)} hitSlop={12} style={{ paddingHorizontal: 14 }}>
+              <ThemedText style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>{editing ? 'Done' : 'Edit'}</ThemedText>
+            </Pressable>
+          ),
+        }}
+      />
       <ScrollView
         contentContainerStyle={styles.scroll}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.tint} />}>
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.tint} />}>
+
+        {/* Title + pills */}
         <ThemedText type="subtitle" style={styles.name}>{c.name}</ThemedText>
         {!!c.legalEntity && <ThemedText type="small" themeColor="textSecondary">{c.legalEntity}</ThemedText>}
-        {!!c.clientStatus && (
-          <ThemedText type="small" style={{ color: theme.tint, marginTop: 2 }}>{c.clientStatus}</ThemedText>
+        <View style={styles.pills}>
+          {!!c.clientStatus && <Pill text={c.clientStatus} bg="#e6f8ff" fg="#015280" />}
+          {!!warehouse && <Pill text={warehouse} bg="#ecfdf5" fg="#047857" />}
+          <Pill text={agent || 'Unassigned'} bg={agent ? '#fef3c7' : '#f3f4f6'} fg={agent ? '#92400e' : '#6b7280'} />
+          {!!c.portalDropdown && <Pill text={c.portalDropdown} bg="#e6f8ff" fg="#015280" />}
+        </View>
+
+        <View style={{ height: Spacing.two }} />
+
+        {/* Sticky notes */}
+        <StickyNotes clientId={clientId} />
+
+        {/* Sections */}
+        {SECTIONS.map(section => {
+          const visible = editing
+            ? section.fields
+            : section.fields.filter(f => (c[f.key] ?? '').trim());
+          if (!editing && visible.length === 0) return null;
+          return (
+            <CollapsibleSection key={section.id} title={section.title} defaultOpen={section.id === 'general' || section.id === 'contacts'}>
+              {visible.map(f => (
+                <FieldRow
+                  key={f.key}
+                  field={f}
+                  value={c[f.key] ?? ''}
+                  editing={editing}
+                  saving={savingKey === f.key}
+                  onEditText={saveField}
+                  onOpenPicker={setPicker}
+                />
+              ))}
+            </CollapsibleSection>
+          );
+        })}
+
+        {/* Documents */}
+        {docs.length > 0 && (
+          <CollapsibleSection title={`Documents · ${docs.length}`} defaultOpen={false}>
+            {docs.map((d, i) => (
+              <Pressable key={d.url + i} onPress={() => openDoc(d)} style={[styles.docRow, { borderBottomColor: theme.border }]}>
+                <ThemedText style={{ fontSize: 15 }}>{d.kind === 'file' ? '📄' : '🔗'}</ThemedText>
+                <ThemedText type="small" style={{ flex: 1 }} numberOfLines={1}>{d.name}</ThemedText>
+                <ThemedText type="small" style={{ color: theme.tint }}>Open ↗</ThemedText>
+              </Pressable>
+            ))}
+          </CollapsibleSection>
         )}
-        {!!error && <ThemedText type="small" style={{ color: theme.danger, marginTop: Spacing.two }}>{error}</ThemedText>}
 
-        <View style={{ height: Spacing.three }} />
-
-        <Section title="Primary contact" rows={[
-          ['Name', c.contactName], ['Email', c.contactEmail], ['Phone', c.contactPhone], ['Location', c.contactLocation],
-        ]} />
-        <Section title="Additional contacts" rows={[
-          ['2 · Name', c.contact2Name], ['2 · Email', c.contact2Email], ['2 · Phone', c.contact2Phone],
-          ['3 · Name', c.contact3Name], ['3 · Email', c.contact3Email], ['3 · Phone', c.contact3Phone],
-        ]} />
-        <Section title="Company" rows={[
-          ['QuickBooks', c.quickbooksName], ['ShipHero', c.shipHeroName], ['Umbrella', c.umbrellaCompany],
-          ['HQ', c.businessHQ], ['Category', c.productCategory], ['Products', c.productDescription, true],
-        ]} />
-        <Section title="Fulfillment" rows={[
-          ['Warehouse', warehouse], ['Method', c.currentFulfillmentMethod], ['Platforms', c.ecommercePlatforms],
-          ['SKU count', c.skuCount], ['Packaging', c.packaging, true], ['Kits / bundles', c.kitsOrBundles],
-          ['International', c.internationalFulfillment], ['Amazon FBA', c.amazonFBA], ['Shipping', c.shippingMethod],
-        ]} />
-        <Section title="Receiving" rows={[
-          ['Initial date', c.initialInventoryDate], ['Method', c.initialInventoryMethod], ['Quantity', c.initialInventoryQty],
-          ['Barcoded', c.itemsBarcoded], ['Storing needs', c.initialInventoryStoringNeeds, true],
-          ['Receiving notes', c.notesForReceiving, true], ['Inventory notes', c.notesOnInitialInventory, true],
-        ]} />
-        <Section title="Onboarding & billing" rows={[
-          ['Payment on file', c.paymentOnFile], ['Invoicing email', c.invoicingEmail],
-        ]} />
-        <Section title="Notes" rows={[['Additional notes', c.additionalNotes, true]]} />
-
-        <View style={{ height: Spacing.five }} />
+        <View style={{ height: Spacing.six }} />
       </ScrollView>
+
+      <OptionPicker
+        visible={!!picker}
+        title={picker?.label ?? ''}
+        options={pickerOptions}
+        current={picker ? c[picker.key] : undefined}
+        onSelect={value => { if (picker) saveField(picker, value); setPicker(null); }}
+        onClose={() => setPicker(null)}
+      />
     </ThemedView>
+  );
+}
+
+function Pill({ text, bg, fg }: { text: string; bg: string; fg: string }) {
+  return (
+    <View style={[styles.pill, { backgroundColor: bg }]}>
+      <ThemedText style={{ color: fg, fontSize: 11, fontWeight: '700' }}>{text}</ThemedText>
+    </View>
+  );
+}
+
+function FieldRow({
+  field, value, editing, saving, onEditText, onOpenPicker,
+}: {
+  field: Field;
+  value: string;
+  editing: boolean;
+  saving: boolean;
+  onEditText: (field: Field, value: string) => void;
+  onOpenPicker: (field: Field) => void;
+  onCopy?: () => void;
+}) {
+  const theme = useTheme();
+  const long = field.type === 'long';
+  const pickable = field.type === 'dropdown' || field.type === 'status' || field.type === 'agent';
+
+  if (!editing) {
+    return (
+      <View style={[long ? styles.block : styles.row, { borderBottomColor: theme.border }]}>
+        <ThemedText type="small" themeColor="textSecondary" style={long ? undefined : styles.label}>{field.label}</ThemedText>
+        <ThemedText type="small" style={long ? { marginTop: 2 } : styles.value}>{value}</ThemedText>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[long ? styles.block : styles.row, { borderBottomColor: theme.border }]}>
+      <ThemedText type="small" themeColor="textSecondary" style={long ? undefined : styles.label}>{field.label}</ThemedText>
+      {pickable ? (
+        <Pressable onPress={() => onOpenPicker(field)} style={[styles.pickChip, { borderColor: theme.accent }]}>
+          <ThemedText type="small" style={{ color: value ? theme.text : theme.textSecondary }}>{value || 'Select…'}</ThemedText>
+          <ThemedText type="small" style={{ color: theme.textSecondary }}> ▾</ThemedText>
+        </Pressable>
+      ) : (
+        <View style={[long ? { marginTop: 4 } : styles.value, styles.inputWrap]}>
+          <TextInput
+            defaultValue={value}
+            multiline={long}
+            placeholder={field.type === 'date' ? 'YYYY-MM-DD' : ''}
+            placeholderTextColor={theme.textSecondary}
+            autoCapitalize="none"
+            onEndEditing={e => { const t = e.nativeEvent.text; if (t !== value) onEditText(field, t); }}
+            style={[styles.input, { borderColor: theme.accent, color: theme.text }, long && { minHeight: 54, textAlignVertical: 'top' }]}
+          />
+          {saving && <ActivityIndicator size="small" color={theme.tint} />}
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -148,22 +231,15 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.four },
   scroll: { padding: Spacing.three },
-  name: { fontSize: 24, lineHeight: 30 },
-  section: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: Spacing.three,
-    padding: Spacing.three,
-    marginBottom: Spacing.three,
-  },
-  sectionTitle: { marginBottom: Spacing.one },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  rowLabel: { flexShrink: 0 },
-  rowValue: { flexShrink: 1, textAlign: 'right' },
-  block: { paddingVertical: Spacing.two, borderBottomWidth: StyleSheet.hairlineWidth },
+  name: { fontSize: 22, lineHeight: 28 },
+  pills: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one, marginTop: Spacing.two },
+  pill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.three, paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth },
+  block: { paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth },
+  label: { width: 100, flexShrink: 0, paddingTop: 2 },
+  value: { flex: 1 },
+  inputWrap: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  input: { flex: 1, borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6, fontSize: 14 },
+  pickChip: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 7 },
+  docRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
 });

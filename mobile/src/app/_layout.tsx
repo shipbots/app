@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { AuthProvider, useAuth } from '@/auth';
-import { Colors } from '@/constants/theme';
+import { Colors, HeaderBg } from '@/constants/theme';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -31,7 +31,7 @@ function RootNavigator() {
   return (
     <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: colors.tint },
+        headerStyle: { backgroundColor: HeaderBg },
         headerTintColor: '#ffffff',
         headerTitleStyle: { fontWeight: '700' },
         contentStyle: { backgroundColor: colors.background },
