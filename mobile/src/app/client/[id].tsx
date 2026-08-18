@@ -1,8 +1,8 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
-import { getClient } from '@/api/client';
+import { AuthError, getClient } from '@/api/client';
 import type { ClientDetail } from '@/api/types';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -14,29 +14,36 @@ function subLetter(v: string): string {
   return (m ? m[1] : v).toUpperCase();
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+type Item = [label: string, value: string | undefined, long?: boolean];
+
+function Field({ label, value, long }: { label: string; value: string; long?: boolean }) {
   const theme = useTheme();
-  if (!value) return null;
+  if (long) {
+    return (
+      <View style={[styles.block, { borderBottomColor: theme.border }]}>
+        <ThemedText type="small" themeColor="textSecondary">{label}</ThemedText>
+        <ThemedText type="small" style={{ marginTop: 2 }}>{value}</ThemedText>
+      </View>
+    );
+  }
   return (
     <View style={[styles.row, { borderBottomColor: theme.border }]}>
-      <ThemedText type="small" themeColor="textSecondary">
-        {label}
-      </ThemedText>
-      <ThemedText type="small" style={styles.rowValue}>
-        {value}
-      </ThemedText>
+      <ThemedText type="small" themeColor="textSecondary" style={styles.rowLabel}>{label}</ThemedText>
+      <ThemedText type="small" style={styles.rowValue}>{value}</ThemedText>
     </View>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, rows }: { title: string; rows: Item[] }) {
   const theme = useTheme();
+  const shown = rows.filter(([, v]) => v && String(v).trim());
+  if (!shown.length) return null;
   return (
     <ThemedView type="card" style={[styles.section, { borderColor: theme.border }]}>
-      <ThemedText type="smallBold" style={styles.sectionTitle}>
-        {title}
-      </ThemedText>
-      {children}
+      <ThemedText type="smallBold" style={styles.sectionTitle}>{title}</ThemedText>
+      {shown.map(([label, value, long], i) => (
+        <Field key={label + i} label={label} value={String(value)} long={long} />
+      ))}
     </ThemedView>
   );
 }
@@ -46,16 +53,31 @@ export default function ClientDetailScreen() {
   const theme = useTheme();
   const [client, setClient] = useState<ClientDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    setError('');
+    try {
+      const c = await getClient(String(id));
+      setClient(c);
+      if (!c) setError('Client not found.');
+    } catch (e) {
+      setError(e instanceof AuthError ? 'Your session expired — sign out and back in.' : 'Couldn’t load this client.');
+    }
+  }, [id]);
 
   useEffect(() => {
     let alive = true;
-    getClient(String(id))
-      .then(c => alive && (setClient(c), setLoading(false)))
-      .catch(() => alive && setLoading(false));
-    return () => {
-      alive = false;
-    };
-  }, [id]);
+    (async () => { await load(); if (alive) setLoading(false); })();
+    return () => { alive = false; };
+  }, [load]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }, [load]);
 
   if (loading) {
     return (
@@ -67,52 +89,56 @@ export default function ClientDetailScreen() {
   if (!client) {
     return (
       <ThemedView style={styles.center}>
-        <ThemedText>Client not found.</ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">{error || 'Client not found.'}</ThemedText>
       </ThemedView>
     );
   }
 
-  const warehouse = client.warehouse + (client.subWarehouse ? ` · ${subLetter(client.subWarehouse)}` : '');
+  const c = client;
+  const warehouse = c.warehouse ? `${c.warehouse}${c.subWarehouse ? ` · ${subLetter(c.subWarehouse)}` : ''}` : '';
 
   return (
     <ThemedView style={styles.flex}>
-      <Stack.Screen options={{ title: client.name }} />
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <ThemedText type="subtitle" style={styles.name}>
-          {client.name}
-        </ThemedText>
-        {!!client.legalEntity && (
-          <ThemedText type="small" themeColor="textSecondary" style={styles.legal}>
-            {client.legalEntity}
-          </ThemedText>
+      <Stack.Screen options={{ title: c.name }} />
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.tint} />}>
+        <ThemedText type="subtitle" style={styles.name}>{c.name}</ThemedText>
+        {!!c.legalEntity && <ThemedText type="small" themeColor="textSecondary">{c.legalEntity}</ThemedText>}
+        {!!c.clientStatus && (
+          <ThemedText type="small" style={{ color: theme.tint, marginTop: 2 }}>{c.clientStatus}</ThemedText>
         )}
+        {!!error && <ThemedText type="small" style={{ color: theme.danger, marginTop: Spacing.two }}>{error}</ThemedText>}
 
-        <Section title="Contact">
-          <Row label="Primary" value={client.contactName} />
-          <Row label="Email" value={client.contactEmail} />
-          <Row label="Phone" value={client.contactPhone} />
-          <Row label="Secondary" value={client.contact2Name} />
-          <Row label="Email 2" value={client.contact2Email} />
-        </Section>
+        <View style={{ height: Spacing.three }} />
 
-        <Section title="Fulfillment">
-          <Row label="Warehouse" value={warehouse} />
-          <Row label="Portal" value={client.portal} />
-          <Row label="Agent" value={client.agentEmail} />
-        </Section>
+        <Section title="Primary contact" rows={[
+          ['Name', c.contactName], ['Email', c.contactEmail], ['Phone', c.contactPhone], ['Location', c.contactLocation],
+        ]} />
+        <Section title="Additional contacts" rows={[
+          ['2 · Name', c.contact2Name], ['2 · Email', c.contact2Email], ['2 · Phone', c.contact2Phone],
+          ['3 · Name', c.contact3Name], ['3 · Email', c.contact3Email], ['3 · Phone', c.contact3Phone],
+        ]} />
+        <Section title="Company" rows={[
+          ['QuickBooks', c.quickbooksName], ['ShipHero', c.shipHeroName], ['Umbrella', c.umbrellaCompany],
+          ['HQ', c.businessHQ], ['Category', c.productCategory], ['Products', c.productDescription, true],
+        ]} />
+        <Section title="Fulfillment" rows={[
+          ['Warehouse', warehouse], ['Method', c.currentFulfillmentMethod], ['Platforms', c.ecommercePlatforms],
+          ['SKU count', c.skuCount], ['Packaging', c.packaging, true], ['Kits / bundles', c.kitsOrBundles],
+          ['International', c.internationalFulfillment], ['Amazon FBA', c.amazonFBA], ['Shipping', c.shippingMethod],
+        ]} />
+        <Section title="Receiving" rows={[
+          ['Initial date', c.initialInventoryDate], ['Method', c.initialInventoryMethod], ['Quantity', c.initialInventoryQty],
+          ['Barcoded', c.itemsBarcoded], ['Storing needs', c.initialInventoryStoringNeeds, true],
+          ['Receiving notes', c.notesForReceiving, true], ['Inventory notes', c.notesOnInitialInventory, true],
+        ]} />
+        <Section title="Onboarding & billing" rows={[
+          ['Payment on file', c.paymentOnFile], ['Invoicing email', c.invoicingEmail],
+        ]} />
+        <Section title="Notes" rows={[['Additional notes', c.additionalNotes, true]]} />
 
-        <Section title="Onboarding">
-          <Row label="Payment on file" value={client.paymentOnFile || '—'} />
-          <Row label="Delivery method" value={client.initialInventoryMethod} />
-          <Row label="Delivery qty" value={client.initialInventoryQty} />
-          <Row label="Est. delivery" value={client.estimatedDeliveryDate} />
-        </Section>
-
-        {!!client.notes && (
-          <Section title="Notes">
-            <ThemedText type="small">{client.notes}</ThemedText>
-          </Section>
-        )}
+        <View style={{ height: Spacing.five }} />
       </ScrollView>
     </ThemedView>
   );
@@ -122,8 +148,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.four },
   scroll: { padding: Spacing.three },
-  name: { fontSize: 24, lineHeight: 30, marginBottom: Spacing.one },
-  legal: { marginBottom: Spacing.three },
+  name: { fontSize: 24, lineHeight: 30 },
   section: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: Spacing.three,
@@ -138,5 +163,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  rowLabel: { flexShrink: 0 },
   rowValue: { flexShrink: 1, textAlign: 'right' },
+  block: { paddingVertical: Spacing.two, borderBottomWidth: StyleSheet.hairlineWidth },
 });

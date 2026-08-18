@@ -1,11 +1,22 @@
 import { Tabs } from 'expo-router';
-import { Text } from 'react-native';
+import { Pressable, Text } from 'react-native';
 
+import { useAuth } from '@/auth';
+import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
 
 /** Emoji tab icon — dependency-free; opacity conveys the focused state. */
 function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
   return <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.5 }}>{emoji}</Text>;
+}
+
+function SignOutButton() {
+  const { signOut } = useAuth();
+  return (
+    <Pressable onPress={signOut} hitSlop={12} style={{ paddingHorizontal: 14 }}>
+      <ThemedText style={{ color: '#fff', fontWeight: '600', fontSize: 14 }}>Sign out</ThemedText>
+    </Pressable>
+  );
 }
 
 export default function TabsLayout() {
@@ -22,7 +33,11 @@ export default function TabsLayout() {
       }}>
       <Tabs.Screen
         name="index"
-        options={{ title: 'Clients', tabBarIcon: ({ focused }) => <TabIcon emoji="👥" focused={focused} /> }}
+        options={{
+          title: 'Clients',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="👥" focused={focused} />,
+          headerRight: () => <SignOutButton />,
+        }}
       />
       <Tabs.Screen
         name="tasks"

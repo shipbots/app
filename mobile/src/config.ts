@@ -2,16 +2,15 @@
  * App configuration. The API base points at the deployed ShipBots dashboard on
  * Vercel — the same backend the web app and Chrome extension use.
  *
- * NOTE: those API routes are gated by NextAuth session cookies (see proxy.ts in
- * the web repo), so the mobile app can't hit them with real data until we add a
- * token-based mobile auth path (Phase 2). Until then USE_MOCK_DATA is true and
- * the app runs against realistic in-memory fixtures so the UI is fully usable.
+ * Auth: the app signs in via /mobile-login (reusing the web Google login) to get
+ * a Bearer token, then calls the real API. Before sign-in — or if FORCE_MOCK is
+ * flipped on — it falls back to in-memory fixtures so the UI still renders.
  */
 
 export const API_BASE_URL = 'https://app-snowy-eight-64.vercel.app';
 
-/** Flip to false once mobile auth (Google sign-in → app token) is wired up. */
-export const USE_MOCK_DATA = true;
+/** Deep link the /mobile-login page redirects back to with the token. */
+export const AUTH_RETURN_URL = 'shipbotscs://auth';
 
-/** Domain allowed to sign in, once auth exists. */
-export const ALLOWED_EMAIL_DOMAIN = 'shipbots.com';
+/** Force fixtures even when signed in (dev/demo only). Normally false. */
+export const FORCE_MOCK = false;
