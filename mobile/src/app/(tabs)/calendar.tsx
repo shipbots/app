@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { useMemo } from 'react';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 
 import { fetchDeliveries } from '@/api/client';
 import type { DeliveryEvent } from '@/api/types';
@@ -10,118 +10,126 @@ import { Spacing } from '@/constants/theme';
 import { useCached } from '@/hooks/use-cached';
 import { useTheme } from '@/hooks/use-theme';
 
-const WD = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const ymd = (y: number, m: number, d: number) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+function subLetter(v?: string) {
+  const m = (v || '').trim().match(/[-\s]([A-Za-z0-9]{1,2})$/);
+  return (m ? m[1] : v || '').toUpperCase();
+}
+function firstName(email?: string) {
+  const l = (email || '').split('@')[0];
+  return l ? l[0].toUpperCase() + l.slice(1) : '';
+}
+function fmt(date: string) {
+  const [y, m, d] = date.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return isNaN(+dt) ? date : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
-export default function CalendarScreen() {
+type Row = { kind: 'today' } | { kind: 'card'; e: DeliveryEvent; overdue: boolean };
+
+function Line({ icon, text }: { icon: string; text: string }) {
+  const theme = useTheme();
+  return (
+    <View style={styles.line}>
+      <ThemedText type="small" style={{ color: theme.textSecondary }}>{icon}</ThemedText>
+      <ThemedText type="small" style={{ flex: 1 }} numberOfLines={2}>{text}</ThemedText>
+    </View>
+  );
+}
+
+export default function TimelineScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { data, refreshing, refresh, loading } = useCached('deliveries', fetchDeliveries);
-  const now = new Date();
-  const [cursor, setCursor] = useState({ y: now.getFullYear(), m: now.getMonth() });
-  const [selected, setSelected] = useState<string | null>(null);
+  const { data, loading, refreshing, refresh } = useCached('deliveries', fetchDeliveries);
+  const today = todayStr();
 
-  const byDate = useMemo(() => {
-    const map: Record<string, DeliveryEvent[]> = {};
-    for (const e of data ?? []) {
-      if (!map[e.date]) map[e.date] = [];
-      map[e.date].push(e);
-    }
-    return map;
-  }, [data]);
+  const { rows, pastDue, upcoming } = useMemo(() => {
+    const list = [...(data ?? [])].sort((a, b) => a.date.localeCompare(b.date));
+    const past = list.filter(e => e.date < today);
+    const up = list.filter(e => e.date >= today);
+    const r: Row[] = [
+      ...past.map(e => ({ kind: 'card' as const, e, overdue: true })),
+      { kind: 'today' as const },
+      ...up.map(e => ({ kind: 'card' as const, e, overdue: false })),
+    ];
+    return { rows: r, pastDue: past.length, upcoming: up.length };
+  }, [data, today]);
 
-  const firstWeekday = new Date(cursor.y, cursor.m, 1).getDay();
-  const daysInMonth = new Date(cursor.y, cursor.m + 1, 0).getDate();
-  const cells: (number | null)[] = [
-    ...Array<null>(firstWeekday).fill(null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
-  ];
-  while (cells.length % 7 !== 0) cells.push(null);
-
-  const todayStr = ymd(now.getFullYear(), now.getMonth(), now.getDate());
-  const shift = (delta: number) => {
-    setSelected(null);
-    setCursor(cur => {
-      const m = cur.m + delta;
-      return { y: cur.y + Math.floor(m / 12), m: ((m % 12) + 12) % 12 };
-    });
-  };
-  const selectedEvents = selected ? byDate[selected] ?? [] : [];
+  if (loading) {
+    return <ThemedView style={styles.center}><ActivityIndicator color={theme.tint} /></ThemedView>;
+  }
 
   return (
     <ThemedView style={styles.flex}>
-      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.tint} />} contentContainerStyle={{ paddingBottom: Spacing.six }}>
-        <View style={styles.monthHeader}>
-          <Pressable onPress={() => shift(-1)} hitSlop={12}><ThemedText style={[styles.arrow, { color: theme.tint }]}>‹</ThemedText></Pressable>
-          <ThemedText type="smallBold" style={{ fontSize: 16 }}>{MONTHS[cursor.m]} {cursor.y}</ThemedText>
-          <Pressable onPress={() => shift(1)} hitSlop={12}><ThemedText style={[styles.arrow, { color: theme.tint }]}>›</ThemedText></Pressable>
+      <View style={[styles.header, { borderBottomColor: theme.border }]}>
+        <ThemedText type="smallBold" style={{ fontSize: 15 }}>🚚 New Client Delivery Timeline</ThemedText>
+        <View style={styles.headerCounts}>
+          {pastDue > 0 && <ThemedText type="small" style={{ color: theme.danger }}>{pastDue} past due</ThemedText>}
+          <ThemedText type="small" style={{ color: theme.tint }}>{upcoming} upcoming</ThemedText>
         </View>
+      </View>
 
-        <View style={styles.weekRow}>
-          {WD.map((d, i) => <ThemedText key={i} type="small" themeColor="textSecondary" style={styles.weekday}>{d}</ThemedText>)}
-        </View>
-
-        <View style={styles.grid}>
-          {cells.map((day, i) => {
-            if (day == null) return <View key={i} style={styles.cell} />;
-            const ds = ymd(cursor.y, cursor.m, day);
-            const evts = byDate[ds] ?? [];
-            const isToday = ds === todayStr;
-            const isSel = ds === selected;
+      <FlatList
+        data={rows}
+        keyExtractor={(r, i) => (r.kind === 'today' ? 'today' : `${r.e.id}-${i}`)}
+        contentContainerStyle={styles.list}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.tint} />}
+        ListEmptyComponent={<ThemedText type="small" themeColor="textSecondary" style={styles.empty}>No inbound deliveries scheduled.</ThemedText>}
+        renderItem={({ item }) => {
+          if (item.kind === 'today') {
             return (
-              <Pressable key={i} onPress={() => setSelected(ds)} style={styles.cell}>
-                <View style={[styles.dayCircle, isToday && { backgroundColor: theme.tint }, isSel && !isToday && { borderWidth: 1.5, borderColor: theme.tint }]}>
-                  <ThemedText type="small" style={{ color: isToday ? '#fff' : theme.text }}>{day}</ThemedText>
-                </View>
-                {evts.length > 0 && <View style={[styles.dot, { backgroundColor: theme.accent }]} />}
-              </Pressable>
+              <View style={styles.todayRow}>
+                <View style={[styles.todayLine, { backgroundColor: theme.border }]} />
+                <ThemedText type="smallBold" style={{ marginHorizontal: 8 }}>TODAY ↓</ThemedText>
+                <View style={[styles.todayLine, { backgroundColor: theme.border }]} />
+              </View>
             );
-          })}
-        </View>
-
-        <View style={styles.listWrap}>
-          {selected ? (
-            selectedEvents.length ? (
-              <>
-                <ThemedText type="smallBold" style={{ color: theme.tint, marginBottom: Spacing.two }}>Deliveries · {selected}</ThemedText>
-                {selectedEvents.map(e => (
-                  <Pressable
-                    key={e.id}
-                    disabled={!e.clientId}
-                    onPress={() => e.clientId && router.push({ pathname: '/client/[id]', params: { id: e.clientId } })}
-                    style={[styles.evt, { borderColor: theme.border }]}>
-                    <ThemedText type="small" style={{ flex: 1 }} numberOfLines={1}>{e.name || '(unnamed)'}</ThemedText>
-                    <ThemedText type="small" style={{ color: e.delivered ? theme.success : theme.warning }}>
-                      {e.delivered ? 'Delivered' : 'Expected'}
-                    </ThemedText>
-                  </Pressable>
-                ))}
-              </>
-            ) : (
-              <ThemedText type="small" themeColor="textSecondary">No deliveries on {selected}.</ThemedText>
-            )
-          ) : (
-            <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center' }}>
-              {loading ? 'Loading deliveries…' : 'Tap a day with a dot to see its deliveries.'}
-            </ThemedText>
-          )}
-        </View>
-      </ScrollView>
+          }
+          const { e, overdue } = item;
+          const wh = e.warehouse ? `${e.warehouse}${e.subWarehouse ? ` · ${subLetter(e.subWarehouse)}` : ''}` : '';
+          return (
+            <Pressable
+              disabled={!e.clientId}
+              onPress={() => e.clientId && router.push({ pathname: '/client/[id]', params: { id: e.clientId } })}
+              style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}>
+              <ThemedView type="card" style={[styles.card, { borderColor: overdue ? '#fca5a5' : theme.border }]}>
+                <View style={styles.cardTop}>
+                  <View style={[styles.dateChip, { backgroundColor: overdue ? '#fef2f2' : '#eff6ff' }]}>
+                    <ThemedText type="small" style={{ color: overdue ? '#dc2626' : '#2563eb', fontWeight: '700' }}>📅 {fmt(e.date)}</ThemedText>
+                  </View>
+                  {overdue && <ThemedText type="small" style={{ color: theme.danger, fontWeight: '700', fontSize: 10 }}>OVERDUE</ThemedText>}
+                </View>
+                <ThemedText type="smallBold" style={{ fontSize: 15, marginTop: 6 }}>{e.name || '(unnamed)'}</ThemedText>
+                {!!e.method && <Line icon="🚚" text={e.method} />}
+                {!!e.qty && <Line icon="📦" text={e.qty} />}
+                {!!wh && <Line icon="🏭" text={wh} />}
+                <View style={[styles.agentRow, { borderTopColor: theme.border }]}>
+                  <ThemedText type="small" themeColor="textSecondary">👤 {firstName(e.agentEmail) || 'Unassigned'}</ThemedText>
+                </View>
+              </ThemedView>
+            </Pressable>
+          );
+        }}
+      />
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  monthHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.four, paddingVertical: Spacing.three },
-  arrow: { fontSize: 28, fontWeight: '700' },
-  weekRow: { flexDirection: 'row', paddingHorizontal: Spacing.two },
-  weekday: { flex: 1, textAlign: 'center' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: Spacing.two, paddingTop: Spacing.two },
-  cell: { width: `${100 / 7}%`, alignItems: 'center', paddingVertical: 6 },
-  dayCircle: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  dot: { width: 5, height: 5, borderRadius: 3, marginTop: 3 },
-  listWrap: { padding: Spacing.four, minHeight: 120 },
-  evt: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  header: { paddingHorizontal: Spacing.three, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  headerCounts: { flexDirection: 'row', gap: Spacing.two, marginTop: 2 },
+  list: { padding: Spacing.three, gap: Spacing.two },
+  empty: { textAlign: 'center', marginTop: Spacing.five },
+  card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, padding: Spacing.three },
+  cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  dateChip: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  line: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  agentRow: { marginTop: 8, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth },
+  todayRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: Spacing.two },
+  todayLine: { flex: 1, height: 2, borderRadius: 1 },
 });

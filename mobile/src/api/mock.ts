@@ -50,6 +50,7 @@ export const MOCK_INDEX: ClientIndexEntry[] = MOCK_CLIENTS.map(c => ({
   subWarehouse: c.subWarehouse ?? '',
   agentEmail: c.supportAgentEmail ?? '',
   portal: c.portalDropdown ?? '',
+  groupId: '',
 }));
 
 export const MOCK_TASKS: Task[] = [

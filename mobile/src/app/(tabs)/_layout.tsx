@@ -42,7 +42,7 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="calendar"
-        options={{ title: 'Calendar', tabBarIcon: ({ focused }) => <TabIcon emoji="📅" focused={focused} /> }}
+        options={{ title: 'Timeline', tabBarIcon: ({ focused }) => <TabIcon emoji="📅" focused={focused} /> }}
       />
       <Tabs.Screen
         name="tasks"

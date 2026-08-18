@@ -16,6 +16,7 @@ export interface ClientIndexEntry {
   subWarehouse: string;
   agentEmail: string;
   portal: string;
+  groupId: string; // Clients-board group; CLIENT_GROUP_EXITED_ID == inactive
 }
 
 /** A client's full detail — keys match the web ClientInfo field names. */
@@ -46,13 +47,18 @@ export interface ClientDoc {
   kind: 'file' | 'link';
 }
 
-/** A delivery for the Calendar (from onboarding items). */
+/** An inbound delivery for the Delivery Timeline (from onboarding items). */
 export interface DeliveryEvent {
   id: string;
   clientId?: string; // Clients-board id (to open the client)
   name: string;
-  date: string; // YYYY-MM-DD
+  date: string; // YYYY-MM-DD estimated delivery
   delivered: boolean;
+  method?: string;
+  qty?: string;
+  warehouse?: string;
+  subWarehouse?: string;
+  agentEmail?: string;
 }
 
 /** A task / subitem assigned to the agent. */

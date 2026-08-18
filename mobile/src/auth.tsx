@@ -1,6 +1,7 @@
 /**
  * Mobile auth: stores the Bearer token in the OS secure store and exposes
  * sign-in (via the /mobile-login web page) + a paste-code fallback + sign-out.
+ * Also decodes the token's email so the UI can greet + filter "my clients".
  */
 
 import * as Linking from 'expo-linking';
@@ -8,16 +9,34 @@ import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { setAuthToken } from '@/api/client';
+import { setAuthToken, setCurrentUser } from '@/api/client';
 import { API_BASE_URL, AUTH_RETURN_URL } from '@/config';
 
 WebBrowser.maybeCompleteAuthSession();
 
 const TOKEN_KEY = 'shipbots-cs-token';
 
+/** Read the email claim out of the (unverified) JWT payload — display only. */
+function decodeEmail(token: string | null): string | null {
+  if (!token) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const g = globalThis as any;
+    const part = token.split('.')[1];
+    if (!part || typeof g.atob !== 'function') return null;
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    const json = g.atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, '='));
+    const obj = JSON.parse(json);
+    return (obj.email || obj.sub || '') || null;
+  } catch {
+    return null;
+  }
+}
+
 type Result = { ok: boolean; error?: string };
 type AuthState = {
   token: string | null;
+  email: string | null;
   loading: boolean;
   signIn: () => Promise<Result>;
   signInWithCode: (code: string) => Promise<Result>;
@@ -26,18 +45,25 @@ type AuthState = {
 
 const AuthContext = createContext<AuthState | null>(null);
 
+function apply(token: string | null) {
+  setAuthToken(token);
+  setCurrentUser(decodeEmail(token));
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
         const stored = await SecureStore.getItemAsync(TOKEN_KEY);
-        setAuthToken(stored);
+        apply(stored);
         setToken(stored);
+        setEmail(decodeEmail(stored));
       } catch {
-        /* first run / no token */
+        /* first run */
       } finally {
         setLoading(false);
       }
@@ -48,8 +74,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const clean = t.trim();
     if (!clean) return { ok: false, error: 'Empty sign-in code.' };
     await SecureStore.setItemAsync(TOKEN_KEY, clean);
-    setAuthToken(clean);
+    apply(clean);
     setToken(clean);
+    setEmail(decodeEmail(clean));
     return { ok: true };
   }, []);
 
@@ -70,13 +97,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await SecureStore.deleteItemAsync(TOKEN_KEY);
-    setAuthToken(null);
+    apply(null);
     setToken(null);
+    setEmail(null);
   }, []);
 
   const value = useMemo<AuthState>(
-    () => ({ token, loading, signIn, signInWithCode: commit, signOut }),
-    [token, loading, signIn, commit, signOut],
+    () => ({ token, email, loading, signIn, signInWithCode: commit, signOut }),
+    [token, email, loading, signIn, commit, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

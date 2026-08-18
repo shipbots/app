@@ -11,7 +11,8 @@ export interface Field {
   label: string;
   columnId: string; // Monday column id (for saving)
   type: FieldType;
-  copy?: boolean;   // show a copy affordance (portal creds)
+  copy?: boolean;         // show a copy affordance (portal creds)
+  link?: 'tel' | 'mailto'; // tap the value to call / email (read mode)
 }
 
 export interface FieldSection {
@@ -21,6 +22,22 @@ export interface FieldSection {
 }
 
 export const SECTIONS: FieldSection[] = [
+  {
+    id: 'contacts',
+    title: 'Contact Info',
+    fields: [
+      { key: 'contactName', label: 'Name', columnId: 'text_mktqq7h6', type: 'text' },
+      { key: 'contactEmail', label: 'Email', columnId: 'text_mktq6sr5', type: 'text', link: 'mailto' },
+      { key: 'contactPhone', label: 'Phone', columnId: 'text_mktqabcm', type: 'text', link: 'tel' },
+      { key: 'contactLocation', label: 'Location', columnId: 'text_mktx8q74', type: 'text' },
+      { key: 'contact2Name', label: '2 · Name', columnId: 'text_mktr1evd', type: 'text' },
+      { key: 'contact2Email', label: '2 · Email', columnId: 'text_mktr2xmm', type: 'text', link: 'mailto' },
+      { key: 'contact2Phone', label: '2 · Phone', columnId: 'text_mktr8kve', type: 'text', link: 'tel' },
+      { key: 'contact3Name', label: '3 · Name', columnId: 'text_mktr4v7q', type: 'text' },
+      { key: 'contact3Email', label: '3 · Email', columnId: 'text_mktrt74r', type: 'text', link: 'mailto' },
+      { key: 'contact3Phone', label: '3 · Phone', columnId: 'text_mktrw0tb', type: 'text', link: 'tel' },
+    ],
+  },
   {
     id: 'general',
     title: 'General Account Info',
@@ -37,26 +54,10 @@ export const SECTIONS: FieldSection[] = [
       { key: 'shipHeroName', label: 'ShipHero name', columnId: 'text_mkw9n26z', type: 'text' },
       { key: 'shipHeroId', label: 'ShipHero ID', columnId: 'text_mktmf2yw', type: 'text' },
       { key: 'quickbooksName', label: 'QuickBooks name', columnId: 'text_mkx5b9b4', type: 'text' },
-      { key: 'invoicingEmail', label: 'Invoicing email', columnId: 'text_mktqjmmm', type: 'text' },
+      { key: 'invoicingEmail', label: 'Invoicing email', columnId: 'text_mktqjmmm', type: 'text', link: 'mailto' },
       { key: 'umbrellaCompany', label: 'Umbrella co.', columnId: 'dropdown_mkyk2va7', type: 'dropdown' },
       { key: 'businessHQ', label: 'Business HQ', columnId: 'text_mktx63am', type: 'text' },
       { key: 'manufacturingLocation', label: 'Mfg location', columnId: 'text_mktxyg5p', type: 'text' },
-    ],
-  },
-  {
-    id: 'contacts',
-    title: 'Contact Info',
-    fields: [
-      { key: 'contactName', label: 'Name', columnId: 'text_mktqq7h6', type: 'text' },
-      { key: 'contactEmail', label: 'Email', columnId: 'text_mktq6sr5', type: 'text' },
-      { key: 'contactPhone', label: 'Phone', columnId: 'text_mktqabcm', type: 'text' },
-      { key: 'contactLocation', label: 'Location', columnId: 'text_mktx8q74', type: 'text' },
-      { key: 'contact2Name', label: '2 · Name', columnId: 'text_mktr1evd', type: 'text' },
-      { key: 'contact2Email', label: '2 · Email', columnId: 'text_mktr2xmm', type: 'text' },
-      { key: 'contact2Phone', label: '2 · Phone', columnId: 'text_mktr8kve', type: 'text' },
-      { key: 'contact3Name', label: '3 · Name', columnId: 'text_mktr4v7q', type: 'text' },
-      { key: 'contact3Email', label: '3 · Email', columnId: 'text_mktrt74r', type: 'text' },
-      { key: 'contact3Phone', label: '3 · Phone', columnId: 'text_mktrw0tb', type: 'text' },
     ],
   },
   {

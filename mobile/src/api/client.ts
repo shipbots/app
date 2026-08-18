@@ -19,6 +19,13 @@ let authToken: string | null = null;
 export function setAuthToken(token: string | null) {
   authToken = token;
 }
+let currentUser: string | null = null;
+export function setCurrentUser(email: string | null) {
+  currentUser = email ? email.toLowerCase() : null;
+}
+export function getCurrentUser() {
+  return currentUser;
+}
 function useMock() {
   return FORCE_MOCK || !authToken;
 }
@@ -162,19 +169,28 @@ export async function fetchClientDocs(id: string): Promise<ClientDoc[]> {
   return [...f, ...l].filter(d => d.name && d.url);
 }
 
-// ─── Deliveries (Calendar) ───────────────────────────────────────────────────
+// ─── Delivery Timeline (from onboarding items) ───────────────────────────────
+const TERMINAL_STATUS = /(completed|abandoned|n\/a|zap error|never arrived)/i;
 export async function fetchDeliveries(): Promise<DeliveryEvent[]> {
   if (useMock()) return [];
-  const items = await apiGet<any[]>('/api/onboarding-items');
-  return (items ?? [])
+  // Note: the endpoint returns { items, alerts }, not a bare array.
+  const data = await apiGet<{ items: any[] }>('/api/onboarding-items');
+  return (data.items ?? [])
+    .filter(i => !i.deliveredDate && String(i.estimatedDeliveryDate || '').length >= 10 && !TERMINAL_STATUS.test(i.status || ''))
     .map(i => ({
       id: String(i.id),
       clientId: i.clientBoardItemId ? String(i.clientBoardItemId) : undefined,
       name: i.name ?? i.clientBoardItemName ?? '',
-      date: String(i.estimatedDeliveryDate || i.deliveredDate || '').slice(0, 10),
-      delivered: !!i.deliveredDate,
+      date: String(i.estimatedDeliveryDate).slice(0, 10),
+      delivered: false,
+      method: i.deliveryMethod || '',
+      qty: i.deliveryQty || '',
+      warehouse: i.warehouse || '',
+      subWarehouse: i.subWarehouse || '',
+      agentEmail: i.supportAgentEmail || '',
     }))
-    .filter(e => /^\d{4}-\d{2}-\d{2}$/.test(e.date));
+    .filter(e => /^\d{4}-\d{2}-\d{2}$/.test(e.date))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /** Save one client field to Monday (columnId comes from EDITABLE_FIELDS). */
@@ -184,6 +200,17 @@ export async function updateClientField(id: string, columnId: string, value: str
 }
 
 export async function getTasks(): Promise<Task[]> {
-  // Real "My Tasks" wiring (email-filtered subitems) is a later iteration.
-  return MOCK_TASKS;
+  if (useMock()) return MOCK_TASKS;
+  const raw = await apiGet<any[]>('/api/subitems');
+  const me = currentUser;
+  return (raw ?? [])
+    .filter(s => !me || (Array.isArray(s.assigneeEmails) && s.assigneeEmails.some((x: string) => String(x).toLowerCase() === me)))
+    .map(s => ({
+      id: String(s.id),
+      name: s.name ?? '',
+      status: s.status ?? '',
+      dueDate: s.dueDate ?? '',
+      clientName: s.parentItemName ?? '',
+      notes: s.notes ?? '',
+    }));
 }

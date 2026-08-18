@@ -1,7 +1,7 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { writeCache } from '@/api/cache';
 import { AuthError, fetchAgents, fetchClientDocs, fetchColumnOptions, getClient, updateClientField } from '@/api/client';
@@ -193,10 +193,19 @@ function FieldRow({
   const pickable = field.type === 'dropdown' || field.type === 'status' || field.type === 'agent';
 
   if (!editing) {
+    const openLink = () => {
+      if (!field.link || !value) return;
+      const target = field.link === 'tel' ? `tel:${value.replace(/[^0-9+]/g, '')}` : `mailto:${value.trim()}`;
+      Linking.openURL(target).catch(() => {});
+    };
     return (
       <View style={[long ? styles.block : styles.row, { borderBottomColor: theme.border }]}>
         <ThemedText type="small" themeColor="textSecondary" style={long ? undefined : styles.label}>{field.label}</ThemedText>
-        <ThemedText type="small" style={long ? { marginTop: 2 } : styles.value}>{value}</ThemedText>
+        {field.link ? (
+          <ThemedText type="small" onPress={openLink} style={[styles.value, { color: theme.tint, textDecorationLine: 'underline' }]}>{value}</ThemedText>
+        ) : (
+          <ThemedText type="small" style={long ? { marginTop: 2 } : styles.value}>{value}</ThemedText>
+        )}
       </View>
     );
   }
