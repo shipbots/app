@@ -104,6 +104,30 @@ export const SUMMARY_CSS = `
   box-shadow:0 4px 14px rgba(1,82,128,.4); font-family:inherit; }
 .os-print-btn:hover{ background:#013f63; }
 
+/* ── Page 2+ : help-article guides ─────────────────────────────────────── */
+.os-article{ width:8.5in; margin:18px auto; background:#fff; padding:0.5in 0.62in;
+  box-shadow:0 6px 30px rgba(0,0,0,.14); }
+.os-article *{ box-sizing:border-box; }
+.os-article-head{ display:flex; align-items:baseline; justify-content:space-between; gap:14px;
+  border-bottom:2px solid #43c7ff; padding-bottom:8px; margin-bottom:12px; }
+.os-article-t{ font-size:17px; font-weight:800; color:#015280; display:flex; align-items:center; gap:8px; }
+.os-article-t .os-e{ font-size:16px; }
+.os-article-lnk{ font-size:9.5px; color:#015280; font-weight:700; text-decoration:none; white-space:nowrap; }
+.os-art-h{ font-size:12.5px; font-weight:800; color:#013f63; margin:13px 0 4px; }
+.os-art-p{ font-size:10.5px; color:#374151; line-height:1.55; margin:0 0 6px; }
+.os-art-li{ font-size:10.5px; color:#374151; line-height:1.5; margin:0 0 3px 18px; list-style:disc; }
+.os-art-callout{ font-size:10px; color:#013f63; background:#e6f8ff; border-left:3px solid #43c7ff;
+  border-radius:6px; padding:8px 11px; margin:8px 0; line-height:1.5; }
+.os-art-img{ display:block; max-width:100%; max-height:3.6in; object-fit:contain; margin:9px auto;
+  border:1px solid #e5e7eb; border-radius:6px; }
+
+@media print{
+  .os-article{ width:auto !important; margin:0 !important; padding:0 !important;
+    box-shadow:none !important; page-break-before:always; break-before:page; }
+  .os-art-img{ page-break-inside:avoid; break-inside:avoid; }
+  .os-art-h{ page-break-after:avoid; break-after:avoid; }
+}
+
 @page{ size:letter; margin:0.4in; }
 @media print{
   html,body{ height:auto !important; overflow:visible !important; background:#fff !important; }

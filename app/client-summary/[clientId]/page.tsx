@@ -1,5 +1,7 @@
+/* eslint-disable @next/next/no-img-element */
 import { fetchClientInfo, fetchOnboardingItems } from '@/lib/monday';
 import type { ClientInfo, OnboardingItem } from '@/lib/types';
+import { HELP_ARTICLES, type HelpArticle } from '@/lib/help-articles';
 import { PrintButton } from './print-button';
 import { SUMMARY_CSS } from './styles';
 
@@ -214,16 +216,12 @@ export default async function ClientSummaryPage({
   const tempPassword = (info.portalPassword || '').trim();
   const coordinator = { name: (info.supportAgent || '').trim(), email: (info.supportAgentEmail || '').trim() };
 
-  // Getting-started guides — how-to topics pointing at the client's platform
-  // help desk (deep-link each once real article URLs are provided).
+  // Getting-started guides — the full how-to articles live on page 2+; the
+  // page-1 box lists their titles + a link to the platform help desk.
   const helpRoot = helpDesks[0] ?? { url: 'help.shipbots.com', href: 'https://help.shipbots.com' };
-  const guides = [
-    'How to connect your store',
-    'Send your first inventory (WRO)',
-    'Map your shipping methods',
-    'Create & track orders',
-    'Process a return',
-  ];
+  const articlePlatform: 'appdot' | 'portal' = isPortal && !isAppDot ? 'portal' : 'appdot';
+  const articles: HelpArticle[] = HELP_ARTICLES[articlePlatform];
+  const guides = articles.map((a) => a.title);
 
   // Contacts ----------------------------------------------------------------
   const contacts = [
@@ -386,7 +384,8 @@ export default async function ClientSummaryPage({
                   <div key={g} className="os-guide">• {g}</div>
                 ))}
                 <div className="os-li" style={{ marginTop: 5 }}>
-                  <b>Browse all guides:</b> <a href={helpRoot.href}>{helpRoot.url}</a>
+                  Full step-by-step guides follow on the next pages. Online:{' '}
+                  <a href={helpRoot.href}>{helpRoot.url}</a>
                 </div>
               </div>
 
@@ -452,6 +451,46 @@ export default async function ClientSummaryPage({
             <span>ShipBots · Onboarding Summary</span>
           </div>
         </div>
+
+        {/* Page 2+ — step-by-step help guides for the client's platform */}
+        {articles.map((a) => (
+          <div className="os-article" key={a.key}>
+            <div className="os-article-head">
+              <div className="os-article-t">
+                <span className="os-e">📖</span> {a.title}
+              </div>
+              <a className="os-article-lnk" href={a.url}>
+                View this guide online →
+              </a>
+            </div>
+            {a.blocks.map((b, i) =>
+              b.type === 'img' ? (
+                <img
+                  key={i}
+                  className="os-art-img"
+                  src={`/api/help-image?src=${encodeURIComponent(b.src)}`}
+                  alt={`${a.title} — screenshot`}
+                />
+              ) : b.type === 'h' ? (
+                <div key={i} className="os-art-h">
+                  {b.text}
+                </div>
+              ) : b.type === 'callout' ? (
+                <div key={i} className="os-art-callout">
+                  {b.text}
+                </div>
+              ) : b.type === 'li' ? (
+                <li key={i} className="os-art-li">
+                  {b.text}
+                </li>
+              ) : (
+                <p key={i} className="os-art-p">
+                  {b.text}
+                </p>
+              ),
+            )}
+          </div>
+        ))}
       </div>
     </>
   );
