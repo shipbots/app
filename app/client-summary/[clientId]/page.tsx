@@ -49,9 +49,15 @@ type Check = {
 
 function buildChecklist(info: ClientInfo, item: OnboardingItem | null): Check[] {
   const contract = stepValue(item, 'color_mktr9afd'); // "Sign Contract" — Done / Pending
+  const connect = stepValue(item, 'color_mktrpzz5'); // "Connect Your Store"
   const mapShip = stepValue(item, 'color_mktra6z8'); // "Map Shipping Methods" — Done / Pending
-  const addlCall = stepValue(item, 'color_mm278h2v'); // "Additional Call Required" — Yes / No
+  const invSync = stepValue(item, 'color_mktrmpxj'); // "Enable Inventory Syncing" — Yes / Pending / No
+  const techDemo = stepValue(item, 'color_mm278h2v'); // "Tech Demo Required" — Yes / No (No = not needed)
   const paid = isDone(info.paymentOnFile);
+
+  const noStore = /not connecting/i.test(connect);
+  const noDemo = /^\s*no\s*$/i.test(techDemo);
+  const syncNo = /^\s*no\s*$/i.test(invSync);
 
   const list: Check[] = [
     {
@@ -66,18 +72,31 @@ function buildChecklist(info: ClientInfo, item: OnboardingItem | null): Check[] 
       detail: 'Completed — see this summary',
     },
     {
-      // "Additional Call Required = No" means no second call/tech demo is needed.
-      label: 'Tech Demo (2nd call)',
-      done: /^\s*no\s*$/i.test(addlCall),
-      detail: /^\s*no\s*$/i.test(addlCall) ? 'No additional call needed' : 'Book your tech demo:',
-      link: /^\s*no\s*$/i.test(addlCall)
-        ? undefined
-        : { text: 'shipbots.com/onboarding', href: 'https://www.shipbots.com/onboarding' },
+      label: 'Connect Your Platform',
+      done: isDone(connect) || noStore,
+      detail: noStore
+        ? 'No online store to connect'
+        : isDone(connect)
+        ? 'Store connected & syncing'
+        : 'Connect your e-commerce store to sync orders',
     },
     {
       label: 'Map Shipping Methods',
       done: isDone(mapShip),
-      detail: isDone(mapShip) ? 'Configured with your team' : 'In progress with your onboarding team',
+      // If not yet mapped, it can be handled live on the tech demo call.
+      detail: isDone(mapShip) ? 'Configured with your team' : 'Can be configured during your tech demo call',
+    },
+    {
+      label: 'Turn On Inventory Syncing',
+      done: isDone(invSync) || syncNo,
+      detail: syncNo ? 'Not needed for your setup' : isDone(invSync) ? 'Enabled' : "We'll enable this during setup",
+    },
+    {
+      // "Tech Demo Required = No" means no second call/tech demo is needed.
+      label: 'Tech Demo (2nd call)',
+      done: noDemo,
+      detail: noDemo ? 'No additional call needed' : 'Book your tech demo:',
+      link: noDemo ? undefined : { text: 'shipbots.com/onboarding', href: 'https://www.shipbots.com/onboarding' },
     },
     {
       label: 'Complete Billing Profile',
@@ -179,6 +198,20 @@ export default async function ClientSummaryPage({
   if (isAppDot) helpDesks.push({ url: 'help.shipbots.com', href: 'https://help.shipbots.com' });
   if (isPortal) helpDesks.push({ url: 'helpportal.shipbots.com', href: 'https://helpportal.shipbots.com' });
 
+  const tempPassword = (info.portalPassword || '').trim();
+  const coordinator = { name: (info.supportAgent || '').trim(), email: (info.supportAgentEmail || '').trim() };
+
+  // Getting-started guides — how-to topics pointing at the client's platform
+  // help desk (deep-link each once real article URLs are provided).
+  const helpRoot = helpDesks[0] ?? { url: 'help.shipbots.com', href: 'https://help.shipbots.com' };
+  const guides = [
+    'How to connect your store',
+    'Send your first inventory (WRO)',
+    'Map your shipping methods',
+    'Create & track orders',
+    'Process a return',
+  ];
+
   // Contacts ----------------------------------------------------------------
   const contacts = [
     { role: 'Main Contact', name: info.contactName, email: info.contactEmail, phone: info.contactPhone },
@@ -270,6 +303,9 @@ export default async function ClientSummaryPage({
           <div className="os-body">
             <div className="os-main">
               <div className="os-sec-title">What We Discussed</div>
+              <div className="os-review-note">
+                Please review the information below and contact your onboarding coordinator if any changes are needed.
+              </div>
               {card('📦', 'Receiving Needs', receiving, receivingNotes)}
               {card('🚚', 'Shipping & Packing Needs', packing, packingNotes)}
               {card('↩️', 'Returns', returns, returnsNotes)}
@@ -279,7 +315,7 @@ export default async function ClientSummaryPage({
             <div className="os-rail">
               <div className="os-sec-title">Your Account</div>
 
-              {(loginMethods.length > 0 || username) && (
+              {(loginMethods.length > 0 || username || tempPassword) && (
                 <div className="os-box accent">
                   <h4>🔐 Login &amp; Access</h4>
                   {loginMethods.map((m) => (
@@ -290,6 +326,11 @@ export default async function ClientSummaryPage({
                   {username && (
                     <div className="os-li" style={{ marginTop: 4 }}>
                       <b>Username:</b> {username}
+                    </div>
+                  )}
+                  {tempPassword && (
+                    <div className="os-li">
+                      <b>Temporary password:</b> {tempPassword}
                     </div>
                   )}
                   {helpDesks.length > 0 && (
@@ -306,6 +347,16 @@ export default async function ClientSummaryPage({
                 </div>
               )}
 
+              <div className="os-box">
+                <h4>📚 Getting Started Guides</h4>
+                {guides.map((g) => (
+                  <div key={g} className="os-guide">• {g}</div>
+                ))}
+                <div className="os-li" style={{ marginTop: 5 }}>
+                  <b>Browse all guides:</b> <a href={helpRoot.href}>{helpRoot.url}</a>
+                </div>
+              </div>
+
               {contacts.length > 0 && (
                 <div className="os-box">
                   <h4>👤 Your Contacts</h4>
@@ -321,6 +372,20 @@ export default async function ClientSummaryPage({
 
               <div className="os-box">
                 <h4>🛟 ShipBots Support</h4>
+                {coordinator.name && (
+                  <div className="os-sup-row">
+                    <span className="os-k">Your coordinator</span>
+                    <span className="os-v">
+                      {coordinator.name}
+                      {coordinator.email && (
+                        <>
+                          <br />
+                          {coordinator.email}
+                        </>
+                      )}
+                    </span>
+                  </div>
+                )}
                 <div className="os-sup-row">
                   <span className="os-k">Warehouse line</span>
                   <span className="os-v">

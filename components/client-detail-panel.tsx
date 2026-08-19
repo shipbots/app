@@ -1379,7 +1379,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
         )}
         {item.checklist.find(s => s.id === 'color_mm278h2v')?.value?.toLowerCase() === 'yes' && (
           <span
-            title="Additional call required"
+            title="Tech demo required"
             className="flex items-center gap-1 text-[11px] font-medium text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full"
           >
             <Phone className="w-3 h-3" />
@@ -1604,7 +1604,7 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
                     )}
                     {item.checklist.find(s => s.id === 'color_mm278h2v')?.value?.toLowerCase() === 'yes' && (
                       <span
-                        title="Additional call required"
+                        title="Tech demo required"
                         className="flex items-center gap-1 text-[11px] font-medium text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full"
                       >
                         <Phone className="w-3 h-3" />

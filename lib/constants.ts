@@ -107,7 +107,7 @@ export const CHECKLIST_STEPS: readonly ChecklistStepConfig[] = [
   { id: 'color_mktrgcmx',  label: 'Confirm Fulfillment Profile',         shortLabel: 'Fulfillment', options: ['Done', 'Working on it', 'Stuck'] },
   { id: 'color_mkzembac',  label: 'Configure Returns',                   shortLabel: 'Returns',     options: ['Done', 'Loop Integration Pending', 'NA'] },
   { id: 'color_mm27gvc0',  label: 'Email Onboarding Summary Sent',       shortLabel: 'Summary',     options: ['Yes'] },
-  { id: 'color_mm278h2v',  label: 'Additional Call Required',            shortLabel: 'Add. Call',   options: ['Yes', 'No'], invertLogic: true },
+  { id: 'color_mm278h2v',  label: 'Tech Demo Required',                  shortLabel: 'Tech Demo',   options: ['Yes', 'No'], invertLogic: true },
   { id: 'color_mm28q860',  label: 'Set up TikTok Shop Automation',       shortLabel: 'TikTok Shop', options: ['Done', 'NA'] },
   { id: 'color_mm28ht8',   label: 'Lot Code / Expiration Set up',        shortLabel: 'Lot Code',    options: ['Done', 'NA'] },
 ];

@@ -124,7 +124,7 @@ export function ClientCard({ item, agentEmail, onClick, customerService = false 
             </>
           )}
           {callRequired && (
-            <span title="Additional call required" className="flex items-center gap-0.5 text-red-500 font-medium">
+            <span title="Tech demo required" className="flex items-center gap-0.5 text-red-500 font-medium">
               <Phone className="w-3 h-3" />
               <span className="text-[10px]">Call needed</span>
             </span>

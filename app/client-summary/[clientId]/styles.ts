@@ -62,6 +62,13 @@ export const SUMMARY_CSS = `
   background:#e6f8ff; border-radius:6px; padding:5px 7px; }
 .os-notes b{ color:#015280; }
 
+/* Review callout under "What We Discussed" */
+.os-review-note{ font-size:9.7px; color:#013f63; background:#e6f8ff; border-left:3px solid #43c7ff;
+  border-radius:6px; padding:6px 9px; margin:0 0 9px; line-height:1.4; font-weight:600; }
+
+/* Getting-started guide topics */
+.os-guide{ font-size:9.5px; color:#374151; line-height:1.6; }
+
 /* Right rail */
 .os-rail .os-box{ border:1px solid #e5e7eb; border-radius:9px; padding:9px 11px; margin-bottom:9px; }
 .os-rail .os-box.accent{ background:#015280; border-color:#015280; }
