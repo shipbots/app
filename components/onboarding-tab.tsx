@@ -9,7 +9,7 @@ import {
   FileSignature, PhoneCall, ShoppingBag, Settings2, RefreshCw,
   Truck, Tag, CreditCard, Package, ClipboardList,
   Globe, Building2, CheckCircle2, RotateCcw, Mail, Phone, Send, Loader2,
-  Sparkles, Calendar, Pencil,
+  Sparkles, Calendar, Pencil, FileDown,
 } from 'lucide-react';
 import { PostOnboardingModal } from './post-onboarding-modal';
 import { InternalSummaryModal } from './internal-summary-modal';
@@ -887,6 +887,16 @@ export function OnboardingTab({
             >
               <Mail className="w-3.5 h-3.5" />
               Create New Client Onboarding Summary
+            </button>
+            <button
+              type="button"
+              onClick={() => window.open(`/client-summary/${clientBoardItemId}`, '_blank', 'noopener')}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border-2 text-[#015280] bg-white hover:bg-[#e6f8ff] transition-colors shadow-sm"
+              style={{ borderColor: 'var(--brand-cyan)' }}
+              title="Open a one-page, printable after-onboarding summary to send to the client"
+            >
+              <FileDown className="w-3.5 h-3.5" />
+              After-Onboarding Summary (PDF)
             </button>
           </div>
         )}
