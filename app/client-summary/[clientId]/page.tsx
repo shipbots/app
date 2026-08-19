@@ -1,7 +1,9 @@
 /* eslint-disable @next/next/no-img-element */
 import { fetchClientInfo, fetchOnboardingItems } from '@/lib/monday';
 import type { ClientInfo, OnboardingItem } from '@/lib/types';
-import { HELP_ARTICLES, type HelpArticle } from '@/lib/help-articles';
+import { HELP_ARTICLES } from '@/lib/help-articles';
+import { HELP_ARTICLE_KEYS } from '@/lib/help-article-list';
+import { getCustomArticles } from '@/lib/custom-articles-store';
 import { PrintButton } from './print-button';
 import { SUMMARY_CSS } from './styles';
 
@@ -45,22 +47,30 @@ const stepValue = (item: OnboardingItem | null, id: string): string =>
 type Check = {
   label: string;
   done: boolean;
-  detail: string;
+  detail?: string;
+  neutral?: boolean; // agent-added item — renders with a neutral marker
   link?: { text: string; href: string };
 };
 
-function buildChecklist(info: ClientInfo, item: OnboardingItem | null, demoDate?: string): Check[] {
+function buildChecklist(
+  info: ClientInfo,
+  item: OnboardingItem | null,
+  demoDate?: string,
+  customItems: string[] = [],
+): Check[] {
   const demo = (demoDate || '').trim();
   const contract = stepValue(item, 'color_mktr9afd'); // "Sign Contract" — Done / Pending
   const connect = stepValue(item, 'color_mktrpzz5'); // "Connect Your Store"
   const mapShip = stepValue(item, 'color_mktra6z8'); // "Map Shipping Methods" — Done / Pending
   const invSync = stepValue(item, 'color_mktrmpxj'); // "Enable Inventory Syncing" — Yes / Pending / No
+  const returnsInt = stepValue(item, 'color_mkzembac'); // "Configure Returns" — Done / Loop Integration Pending / NA
   const techDemo = stepValue(item, 'color_mm278h2v'); // "Tech Demo Required" — Yes / No (No = not needed)
   const paid = isDone(info.paymentOnFile);
 
   const noStore = /not connecting/i.test(connect);
   const noDemo = /^\s*no\s*$/i.test(techDemo);
   const syncNo = /^\s*no\s*$/i.test(invSync);
+  const returnsNA = /^\s*na\s*$/i.test(returnsInt) || !returnsInt.trim();
 
   const list: Check[] = [
     {
@@ -94,6 +104,18 @@ function buildChecklist(info: ClientInfo, item: OnboardingItem | null, demoDate?
       done: isDone(invSync) || syncNo,
       detail: syncNo ? 'Not needed for your setup' : isDone(invSync) ? 'Enabled' : "We'll enable this during setup",
     },
+    // Returns platform (Loop/Redo) — shown only when relevant to save space.
+    ...(!returnsNA
+      ? [
+          {
+            label: 'Integrate Returns Platform',
+            done: isDone(returnsInt),
+            detail: isDone(returnsInt)
+              ? 'Returns platform connected'
+              : 'Connecting your returns platform (Loop, Redo, etc.)',
+          },
+        ]
+      : []),
     {
       // A date agreed on the call wins; else "Tech Demo Required = No" means
       // no second call is needed; otherwise prompt the client to book one.
@@ -122,6 +144,9 @@ function buildChecklist(info: ClientInfo, item: OnboardingItem | null, demoDate?
     });
   }
 
+  // Agent-added items — rendered with a neutral marker (no done/pending state).
+  for (const label of customItems) list.push({ label, done: false, neutral: true });
+
   return list;
 }
 
@@ -144,6 +169,15 @@ export default async function ClientSummaryPage({
     .split('\n')
     .map((s) => s.trim())
     .filter(Boolean);
+  const customItems = str(sp.checkitems)
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  // Which guides to attach as links. Absent (direct open) → all built-in.
+  const csv = (v: string | string[] | undefined) =>
+    (Array.isArray(v) ? v.join(',') : v ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  const selectedBuiltinKeys = sp.articles === undefined ? HELP_ARTICLE_KEYS : csv(sp.articles);
+  const selectedCustomIds = csv(sp.custom);
 
   const [info, onboardingItems] = await Promise.all([
     fetchClientInfo(clientId),
@@ -216,12 +250,22 @@ export default async function ClientSummaryPage({
   const tempPassword = (info.portalPassword || '').trim();
   const coordinator = { name: (info.supportAgent || '').trim(), email: (info.supportAgentEmail || '').trim() };
 
-  // Getting-started guides — the full how-to articles live on page 2+; the
-  // page-1 box lists their titles + a link to the platform help desk.
+  // Getting-started guides — rendered on page 1 as hyperlinks (clients open
+  // them online to see GIFs that can't print). Built-in guides resolve to the
+  // client's platform URL; custom guides come from the team-shared store.
   const helpRoot = helpDesks[0] ?? { url: 'help.shipbots.com', href: 'https://help.shipbots.com' };
   const articlePlatform: 'appdot' | 'portal' = isPortal && !isAppDot ? 'portal' : 'appdot';
-  const articles: HelpArticle[] = HELP_ARTICLES[articlePlatform];
-  const guides = articles.map((a) => a.title);
+  const platformArticles = HELP_ARTICLES[articlePlatform];
+  const builtinGuides = selectedBuiltinKeys
+    .map((k) => platformArticles.find((a) => a.key === k))
+    .filter((a): a is (typeof platformArticles)[number] => !!a)
+    .map((a) => ({ title: a.title, href: a.url }));
+  const customAll = selectedCustomIds.length ? await getCustomArticles() : [];
+  const customGuides = selectedCustomIds
+    .map((id) => customAll.find((c) => c.id === id))
+    .filter((c): c is (typeof customAll)[number] => !!c)
+    .map((c) => ({ title: c.name, href: c.url }));
+  const selectedGuides = [...builtinGuides, ...customGuides];
 
   // Contacts ----------------------------------------------------------------
   const contacts = [
@@ -230,7 +274,7 @@ export default async function ClientSummaryPage({
     { role: 'Contact', name: info.contact3Name, email: info.contact3Email, phone: info.contact3Phone },
   ].filter((c) => has(c.name) || has(c.email));
 
-  const checklist = buildChecklist(info, item, demoDate);
+  const checklist = buildChecklist(info, item, demoDate, customItems);
 
   // Card renderer — plain function (not a component) so it renders inline
   // without remounting and steers clear of nested-component lint rules.
@@ -294,17 +338,17 @@ export default async function ClientSummaryPage({
           {/* Checklist */}
           <div className="os-sec-title">Onboarding Checklist</div>
           <div className="os-checklist">
-            {checklist.map((c) => (
-              <div key={c.label} className={`os-ci ${c.done ? 'done' : 'pending'}`}>
-                <div className="os-icon">{c.done ? '✓' : '!'}</div>
+            {checklist.map((c, i) => (
+              <div key={`${c.label}-${i}`} className={`os-ci ${c.done ? 'done' : c.neutral ? 'neutral' : 'pending'}`}>
+                <div className="os-icon">{c.done ? '✓' : c.neutral ? '•' : '!'}</div>
                 <div className="os-txt">
                   <div className="os-l">{c.label}</div>
-                  <div className="os-d">
-                    {c.detail}{' '}
-                    {c.link && (
-                      <a href={c.link.href}>{c.link.text}</a>
-                    )}
-                  </div>
+                  {(c.detail || c.link) && (
+                    <div className="os-d">
+                      {c.detail}{' '}
+                      {c.link && <a href={c.link.href}>{c.link.text}</a>}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -378,16 +422,19 @@ export default async function ClientSummaryPage({
                 </div>
               )}
 
-              <div className="os-box">
-                <h4>📚 Getting Started Guides</h4>
-                {guides.map((g) => (
-                  <div key={g} className="os-guide">• {g}</div>
-                ))}
-                <div className="os-li" style={{ marginTop: 5 }}>
-                  Full step-by-step guides follow on the next pages. Online:{' '}
-                  <a href={helpRoot.href}>{helpRoot.url}</a>
+              {selectedGuides.length > 0 && (
+                <div className="os-box">
+                  <h4>📚 Getting Started Guides</h4>
+                  {selectedGuides.map((g, i) => (
+                    <div key={i} className="os-guide">
+                      • <a href={g.href}>{g.title}</a>
+                    </div>
+                  ))}
+                  <div className="os-li" style={{ marginTop: 5 }}>
+                    <b>Help desk:</b> <a href={helpRoot.href}>{helpRoot.url}</a>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {contacts.length > 0 && (
                 <div className="os-box">
@@ -451,46 +498,6 @@ export default async function ClientSummaryPage({
             <span>ShipBots · Onboarding Summary</span>
           </div>
         </div>
-
-        {/* Page 2+ — step-by-step help guides for the client's platform */}
-        {articles.map((a) => (
-          <div className="os-article" key={a.key}>
-            <div className="os-article-head">
-              <div className="os-article-t">
-                <span className="os-e">📖</span> {a.title}
-              </div>
-              <a className="os-article-lnk" href={a.url}>
-                View this guide online →
-              </a>
-            </div>
-            {a.blocks.map((b, i) =>
-              b.type === 'img' ? (
-                <img
-                  key={i}
-                  className="os-art-img"
-                  src={`/api/help-image?src=${encodeURIComponent(b.src)}`}
-                  alt={`${a.title} — screenshot`}
-                />
-              ) : b.type === 'h' ? (
-                <div key={i} className="os-art-h">
-                  {b.text}
-                </div>
-              ) : b.type === 'callout' ? (
-                <div key={i} className="os-art-callout">
-                  {b.text}
-                </div>
-              ) : b.type === 'li' ? (
-                <li key={i} className="os-art-li">
-                  {b.text}
-                </li>
-              ) : (
-                <p key={i} className="os-art-p">
-                  {b.text}
-                </p>
-              ),
-            )}
-          </div>
-        ))}
       </div>
     </>
   );

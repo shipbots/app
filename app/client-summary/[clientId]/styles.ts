@@ -33,16 +33,17 @@ export const SUMMARY_CSS = `
   color:#015280; text-transform:uppercase; letter-spacing:.4px; margin:14px 0 8px; }
 .os-sec-title::after{ content:""; flex:1; height:1px; background:#e5e7eb; }
 
-/* Checklist strip */
-.os-checklist{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:7px 14px; }
-.os-ci{ display:flex; gap:8px; align-items:flex-start; padding:7px 9px; border:1px solid #e5e7eb;
-  border-radius:8px; background:#fcfcfd; }
-.os-ci .os-icon{ width:17px; height:17px; border-radius:50%; flex-shrink:0; display:flex;
-  align-items:center; justify-content:center; font-size:11px; font-weight:800; color:#fff; margin-top:1px; }
+/* Checklist strip — kept dense so it stays on page 1 even with extra items */
+.os-checklist{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px 10px; }
+.os-ci{ display:flex; gap:7px; align-items:flex-start; padding:5px 8px; border:1px solid #e5e7eb;
+  border-radius:7px; background:#fcfcfd; }
+.os-ci .os-icon{ width:15px; height:15px; border-radius:50%; flex-shrink:0; display:flex;
+  align-items:center; justify-content:center; font-size:10px; font-weight:800; color:#fff; margin-top:1px; }
 .os-ci.done .os-icon{ background:#16a34a; }
 .os-ci.pending .os-icon{ background:#d97706; }
-.os-ci .os-l{ font-size:10.5px; font-weight:700; color:#111827; }
-.os-ci .os-d{ font-size:9.5px; color:#6b7280; margin-top:1px; line-height:1.35; }
+.os-ci.neutral .os-icon{ background:#43c7ff; }
+.os-ci .os-l{ font-size:10px; font-weight:700; color:#111827; line-height:1.25; }
+.os-ci .os-d{ font-size:9px; color:#6b7280; margin-top:1px; line-height:1.3; }
 .os-ci .os-d a{ color:#015280; font-weight:700; text-decoration:none; }
 
 /* Two-column body */
@@ -137,5 +138,8 @@ export const SUMMARY_CSS = `
   .os-overlay{ position:static !important; overflow:visible !important; background:#fff !important; }
   .os-sheet{ width:auto !important; min-height:auto !important; margin:0 !important;
     padding:0 !important; box-shadow:none !important; }
+  /* If content flows to a 2nd page, keep blocks whole (nothing truncated). */
+  .os-head, .os-checklist, .os-ci, .os-card, .os-box, .os-review-note{
+    break-inside:avoid; page-break-inside:avoid; }
 }
 `;
