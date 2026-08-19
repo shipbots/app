@@ -69,6 +69,10 @@ export const SUMMARY_CSS = `
 /* Getting-started guide topics */
 .os-guide{ font-size:9.5px; color:#374151; line-height:1.6; }
 
+/* Next-steps ordered list */
+.os-steps{ margin:0; padding-left:16px; }
+.os-steps li{ font-size:9.7px; color:#111827; line-height:1.5; margin-bottom:2px; }
+
 /* Right rail */
 .os-rail .os-box{ border:1px solid #e5e7eb; border-radius:9px; padding:9px 11px; margin-bottom:9px; }
 .os-rail .os-box.accent{ background:#015280; border-color:#015280; }

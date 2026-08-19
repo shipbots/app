@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { PostOnboardingModal } from './post-onboarding-modal';
 import { InternalSummaryModal } from './internal-summary-modal';
+import { ClientSummaryOptionsModal } from './client-summary-options-modal';
 
 interface OnboardingTabProps {
   steps: ChecklistStep[];
@@ -639,6 +640,7 @@ export function OnboardingTab({
   const [shippingDetails, setShippingDetails] = useState(initialShippingDetails);
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [showInternalSummaryModal, setShowInternalSummaryModal] = useState(false);
+  const [showSummaryOptions, setShowSummaryOptions] = useState(false);
 
   // Kickoff date — local state so edits reflect immediately
   const [localKickoffDate, setLocalKickoffDate] = useState(kickoffDate || '');
@@ -890,10 +892,10 @@ export function OnboardingTab({
             </button>
             <button
               type="button"
-              onClick={() => window.open(`/client-summary/${clientBoardItemId}`, '_blank', 'noopener')}
+              onClick={() => setShowSummaryOptions(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border-2 text-[#015280] bg-white hover:bg-[#e6f8ff] transition-colors shadow-sm"
               style={{ borderColor: 'var(--brand-cyan)' }}
-              title="Open a one-page, printable after-onboarding summary to send to the client"
+              title="Create a one-page, printable after-onboarding summary to send to the client"
             >
               <FileDown className="w-3.5 h-3.5" />
               After-Onboarding Summary (PDF)
@@ -977,6 +979,16 @@ export function OnboardingTab({
           clientBoardItemId={clientBoardItemId}
           onboardingItemId={itemId}
           onClose={() => setShowInternalSummaryModal(false)}
+        />
+      )}
+
+      {/* After-Onboarding Summary (client-facing PDF) — collect optional input */}
+      {clientBoardItemId && (
+        <ClientSummaryOptionsModal
+          clientId={clientBoardItemId}
+          clientName={clientName}
+          open={showSummaryOptions}
+          onClose={() => setShowSummaryOptions(false)}
         />
       )}
     </div>

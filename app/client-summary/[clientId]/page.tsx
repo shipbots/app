@@ -47,7 +47,8 @@ type Check = {
   link?: { text: string; href: string };
 };
 
-function buildChecklist(info: ClientInfo, item: OnboardingItem | null): Check[] {
+function buildChecklist(info: ClientInfo, item: OnboardingItem | null, demoDate?: string): Check[] {
+  const demo = (demoDate || '').trim();
   const contract = stepValue(item, 'color_mktr9afd'); // "Sign Contract" — Done / Pending
   const connect = stepValue(item, 'color_mktrpzz5'); // "Connect Your Store"
   const mapShip = stepValue(item, 'color_mktra6z8'); // "Map Shipping Methods" — Done / Pending
@@ -92,11 +93,12 @@ function buildChecklist(info: ClientInfo, item: OnboardingItem | null): Check[] 
       detail: syncNo ? 'Not needed for your setup' : isDone(invSync) ? 'Enabled' : "We'll enable this during setup",
     },
     {
-      // "Tech Demo Required = No" means no second call/tech demo is needed.
+      // A date agreed on the call wins; else "Tech Demo Required = No" means
+      // no second call is needed; otherwise prompt the client to book one.
       label: 'Tech Demo (2nd call)',
-      done: noDemo,
-      detail: noDemo ? 'No additional call needed' : 'Book your tech demo:',
-      link: noDemo ? undefined : { text: 'shipbots.com/onboarding', href: 'https://www.shipbots.com/onboarding' },
+      done: noDemo || !!demo,
+      detail: demo ? `Scheduled for ${fmtDate(demo)}` : noDemo ? 'No additional call needed' : 'Book your tech demo:',
+      link: demo || noDemo ? undefined : { text: 'shipbots.com/onboarding', href: 'https://www.shipbots.com/onboarding' },
     },
     {
       label: 'Complete Billing Profile',
@@ -125,10 +127,21 @@ function buildChecklist(info: ClientInfo, item: OnboardingItem | null): Check[] 
 
 export default async function ClientSummaryPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ clientId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { clientId } = await params;
+  const sp = await searchParams;
+  const str = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v || '').trim();
+  // Optional agent input passed from the "generate" modal.
+  const agentNote = str(sp.note);
+  const demoDate = str(sp.demo);
+  const nextSteps = str(sp.steps)
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   const [info, onboardingItems] = await Promise.all([
     fetchClientInfo(clientId),
@@ -219,7 +232,7 @@ export default async function ClientSummaryPage({
     { role: 'Contact', name: info.contact3Name, email: info.contact3Email, phone: info.contact3Phone },
   ].filter((c) => has(c.name) || has(c.email));
 
-  const checklist = buildChecklist(info, item);
+  const checklist = buildChecklist(info, item, demoDate);
 
   // Card renderer — plain function (not a component) so it renders inline
   // without remounting and steers clear of nested-component lint rules.
@@ -306,10 +319,30 @@ export default async function ClientSummaryPage({
               <div className="os-review-note">
                 Please review the information below and contact your onboarding coordinator if any changes are needed.
               </div>
+              {agentNote && (
+                <div className="os-card" style={{ borderLeftColor: '#015280' }}>
+                  <h3>
+                    <span className="os-e">📝</span> A Note From Your Team
+                  </h3>
+                  <div style={{ fontSize: '9.7px', color: '#374151', lineHeight: 1.5 }}>{agentNote}</div>
+                </div>
+              )}
               {card('📦', 'Receiving Needs', receiving, receivingNotes)}
               {card('🚚', 'Shipping & Packing Needs', packing, packingNotes)}
               {card('↩️', 'Returns', returns, returnsNotes)}
               {card('🏢', 'General Info', general)}
+              {nextSteps.length > 0 && (
+                <div className="os-card" style={{ borderLeftColor: '#16a34a' }}>
+                  <h3>
+                    <span className="os-e">✅</span> Next Steps
+                  </h3>
+                  <ol className="os-steps">
+                    {nextSteps.map((s, i) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
             </div>
 
             <div className="os-rail">
