@@ -11,3 +11,14 @@ export const HELP_ARTICLE_OPTIONS: { key: string; label: string }[] = [
 ];
 
 export const HELP_ARTICLE_KEYS = HELP_ARTICLE_OPTIONS.map((o) => o.key);
+
+/** A saved custom guide (name + link). Persisted in the browser's localStorage
+ *  — no server setup required — and passed inline to the summary at generate. */
+export interface CustomArticle {
+  id: string;
+  name: string;
+  url: string;
+}
+
+/** localStorage key for the agent's saved custom guides. */
+export const CUSTOM_ARTICLES_LS_KEY = 'shipbots:onboarding:customArticles';

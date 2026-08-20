@@ -3,7 +3,6 @@ import { fetchClientInfo, fetchOnboardingItems } from '@/lib/monday';
 import type { ClientInfo, OnboardingItem } from '@/lib/types';
 import { HELP_ARTICLES } from '@/lib/help-articles';
 import { HELP_ARTICLE_KEYS } from '@/lib/help-article-list';
-import { getCustomArticles } from '@/lib/custom-articles-store';
 import { PrintButton } from './print-button';
 import { SUMMARY_CSS } from './styles';
 
@@ -57,6 +56,7 @@ function buildChecklist(
   item: OnboardingItem | null,
   demoDate?: string,
   customItems: string[] = [],
+  connectGuideUrl?: string,
 ): Check[] {
   const demo = (demoDate || '').trim();
   const contract = stepValue(item, 'color_mktr9afd'); // "Sign Contract" — Done / Pending
@@ -91,7 +91,12 @@ function buildChecklist(
         ? 'No online store to connect'
         : isDone(connect)
         ? 'Store connected & syncing'
-        : 'Connect your e-commerce store to sync orders',
+        : 'Connect your store to sync orders:',
+      // Not connected yet → link the client to their platform's how-to guide.
+      link:
+        !isDone(connect) && !noStore && connectGuideUrl
+          ? { text: 'How to connect your store →', href: connectGuideUrl }
+          : undefined,
     },
     {
       label: 'Map Shipping Methods',
@@ -177,7 +182,22 @@ export default async function ClientSummaryPage({
   const csv = (v: string | string[] | undefined) =>
     (Array.isArray(v) ? v.join(',') : v ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   const selectedBuiltinKeys = sp.articles === undefined ? HELP_ARTICLE_KEYS : csv(sp.articles);
-  const selectedCustomIds = csv(sp.custom);
+  // Selected custom guides travel inline as JSON [{t,u}] (localStorage-backed,
+  // no server store). Agent-confirmed login also comes in via ?user/?pass.
+  const customGuides: Array<{ title: string; href: string }> = (() => {
+    const raw = str(sp.customlinks);
+    if (!raw) return [];
+    try {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr))
+        return arr
+          .filter((x) => x && typeof x.t === 'string' && typeof x.u === 'string')
+          .map((x) => ({ title: String(x.t), href: String(x.u) }));
+    } catch {
+      /* ignore */
+    }
+    return [];
+  })();
 
   const [info, onboardingItems] = await Promise.all([
     fetchClientInfo(clientId),
@@ -235,7 +255,9 @@ export default async function ClientSummaryPage({
   const portalTokens = (info.portalDropdown || '').toLowerCase();
   const isPortal = portalTokens.includes('portal');
   const isAppDot = portalTokens.includes('appdot') || portalTokens.includes('app dot');
-  const username = (info.portalEmail || info.contactEmail || '').trim();
+  // Agent confirms/edits login in the modal (?user/?pass); fall back to Monday
+  // when the page is opened directly.
+  const username = sp.user !== undefined ? str(sp.user) : (info.portalEmail || info.contactEmail || '').trim();
 
   const loginMethods: Array<{ label: string; url: string; href: string }> = [];
   if (isPortal)
@@ -247,12 +269,12 @@ export default async function ClientSummaryPage({
   if (isAppDot) helpDesks.push({ url: 'help.shipbots.com', href: 'https://help.shipbots.com' });
   if (isPortal) helpDesks.push({ url: 'helpportal.shipbots.com', href: 'https://helpportal.shipbots.com' });
 
-  const tempPassword = (info.portalPassword || '').trim();
+  const tempPassword = sp.pass !== undefined ? str(sp.pass) : (info.portalPassword || '').trim();
   const coordinator = { name: (info.supportAgent || '').trim(), email: (info.supportAgentEmail || '').trim() };
 
   // Getting-started guides — rendered on page 1 as hyperlinks (clients open
   // them online to see GIFs that can't print). Built-in guides resolve to the
-  // client's platform URL; custom guides come from the team-shared store.
+  // client's platform URL; custom guides arrive inline (customGuides above).
   const helpRoot = helpDesks[0] ?? { url: 'help.shipbots.com', href: 'https://help.shipbots.com' };
   const articlePlatform: 'appdot' | 'portal' = isPortal && !isAppDot ? 'portal' : 'appdot';
   const platformArticles = HELP_ARTICLES[articlePlatform];
@@ -260,12 +282,9 @@ export default async function ClientSummaryPage({
     .map((k) => platformArticles.find((a) => a.key === k))
     .filter((a): a is (typeof platformArticles)[number] => !!a)
     .map((a) => ({ title: a.title, href: a.url }));
-  const customAll = selectedCustomIds.length ? await getCustomArticles() : [];
-  const customGuides = selectedCustomIds
-    .map((id) => customAll.find((c) => c.id === id))
-    .filter((c): c is (typeof customAll)[number] => !!c)
-    .map((c) => ({ title: c.name, href: c.url }));
   const selectedGuides = [...builtinGuides, ...customGuides];
+  // Platform-aware "how to connect your store" link for the checklist item.
+  const connectGuideUrl = platformArticles.find((a) => a.key === 'connect')?.url;
 
   // Contacts ----------------------------------------------------------------
   const contacts = [
@@ -274,7 +293,7 @@ export default async function ClientSummaryPage({
     { role: 'Contact', name: info.contact3Name, email: info.contact3Email, phone: info.contact3Phone },
   ].filter((c) => has(c.name) || has(c.email));
 
-  const checklist = buildChecklist(info, item, demoDate, customItems);
+  const checklist = buildChecklist(info, item, demoDate, customItems, connectGuideUrl);
 
   // Card renderer — plain function (not a component) so it renders inline
   // without remounting and steers clear of nested-component lint rules.
@@ -425,9 +444,10 @@ export default async function ClientSummaryPage({
               {selectedGuides.length > 0 && (
                 <div className="os-box">
                   <h4>📚 Getting Started Guides</h4>
+                  <div className="os-guide-hint">Click any guide below to open step-by-step help:</div>
                   {selectedGuides.map((g, i) => (
                     <div key={i} className="os-guide">
-                      • <a href={g.href}>{g.title}</a>
+                      • <a href={g.href}>{g.title} →</a>
                     </div>
                   ))}
                   <div className="os-li" style={{ marginTop: 5 }}>

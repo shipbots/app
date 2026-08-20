@@ -44,7 +44,7 @@ export const SUMMARY_CSS = `
 .os-ci.neutral .os-icon{ background:#43c7ff; }
 .os-ci .os-l{ font-size:10px; font-weight:700; color:#111827; line-height:1.25; }
 .os-ci .os-d{ font-size:9px; color:#6b7280; margin-top:1px; line-height:1.3; }
-.os-ci .os-d a{ color:#015280; font-weight:700; text-decoration:none; }
+.os-ci .os-d a{ color:#015280; font-weight:700; text-decoration:underline; }
 
 /* Two-column body */
 .os-body{ display:grid; grid-template-columns:1.45fr 1fr; gap:16px; margin-top:6px; }
@@ -67,8 +67,10 @@ export const SUMMARY_CSS = `
 .os-review-note{ font-size:9.7px; color:#013f63; background:#e6f8ff; border-left:3px solid #43c7ff;
   border-radius:6px; padding:6px 9px; margin:0 0 9px; line-height:1.4; font-weight:600; }
 
-/* Getting-started guide topics */
+/* Getting-started guide topics — links styled so clients see they're clickable */
 .os-guide{ font-size:9.5px; color:#374151; line-height:1.6; }
+.os-guide a{ color:#015280; font-weight:700; text-decoration:underline; }
+.os-guide-hint{ font-size:8.7px; color:#6b7280; font-style:italic; margin:1px 0 4px; }
 
 /* Next-steps ordered list */
 .os-steps{ margin:0; padding-left:16px; }
@@ -129,15 +131,18 @@ export const SUMMARY_CSS = `
   .os-art-h{ page-break-after:avoid; break-after:avoid; }
 }
 
-@page{ size:letter; margin:0.4in; }
+/* margin:0 leaves the browser no room to draw its default print header/footer
+   (date / title / URL / page number) — so the saved PDF is clean. */
+@page{ size:letter; margin:0; }
 @media print{
   html,body{ height:auto !important; overflow:visible !important; background:#fff !important; }
   body > nav{ display:none !important; }
   main{ overflow:visible !important; flex:none !important; }
   .os-print-btn{ display:none !important; }
   .os-overlay{ position:static !important; overflow:visible !important; background:#fff !important; }
+  /* Page margins now come from the sheet's own padding (since @page margin is 0). */
   .os-sheet{ width:auto !important; min-height:auto !important; margin:0 !important;
-    padding:0 !important; box-shadow:none !important; }
+    padding:0.45in 0.5in !important; box-shadow:none !important; }
   /* If content flows to a 2nd page, keep blocks whole (nothing truncated). */
   .os-head, .os-checklist, .os-ci, .os-card, .os-box, .os-review-note{
     break-inside:avoid; page-break-inside:avoid; }

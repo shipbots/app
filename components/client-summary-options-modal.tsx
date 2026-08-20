@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FileDown, X, Plus, Pencil, Trash2, Check, Loader2 } from 'lucide-react';
-import { HELP_ARTICLE_OPTIONS, HELP_ARTICLE_KEYS } from '@/lib/help-article-list';
-import type { CustomArticle } from '@/lib/custom-articles-store';
+import { FileDown, X, Plus, Pencil, Trash2, Check } from 'lucide-react';
+import { HELP_ARTICLE_OPTIONS, HELP_ARTICLE_KEYS, CUSTOM_ARTICLES_LS_KEY, type CustomArticle } from '@/lib/help-article-list';
 
 interface Props {
   clientId: string;
@@ -16,45 +15,63 @@ interface Props {
 const uid = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `a-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
 
-/** Collects optional agent input (note / next steps / tech-demo date), which
- *  guides to attach as links, custom checklist items, and manages the team's
- *  saved custom articles. "Generate" opens the printable summary with these as
- *  query params. Everything is optional. */
+function loadCustom(): CustomArticle[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_ARTICLES_LS_KEY);
+    if (raw) {
+      const a = JSON.parse(raw);
+      if (Array.isArray(a)) return a.filter((x) => x && x.name && x.url).map((x) => ({ id: String(x.id || uid()), name: String(x.name), url: String(x.url) }));
+    }
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+function saveCustom(list: CustomArticle[]) {
+  try {
+    localStorage.setItem(CUSTOM_ARTICLES_LS_KEY, JSON.stringify(list));
+  } catch {
+    /* ignore */
+  }
+}
+const normUrl = (u: string) => (/^https?:\/\//i.test(u.trim()) ? u.trim() : `https://${u.trim()}`);
+
+/** Collects everything to put on the summary before it opens: confirmed login,
+ *  optional note / next steps / tech-demo date, which guides to attach (built-in
+ *  + saved custom guides), and extra checklist items. Custom guides persist in
+ *  the browser (localStorage) — no server setup. */
 export function ClientSummaryOptionsModal({ clientId, clientName, open, onClose }: Props) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [note, setNote] = useState('');
   const [steps, setSteps] = useState('');
   const [demoDate, setDemoDate] = useState('');
   const [checkItems, setCheckItems] = useState('');
 
-  // Built-in guides (all selected by default).
   const [selectedBuiltin, setSelectedBuiltin] = useState<Set<string>>(new Set(HELP_ARTICLE_KEYS));
-
-  // Team-shared custom articles.
   const [custom, setCustom] = useState<CustomArticle[]>([]);
   const [selectedCustom, setSelectedCustom] = useState<Set<string>>(new Set());
-  const [storeReady, setStoreReady] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState('');
 
-  // Add / edit form
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    // reset one-off inputs each open; keep saved custom list fresh
-    setErr('');
-    fetch('/api/help-articles/custom')
+    // Saved custom guides (browser-local).
+    const saved = loadCustom();
+    setCustom(saved);
+    setSelectedCustom(new Set(saved.map((a) => a.id)));
+    // Pre-fill login for confirmation from the client's Monday record.
+    fetch(`/api/client/${clientId}?surface=onboarding`)
       .then((r) => r.json())
-      .then((d: { articles?: CustomArticle[]; storeReady?: boolean }) => {
-        const arts = d.articles ?? [];
-        setCustom(arts);
-        setSelectedCustom(new Set(arts.map((a) => a.id)));
-        setStoreReady(d.storeReady !== false);
+      .then((c: { portalEmail?: string; contactEmail?: string; portalPassword?: string } | null) => {
+        if (!c) return;
+        setUsername((c.portalEmail || c.contactEmail || '').trim());
+        setPassword((c.portalPassword || '').trim());
       })
       .catch(() => {});
-  }, [open]);
+  }, [open, clientId]);
 
   if (!open) return null;
 
@@ -65,47 +82,24 @@ export function ClientSummaryOptionsModal({ clientId, clientName, open, onClose 
     setter(next);
   };
 
-  const persist = async (list: CustomArticle[]) => {
-    setSaving(true);
-    setErr('');
-    try {
-      const res = await fetch('/api/help-articles/custom', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ articles: list }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Save failed');
-      setCustom(data.articles as CustomArticle[]);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Save failed');
-      throw e;
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const submitArticle = async () => {
+  const submitArticle = () => {
     const n = name.trim();
     const u = url.trim();
     if (!n || !u) return;
     let list: CustomArticle[];
     let id = editingId;
     if (editingId) {
-      list = custom.map((a) => (a.id === editingId ? { ...a, name: n, url: u } : a));
+      list = custom.map((a) => (a.id === editingId ? { ...a, name: n, url: normUrl(u) } : a));
     } else {
       id = uid();
-      list = [...custom, { id, name: n, url: u }];
+      list = [...custom, { id, name: n, url: normUrl(u) }];
     }
-    try {
-      await persist(list);
-      if (id) setSelectedCustom((s) => new Set(s).add(id!));
-      setName('');
-      setUrl('');
-      setEditingId(null);
-    } catch {
-      /* err shown */
-    }
+    setCustom(list);
+    saveCustom(list);
+    if (id) setSelectedCustom((s) => new Set(s).add(id!));
+    setName('');
+    setUrl('');
+    setEditingId(null);
   };
 
   const editArticle = (a: CustomArticle) => {
@@ -114,32 +108,33 @@ export function ClientSummaryOptionsModal({ clientId, clientName, open, onClose 
     setUrl(a.url);
   };
 
-  const deleteArticle = async (id: string) => {
-    try {
-      await persist(custom.filter((a) => a.id !== id));
-      setSelectedCustom((s) => {
-        const n = new Set(s);
-        n.delete(id);
-        return n;
-      });
-      if (editingId === id) {
-        setEditingId(null);
-        setName('');
-        setUrl('');
-      }
-    } catch {
-      /* err shown */
+  const deleteArticle = (id: string) => {
+    const list = custom.filter((a) => a.id !== id);
+    setCustom(list);
+    saveCustom(list);
+    setSelectedCustom((s) => {
+      const n = new Set(s);
+      n.delete(id);
+      return n;
+    });
+    if (editingId === id) {
+      setEditingId(null);
+      setName('');
+      setUrl('');
     }
   };
 
   const generate = () => {
     const params = new URLSearchParams();
+    params.set('user', username.trim());
+    params.set('pass', password.trim());
     if (note.trim()) params.set('note', note.trim());
     if (steps.trim()) params.set('steps', steps.trim());
     if (demoDate.trim()) params.set('demo', demoDate.trim());
     if (checkItems.trim()) params.set('checkitems', checkItems.trim());
     params.set('articles', [...selectedBuiltin].join(','));
-    params.set('custom', [...selectedCustom].join(','));
+    const selCustom = custom.filter((a) => selectedCustom.has(a.id)).map((a) => ({ t: a.name, u: a.url }));
+    if (selCustom.length) params.set('customlinks', JSON.stringify(selCustom));
     window.open(`/client-summary/${clientId}?${params.toString()}`, '_blank', 'noopener');
     onClose();
   };
@@ -149,10 +144,7 @@ export function ClientSummaryOptionsModal({ clientId, clientName, open, onClose 
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div
-        className="w-full max-w-lg max-h-[88vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="w-full max-w-lg max-h-[88vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3.5 flex-shrink-0" style={{ background: 'var(--brand-navy)' }}>
           <div className="flex items-center gap-2 text-white">
             <FileDown className="w-4 h-4" />
@@ -165,9 +157,25 @@ export function ClientSummaryOptionsModal({ clientId, clientName, open, onClose 
 
         <div className="p-5 space-y-4 overflow-y-auto">
           <p className="text-xs text-gray-500 -mt-1">
-            Add anything you&apos;d like the client to see{clientName ? ` on ${clientName}'s summary` : ''}. All fields
-            are optional.
+            Confirm the login below and add anything else{clientName ? ` for ${clientName}` : ''}. Everything else is
+            optional.
           </p>
+
+          {/* ── Confirm login ────────────────────────────────────────────── */}
+          <div className="rounded-lg bg-[#e6f8ff] border border-[#bfe9ff] p-3">
+            <div className="text-xs font-semibold text-[#015280] mb-1.5">🔐 Confirm the client&apos;s login</div>
+            <label className="block">
+              <span className="text-[11px] font-semibold text-gray-600">Username</span>
+              <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="client@email.com"
+                className="mt-0.5 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm bg-white focus:border-[#43c7ff] focus:outline-none" />
+            </label>
+            <label className="block mt-2">
+              <span className="text-[11px] font-semibold text-gray-600">Temporary password</span>
+              <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="e.g. Changeme1234"
+                className="mt-0.5 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm bg-white focus:border-[#43c7ff] focus:outline-none" />
+            </label>
+            <p className="text-[10px] text-gray-500 mt-1.5">Leave a field blank to omit it from the summary.</p>
+          </div>
 
           <label className="block">
             <span className="text-xs font-semibold text-gray-700">Custom note</span>
@@ -184,8 +192,7 @@ export function ClientSummaryOptionsModal({ clientId, clientName, open, onClose 
 
           <label className="block">
             <span className="text-xs font-semibold text-gray-700">Agreed tech-demo date</span>
-            <input type="date" value={demoDate} onChange={(e) => setDemoDate(e.target.value)}
-              className={`${field} w-auto`} />
+            <input type="date" value={demoDate} onChange={(e) => setDemoDate(e.target.value)} className={`${field} w-auto`} />
           </label>
 
           {/* ── Guides to include (as links) ─────────────────────────────── */}
@@ -194,18 +201,14 @@ export function ClientSummaryOptionsModal({ clientId, clientName, open, onClose 
             <div className="space-y-1.5">
               {HELP_ARTICLE_OPTIONS.map((o) => (
                 <label key={o.key} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                  <input type="checkbox" checked={selectedBuiltin.has(o.key)}
-                    onChange={() => toggle(selectedBuiltin, o.key, setSelectedBuiltin)}
-                    className="accent-[#015280] w-4 h-4" />
+                  <input type="checkbox" checked={selectedBuiltin.has(o.key)} onChange={() => toggle(selectedBuiltin, o.key, setSelectedBuiltin)} className="accent-[#015280] w-4 h-4" />
                   {o.label}
                 </label>
               ))}
               {custom.map((a) => (
-                <div key={a.id} className="flex items-center gap-2 text-sm text-gray-700 group">
+                <div key={a.id} className="flex items-center gap-2 text-sm text-gray-700">
                   <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
-                    <input type="checkbox" checked={selectedCustom.has(a.id)}
-                      onChange={() => toggle(selectedCustom, a.id, setSelectedCustom)}
-                      className="accent-[#015280] w-4 h-4 flex-shrink-0" />
+                    <input type="checkbox" checked={selectedCustom.has(a.id)} onChange={() => toggle(selectedCustom, a.id, setSelectedCustom)} className="accent-[#015280] w-4 h-4 flex-shrink-0" />
                     <span className="truncate" title={a.url}>{a.name} <span className="text-gray-400">· custom</span></span>
                   </label>
                   <button type="button" onClick={() => editArticle(a)} className="text-gray-400 hover:text-[#015280] flex-shrink-0" title="Edit">
@@ -218,19 +221,16 @@ export function ClientSummaryOptionsModal({ clientId, clientName, open, onClose 
               ))}
             </div>
 
-            {/* Add / edit a custom article */}
             <div className="mt-2 rounded-lg border border-dashed border-gray-300 p-2.5 space-y-2">
-              <div className="text-[11px] font-semibold text-gray-500">
-                {editingId ? 'Edit custom guide' : 'Add a custom guide'}
-              </div>
+              <div className="text-[11px] font-semibold text-gray-500">{editingId ? 'Edit custom guide' : 'Add a custom guide'}</div>
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Guide name (e.g. How to use Loop returns)"
                 className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-[#43c7ff] focus:outline-none" />
               <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://help.shipbots.com/…"
                 className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-[#43c7ff] focus:outline-none" />
               <div className="flex items-center gap-2">
-                <button type="button" onClick={submitArticle} disabled={!name.trim() || !url.trim() || saving}
+                <button type="button" onClick={submitArticle} disabled={!name.trim() || !url.trim()}
                   className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-md text-white bg-[#015280] hover:opacity-90 disabled:opacity-40">
-                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : editingId ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                  {editingId ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
                   {editingId ? 'Save' : 'Add & save'}
                 </button>
                 {editingId && (
@@ -239,13 +239,11 @@ export function ClientSummaryOptionsModal({ clientId, clientName, open, onClose 
                     Cancel
                   </button>
                 )}
-                {!storeReady && <span className="text-[11px] text-amber-600">Saving disabled (storage not configured)</span>}
-                {err && <span className="text-[11px] text-red-500">{err}</span>}
+                <span className="text-[10px] text-gray-400">Saved in this browser for next time.</span>
               </div>
             </div>
           </div>
 
-          {/* ── Extra checklist items ────────────────────────────────────── */}
           <label className="block">
             <span className="text-xs font-semibold text-gray-700">Extra checklist items</span>
             <span className="text-[11px] text-gray-400"> — one per line</span>
@@ -255,8 +253,7 @@ export function ClientSummaryOptionsModal({ clientId, clientName, open, onClose 
         </div>
 
         <div className="flex justify-end gap-2 px-5 py-3.5 bg-gray-50 border-t border-gray-100 flex-shrink-0">
-          <button type="button" onClick={onClose}
-            className="px-4 py-2 text-sm font-medium rounded-lg text-gray-600 hover:bg-gray-100 transition-colors">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium rounded-lg text-gray-600 hover:bg-gray-100 transition-colors">
             Cancel
           </button>
           <button type="button" onClick={generate}
