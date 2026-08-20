@@ -28,6 +28,8 @@ ARTICLES = {
          "https://help.shipbots.com/your-inventory/aqKxnf3cBT2CiNS2xGsgHD/create-a-po-to-send-your-inventory/76GRZeCiKYc9fYCLvTfmad"),
         ("orders", "Create a manual order",
          "https://help.shipbots.com/your-orders/cMLykrTnrpyCzkTJPJ3T4N/%F0%9F%9B%BB-create-a-manual-order--pick-up-order/uNDsy8ErYZkuFLtfTmr7Uc"),
+        ("orders-nav", "How to navigate the orders page",
+         "https://help.shipbots.com/your-orders/cMLykrTnrpyCzkTJPJ3T4N/understanding-orders-list-page/v1LWZCQjzM7anqpb1CfbQM"),
     ],
     "portal": [
         ("login", "Log into your account",
@@ -38,6 +40,8 @@ ARTICLES = {
          "https://helpportal.shipbots.com/your-inventory/6jNCBCviCPJAaQ7aryFg5n/how-do-i-send-inventory-to-shipbots/7vJSfUa34KxGgx3ofL3afd"),
         ("orders", "Create a manual order",
          "https://helpportal.shipbots.com/your-orders/6jNCBCviCPAy3pn2DGMBtS/%F0%9F%9B%BB-create-a-manual-order--pick-up-order/6jNCBCviCQ9irZhFvRRyq7"),
+        ("orders-nav", "How to navigate the orders page",
+         "https://helpportal.shipbots.com/your-orders/6jNCBCviCPAy3pn2DGMBtS/understanding-orders-list-page/6jNCBCviCQGKnd8HrTp4E3"),
     ],
 }
 

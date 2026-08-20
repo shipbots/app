@@ -383,6 +383,113 @@ export const HELP_ARTICLES: Record<'appdot' | 'portal', HelpArticle[]> =
           "text": "Add your policy for Local Delivery"
         }
       ]
+    },
+    {
+      "key": "orders-nav",
+      "title": "How to navigate the orders page",
+      "url": "https://help.shipbots.com/your-orders/cMLykrTnrpyCzkTJPJ3T4N/understanding-orders-list-page/v1LWZCQjzM7anqpb1CfbQM",
+      "blocks": [
+        {
+          "type": "h",
+          "text": "Introduction"
+        },
+        {
+          "type": "p",
+          "text": "The Order Listing page on Shipbots is a comprehensive interface for viewing all your Orders along with their fulfillment status. You can search, filter for Orders and update details. This guide will walk you through each feature of the Oder Listing Page to manage your Orders efficiently."
+        },
+        {
+          "type": "h",
+          "text": "Accessing Orders"
+        },
+        {
+          "type": "p",
+          "text": "To begin, under the Orders tab, click on Manage Orders from the dropdown menu to access your Orders Listing page"
+        },
+        {
+          "type": "img",
+          "src": "https://www.notion.so/image/https%3A%2F%2Fhiimg.20paths.com%2Fhighlight%2F754e052a-ca3b-4d37-b365-ce6d416e48b0%2F054a8f01-c4fa-4417-b928-1ee5433ba0de.jpeg?table=block&id=d8e988f7-f1b5-4b42-ab4c-25e0d89d307e&cache=v2"
+        },
+        {
+          "type": "h",
+          "text": "Viewing All Your Orders"
+        },
+        {
+          "type": "p",
+          "text": "On the Orders Listing page you see a list of all your Orders and all actions that can be performed."
+        },
+        {
+          "type": "h",
+          "text": "Filtering Orders"
+        },
+        {
+          "type": "p",
+          "text": "Apply filters to find Orders with Specific status and properties like Fulfillment Status and Order Date etc. These filters are great for managing a large number of Orders by allowing you to access Orders based on specific criteria."
+        },
+        {
+          "type": "img",
+          "src": "https://www.notion.so/image/https%3A%2F%2Fhiimg.20paths.com%2Fhighlight%2F754e052a-ca3b-4d37-b365-ce6d416e48b0%2Febb033f2-92dc-49c3-9a20-2b298cd2003b.jpeg?table=block&id=842e3204-3cb2-432e-ae1c-4ad1091a3363&cache=v2"
+        },
+        {
+          "type": "p",
+          "text": "This table shows you all of your Orders, their Shipping Status and Ship Date etc."
+        },
+        {
+          "type": "img",
+          "src": "https://www.notion.so/image/https%3A%2F%2Fhiimg.20paths.com%2Fhighlight%2F754e052a-ca3b-4d37-b365-ce6d416e48b0%2F0755b00f-c956-423e-811c-b736ecdd6c2e.jpeg?table=block&id=9fccca86-38d8-4622-a129-a464d31b1957&cache=v2"
+        },
+        {
+          "type": "h",
+          "text": "Pick Data to be shown in Table columns"
+        },
+        {
+          "type": "p",
+          "text": "You can change which data is visible in table. Click Column Visibility to manage that."
+        },
+        {
+          "type": "img",
+          "src": "https://www.notion.so/image/https%3A%2F%2Fhiimg.20paths.com%2Fhighlight%2F754e052a-ca3b-4d37-b365-ce6d416e48b0%2F1249a035-e90f-400f-ac9c-9c161ea83225.jpeg?table=block&id=e5fe1c2c-7802-45f2-a020-e71e8a17e638&cache=v2"
+        },
+        {
+          "type": "p",
+          "text": "Already visible columns are in yellow. Click any to toggle what is to be shown in the table."
+        },
+        {
+          "type": "img",
+          "src": "https://www.notion.so/image/https%3A%2F%2Fhiimg.20paths.com%2Fhighlight%2F754e052a-ca3b-4d37-b365-ce6d416e48b0%2Faf714da9-36f4-48c1-8572-9e9e47b94569.jpeg?table=block&id=eb7b072a-d51a-42ef-b35c-ec9543048722&cache=v2"
+        },
+        {
+          "type": "h",
+          "text": "Search Orders"
+        },
+        {
+          "type": "p",
+          "text": "Use the Search feature to quickly find any specific item you have sold."
+        },
+        {
+          "type": "img",
+          "src": "https://media.helpkit.co/proxy?url=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2Fc3b2df48-fcf0-42a5-93f8-299fee68ab0f%2Faa52b269-953a-4582-a3e1-662ed78e67f3%2FO2.png&blockId=17f0cd2c-a8f1-445e-ac4d-917faf441667&projectId=2416"
+        },
+        {
+          "type": "p",
+          "text": "Select the #OrderNo link to go to Order Details page"
+        },
+        {
+          "type": "img",
+          "src": "https://media.helpkit.co/proxy?url=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2Fc3b2df48-fcf0-42a5-93f8-299fee68ab0f%2Facbb22d7-e958-413e-911b-7c73de4b5154%2FO3.png&blockId=2819b79e-90e9-40d6-b56e-38edab391fa0&projectId=2416"
+        },
+        {
+          "type": "p",
+          "text": "View and Update Order details as needed."
+        },
+        {
+          "type": "img",
+          "src": "https://www.notion.so/image/https%3A%2F%2Fhiimg.20paths.com%2Fhighlight%2F754e052a-ca3b-4d37-b365-ce6d416e48b0%2F42297559-e5f4-4b4b-988d-a9647e093a06.jpeg?table=block&id=e4bf56ad-a31a-441d-afbd-c88a5ac580f6&cache=v2"
+        },
+        {
+          "type": "p",
+          "text": "To learn more on how to Update Order Items:"
+        }
+      ]
     }
   ],
   "portal": [
@@ -931,6 +1038,173 @@ export const HELP_ARTICLES: Record<'appdot' | 'portal', HelpArticle[]> =
         {
           "type": "callout",
           "text": "Note: We typically need 24-hour notice to have a pickup order ready. However timing may vary based on the complexity of the order"
+        }
+      ]
+    },
+    {
+      "key": "orders-nav",
+      "title": "How to navigate the orders page",
+      "url": "https://helpportal.shipbots.com/your-orders/6jNCBCviCPAy3pn2DGMBtS/understanding-orders-list-page/6jNCBCviCQGKnd8HrTp4E3",
+      "blocks": [
+        {
+          "type": "h",
+          "text": "Introduction"
+        },
+        {
+          "type": "p",
+          "text": "The Order Listing page on Shipbots is a comprehensive interface for viewing all your Orders along with their fulfillment status. You can search, filter for Orders and update details. This guide will walk you through each feature of the Oder Listing Page to manage your Orders efficiently."
+        },
+        {
+          "type": "h",
+          "text": "Accessing Orders"
+        },
+        {
+          "type": "p",
+          "text": "To begin, under the Orders tab, click on Orders from the menu to access your Orders Listing page"
+        },
+        {
+          "type": "img",
+          "src": "https://media.helpkit.co/proxy?url=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2Fc3b2df48-fcf0-42a5-93f8-299fee68ab0f%2F603f48b9-51ca-4891-843f-871da975787c%2FCleanShot_2026-06-11_at_11.52.12.gif&blockId=37cdd196-d806-804d-8d7f-ec30336616f2&projectId=4278"
+        },
+        {
+          "type": "h",
+          "text": "Viewing and Filtering Your Orders"
+        },
+        {
+          "type": "p",
+          "text": "When you open the Orders section, the system automatically applies a filter that shows only orders created in the last week. To view older orders, adjust the filter next to the search bar."
+        },
+        {
+          "type": "img",
+          "src": "https://media.helpkit.co/proxy?url=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2Fc3b2df48-fcf0-42a5-93f8-299fee68ab0f%2Fe6e87ff5-f55d-46f2-a128-0bdb7bc75d73%2FCleanShot_2026-06-11_at_11.54.48.gif&blockId=37cdd196-d806-8040-bd18-f4f87c925a00&projectId=4278"
+        },
+        {
+          "type": "p",
+          "text": "In the top area, you will find different sections that will filter the orders according to their status. You may find orders on hold, ready to ship, not ready to ship, backordered, or shipped."
+        },
+        {
+          "type": "p",
+          "text": "Any applied filters will appear under the search bar."
+        },
+        {
+          "type": "img",
+          "src": "https://media.helpkit.co/proxy?url=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2Fc3b2df48-fcf0-42a5-93f8-299fee68ab0f%2Fe3f6e1b2-1fe9-4153-8a80-57611257038b%2FCleanShot_2026-06-11_at_11.58.372x.png&blockId=37cdd196-d806-8071-a763-f874d35d6b72&projectId=4278"
+        },
+        {
+          "type": "h",
+          "text": "Search Orders by Item"
+        },
+        {
+          "type": "p",
+          "text": "You can find all orders associated with a specific item. In the search bar, change the dropdown from \"Orders\" to \"Item\", enter the item you're looking for, and press Enter. All orders containing that item within your current filter parameters will appear."
+        },
+        {
+          "type": "img",
+          "src": "https://media.helpkit.co/proxy?url=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2Fc3b2df48-fcf0-42a5-93f8-299fee68ab0f%2F9da7a65f-cbc5-4299-9390-f3b849df026b%2FCleanShot_2026-06-11_at_12.02.54.gif&blockId=37cdd196-d806-80f5-9b79-c13a44fa7b7a&projectId=4278"
+        },
+        {
+          "type": "h",
+          "text": "Pick Data to be shown in Table columns"
+        },
+        {
+          "type": "p",
+          "text": "You can change which data is visible in table. Click the “settings” icon to manage that."
+        },
+        {
+          "type": "img",
+          "src": "https://media.helpkit.co/proxy?url=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2Fc3b2df48-fcf0-42a5-93f8-299fee68ab0f%2F72cfb4fe-5735-453d-b254-53849d466723%2FCleanShot_2026-06-11_at_12.17.14.gif&blockId=37cdd196-d806-80be-a1ef-fb2f605d8f8c&projectId=4278"
+        },
+        {
+          "type": "h",
+          "text": "View Order data"
+        },
+        {
+          "type": "p",
+          "text": "Select the #OrderNo link to go to Order Details page"
+        },
+        {
+          "type": "img",
+          "src": "https://media.helpkit.co/proxy?url=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2Fc3b2df48-fcf0-42a5-93f8-299fee68ab0f%2Fbb35791a-f05a-47fe-9889-6dc2f7d5a653%2FCleanShot_2026-06-11_at_12.21.262x.png&blockId=37cdd196-d806-80e6-b2c5-da5279f7e941&projectId=4278"
+        },
+        {
+          "type": "p",
+          "text": "View and Update Order details as needed."
+        },
+        {
+          "type": "img",
+          "src": "https://media.helpkit.co/proxy?url=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2Fc3b2df48-fcf0-42a5-93f8-299fee68ab0f%2Fc1353d06-c46d-4b35-8a75-af9e7f2360b2%2FCleanShot_2026-06-11_at_12.22.432x.png&blockId=37cdd196-d806-80e7-8052-d8e6a0007c6b&projectId=4278"
+        },
+        {
+          "type": "p",
+          "text": "If previous shipments have been sent for this particular order, the packages, and tracking numbers will appear in the top section."
+        },
+        {
+          "type": "img",
+          "src": "https://media.helpkit.co/proxy?url=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2Fc3b2df48-fcf0-42a5-93f8-299fee68ab0f%2F4ad091fe-9fcf-4a10-aa8b-b9e6960ed960%2FCleanShot_2026-06-11_at_12.22.432x.png&blockId=37cdd196-d806-8008-bc02-c2105d3f584d&projectId=4278"
+        },
+        {
+          "type": "h",
+          "text": "Orders Not Ready to Ship"
+        },
+        {
+          "type": "p",
+          "text": "Should there be a problem with an order, there will be indicators showing you exactly what is wrong."
+        },
+        {
+          "type": "p",
+          "text": "An order could be not ready to ship for several reasons:"
+        },
+        {
+          "type": "p",
+          "text": "Holds"
+        },
+        {
+          "type": "p",
+          "text": "The order could have a hold due to potential fraud problems, address problems, or payment problems because our staff has put the order on hold or you, the client, have put the order on hold."
+        },
+        {
+          "type": "img",
+          "src": "https://media.helpkit.co/proxy?url=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2Fc3b2df48-fcf0-42a5-93f8-299fee68ab0f%2Fb2691d7d-ee93-4768-ad2a-6bc138932ff4%2FCleanShot_2026-06-11_at_12.27.562x.png&blockId=37cdd196-d806-8053-8ffe-f6c59f87320b&projectId=4278"
+        },
+        {
+          "type": "p",
+          "text": "To remove holds, there are two ways to do this:"
+        },
+        {
+          "type": "li",
+          "text": "If the hold is an address hold, then a shipping address verification box will appear where you get to choose whether to ignore the address error or to edit the shipping address."
+        },
+        {
+          "type": "li",
+          "text": "If a different type of hold appears, then a button will appear in the bottom right corner where you can release the hold."
+        },
+        {
+          "type": "img",
+          "src": "https://media.helpkit.co/proxy?url=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2Fc3b2df48-fcf0-42a5-93f8-299fee68ab0f%2Feb7b073a-9d05-43b3-9fb2-67f2545819f6%2FCleanShot_2026-06-11_at_12.34.202x.png&blockId=37cdd196-d806-80ea-b8bf-e2f23ffb67bf&projectId=4278"
+        },
+        {
+          "type": "p",
+          "text": "Backorders"
+        },
+        {
+          "type": "p",
+          "text": "If the order has one or more items that we don't have in the warehouse, then the entire order will not be ready to ship and will not ship until the order is complete."
+        },
+        {
+          "type": "img",
+          "src": "https://media.helpkit.co/proxy?url=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2Fc3b2df48-fcf0-42a5-93f8-299fee68ab0f%2F8fac8874-21a9-4534-bc0d-b32dfbe656c3%2FCleanShot_2026-06-11_at_12.36.342x.png&blockId=37cdd196-d806-8078-905a-fa38e307e604&projectId=4278"
+        },
+        {
+          "type": "p",
+          "text": "By default, orders won't ship until we have all the items in an order; however, you may choose to allow us to partial ship any order by enabling Allow Partial on an order per order basis."
+        },
+        {
+          "type": "img",
+          "src": "https://media.helpkit.co/proxy?url=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2Fc3b2df48-fcf0-42a5-93f8-299fee68ab0f%2F4490103d-d0d9-4398-b585-231309152aae%2FCleanShot_2026-06-11_at_12.39.412x.png&blockId=37cdd196-d806-80cd-ae3d-ce2db12b31e5&projectId=4278"
+        },
+        {
+          "type": "p",
+          "text": "We have the ability to enable the allow partial option for every incoming order. However, you have to opt in for this by emailing our support team."
         }
       ]
     }
