@@ -4,11 +4,13 @@ import { fetchTranscriptText } from '@/lib/fireflies';
 import { EXTRACT_FIELDS, EXTRACT_OPTION_COLUMN_IDS, kindToValueType } from '@/lib/client-extract-fields';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const CLIENTS_BOARD_ID = '7846251224';
 const MONDAY_API_URL = 'https://api.monday.com/v2';
-const MAX_TRANSCRIPT_CHARS = 140_000;
+const MAX_TRANSCRIPT_CHARS = 120_000;
+/** Sentinel that separates streamed keepalive bytes from the final JSON payload. */
+const RESULT_MARKER = '\n__RESULT__';
 
 /** Allowed option labels for the status/dropdown target columns (Clients board). */
 async function fetchOptions(): Promise<Record<string, string[]>> {
@@ -59,6 +61,44 @@ Rules:
 - Only return fields where your proposed value differs from the current value.
 Return everything through the propose_client_info_updates tool.`;
 
+/** Map + validate the model's raw updates into enriched proposals. */
+function enrich(
+  rawUpdates: Array<{ field?: string; value?: string; reasoning?: string }>,
+  info: Record<string, unknown>,
+  options: Record<string, string[]>,
+) {
+  const byKey = new Map(EXTRACT_FIELDS.map((f) => [String(f.key), f]));
+  const proposals = [];
+  for (const u of rawUpdates) {
+    const f = byKey.get(String(u.field));
+    if (!f) continue;
+    let value = String(u.value ?? '').trim();
+    if (!value) continue;
+    const opts = options[f.columnId];
+    if ((f.kind === 'status' || f.kind === 'dropdown') && opts?.length) {
+      const match = opts.find((o) => o.toLowerCase() === value.toLowerCase());
+      if (!match) continue; // don't invent labels
+      value = match;
+    }
+    const current = String(info[f.key as string] ?? '').trim();
+    if (value === current) continue;
+    proposals.push({
+      key: String(f.key),
+      columnId: f.columnId,
+      label: f.label,
+      section: f.section,
+      kind: f.kind,
+      valueType: kindToValueType(f.kind),
+      current,
+      suggested: value,
+      isNew: current.length === 0,
+      reasoning: String(u.reasoning ?? '').trim(),
+      options: opts ?? undefined,
+    });
+  }
+  return proposals;
+}
+
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const anthropicKey = process.env.SHIPBOTS_ANTHROPIC_KEY;
@@ -75,19 +115,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!transcriptId) return NextResponse.json({ error: 'Missing transcriptId' }, { status: 400 });
 
   const [info, transcript, options] = await Promise.all([
-    fetchClientInfo(id),
+    fetchClientInfo(id).catch(() => null),
     fetchTranscriptText(transcriptId),
     fetchOptions(),
   ]);
+  if (!info) return NextResponse.json({ error: 'Could not load this client record.' }, { status: 502 });
 
   const body = (transcript?.text || '').trim() || (transcript?.summary || '').trim();
   if (!body) {
     return NextResponse.json({ updates: [], note: 'No transcript content is available for this meeting.' });
   }
+  const infoRec = info as unknown as Record<string, unknown>;
 
-  // Field list for the prompt (label, kind, current value, allowed options).
   const fieldLines = EXTRACT_FIELDS.map((f) => {
-    const current = String((info as unknown as Record<string, unknown>)[f.key] ?? '').trim();
+    const current = String(infoRec[f.key as string] ?? '').trim();
     const opts = options[f.columnId];
     const optStr = opts?.length ? ` | options: ${opts.join(', ')}` : '';
     return `- ${f.key} | ${f.label} | ${f.kind} | current: ${current ? JSON.stringify(current) : '(empty)'}${optStr}`;
@@ -126,71 +167,79 @@ ${body.slice(0, MAX_TRANSCRIPT_CHARS)}`;
     },
   };
 
-  let aiData: { content?: Array<{ type: string; name?: string; input?: unknown }> };
-  try {
-    const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 4096,
-        system: SYSTEM_PROMPT,
-        tools: [tool],
-        tool_choice: { type: 'tool', name: 'propose_client_info_updates' },
-        messages: [{ role: 'user', content: userContent }],
-      }),
-    });
-    if (!aiRes.ok) {
-      const err = await aiRes.text();
-      console.error('[extract-from-meeting] Anthropic error:', err);
-      return NextResponse.json({ error: 'AI request failed.' }, { status: 502 });
-    }
-    aiData = await aiRes.json();
-  } catch (e) {
-    console.error('[extract-from-meeting] fetch failed:', e);
+  const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': anthropicKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4096,
+      stream: true, // stream so the platform doesn't kill a long non-streaming request
+      system: SYSTEM_PROMPT,
+      tools: [tool],
+      tool_choice: { type: 'tool', name: 'propose_client_info_updates' },
+      messages: [{ role: 'user', content: userContent }],
+    }),
+  });
+
+  if (!anthropicRes.ok || !anthropicRes.body) {
+    const err = await anthropicRes.text().catch(() => '');
+    console.error('[extract-from-meeting] Anthropic error:', err);
     return NextResponse.json({ error: 'AI request failed.' }, { status: 502 });
   }
 
-  const toolUse = (aiData.content || []).find((b) => b.type === 'tool_use');
-  const rawUpdates = ((toolUse?.input as { updates?: unknown })?.updates ?? []) as Array<{
-    field?: string;
-    value?: string;
-    reasoning?: string;
-  }>;
+  // Stream keepalive bytes while the model works, then append the enriched
+  // result JSON after RESULT_MARKER. The client reads to EOF and parses it.
+  const reader = anthropicRes.body.getReader();
+  const decoder = new TextDecoder();
+  const enc = new TextEncoder();
 
-  const byKey = new Map(EXTRACT_FIELDS.map((f) => [String(f.key), f]));
-  const proposals = [];
-  for (const u of rawUpdates) {
-    const f = byKey.get(String(u.field));
-    if (!f) continue;
-    let value = String(u.value ?? '').trim();
-    if (!value) continue;
-    const opts = options[f.columnId];
-    if ((f.kind === 'status' || f.kind === 'dropdown') && opts?.length) {
-      const match = opts.find((o) => o.toLowerCase() === value.toLowerCase());
-      if (!match) continue; // don't invent labels
-      value = match;
-    }
-    const current = String((info as unknown as Record<string, unknown>)[f.key] ?? '').trim();
-    if (value === current) continue;
-    proposals.push({
-      key: String(f.key),
-      columnId: f.columnId,
-      label: f.label,
-      section: f.section,
-      kind: f.kind,
-      valueType: kindToValueType(f.kind),
-      current,
-      suggested: value,
-      isNew: current.length === 0,
-      reasoning: String(u.reasoning ?? '').trim(),
-      options: opts ?? undefined,
-    });
-  }
+  const stream = new ReadableStream({
+    async start(controller) {
+      let buffer = '';
+      let jsonBuf = '';
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const raw = line.slice(6).trim();
+            if (!raw || raw === '[DONE]') continue;
+            try {
+              const evt = JSON.parse(raw);
+              if (evt.type === 'content_block_delta' && evt.delta?.type === 'input_json_delta') {
+                jsonBuf += evt.delta.partial_json || '';
+              }
+            } catch {
+              /* skip malformed */
+            }
+          }
+          controller.enqueue(enc.encode(' ')); // keepalive per chunk
+        }
+      } catch (e) {
+        console.error('[extract-from-meeting] stream error:', e);
+      }
 
-  return NextResponse.json({ updates: proposals, meetingTitle: transcript?.title || '' });
+      let rawUpdates: Array<{ field?: string; value?: string; reasoning?: string }> = [];
+      try {
+        rawUpdates = (JSON.parse(jsonBuf || '{}').updates ?? []) as typeof rawUpdates;
+      } catch {
+        /* leave empty */
+      }
+      const payload = { updates: enrich(rawUpdates, infoRec, options), meetingTitle: transcript?.title || '' };
+      controller.enqueue(enc.encode(RESULT_MARKER + JSON.stringify(payload)));
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
 }

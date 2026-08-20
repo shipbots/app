@@ -28,6 +28,37 @@ interface Props {
   onApplied?: (patch: Record<string, string>) => void;
 }
 
+/** The endpoint streams keepalive bytes then appends the JSON result after this
+ *  marker. Early error/note responses are plain JSON (no marker). */
+async function readExtractResult(
+  res: Response,
+): Promise<{ updates?: Proposal[]; note?: string }> {
+  const text = res.body
+    ? await (async () => {
+        const reader = res.body!.getReader();
+        const dec = new TextDecoder();
+        let out = '';
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          out += dec.decode(value, { stream: true });
+        }
+        return out;
+      })()
+    : await res.text();
+  const marker = '__RESULT__';
+  const idx = text.lastIndexOf(marker);
+  if (idx !== -1) return JSON.parse(text.slice(idx + marker.length));
+  let d: { error?: string; updates?: Proposal[]; note?: string };
+  try {
+    d = JSON.parse(text);
+  } catch {
+    throw new Error(text.trim().slice(0, 200) || `Request failed (${res.status})`);
+  }
+  if (d.error) throw new Error(d.error);
+  return d;
+}
+
 export function MeetingExtractModal({ clientId, transcriptId, meetingTitle, open, onClose, onApplied }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -51,8 +82,7 @@ export function MeetingExtractModal({ clientId, transcriptId, meetingTitle, open
       body: JSON.stringify({ transcriptId }),
     })
       .then(async (r) => {
-        const d = await r.json();
-        if (!r.ok) throw new Error(d?.error || 'Extraction failed');
+        const d = await readExtractResult(r);
         const ups: Proposal[] = d.updates ?? [];
         setProposals(ups);
         setNote(d.note || '');
