@@ -490,6 +490,12 @@ export const HELP_ARTICLES: Record<'appdot' | 'portal', HelpArticle[]> =
           "text": "To learn more on how to Update Order Items:"
         }
       ]
+    },
+    {
+      "key": "receiving",
+      "title": "Receiving Guidelines",
+      "url": "https://canva.link/8hhpa6sedxnp1rd",
+      "blocks": []
     }
   ],
   "portal": [
@@ -1207,6 +1213,12 @@ export const HELP_ARTICLES: Record<'appdot' | 'portal', HelpArticle[]> =
           "text": "We have the ability to enable the allow partial option for every incoming order. However, you have to opt in for this by emailing our support team."
         }
       ]
+    },
+    {
+      "key": "receiving",
+      "title": "Receiving Guidelines",
+      "url": "https://canva.link/8hhpa6sedxnp1rd",
+      "blocks": []
     }
   ]
 };

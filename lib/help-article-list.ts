@@ -7,6 +7,7 @@ export const HELP_ARTICLE_OPTIONS: { key: string; label: string }[] = [
   { key: 'login', label: 'Log into your account' },
   { key: 'connect', label: 'Connect your e-commerce platform' },
   { key: 'inventory', label: 'Send us your inventory' },
+  { key: 'receiving', label: 'Receiving Guidelines' },
   { key: 'orders', label: 'Create a manual order' },
   { key: 'orders-nav', label: 'How to navigate the orders page' },
 ];
