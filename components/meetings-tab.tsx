@@ -2,7 +2,8 @@
 
 import { FirefliesMeeting, OnboardingItem, SubItem } from '@/lib/types';
 import { ActionItemsModal } from './action-items-modal';
-import { Video, Clock, Users, ChevronDown, ChevronUp, ExternalLink, Play, ListChecks } from 'lucide-react';
+import { MeetingExtractModal } from './meeting-extract-modal';
+import { Video, Clock, Users, ChevronDown, ChevronUp, ExternalLink, Play, ListChecks, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 
 interface MeetingsTabProps {
@@ -10,23 +11,32 @@ interface MeetingsTabProps {
   loading: boolean;
   items: OnboardingItem[];
   clientItemId: string;
+  /** Clients-board item id — enables the "add info to client info" AI action. */
+  clientBoardItemId?: string;
   onTasksCreated: (tasks: SubItem[]) => void;
+  /** Merge AI-applied field values into the panel's live client record. */
+  onClientInfoPatched?: (patch: Record<string, string>) => void;
 }
 
 function MeetingCard({
   meeting,
   items,
   clientItemId,
+  clientBoardItemId,
   onTasksCreated,
+  onClientInfoPatched,
 }: {
   meeting: FirefliesMeeting;
   items: OnboardingItem[];
   clientItemId: string;
+  clientBoardItemId?: string;
   onTasksCreated: (tasks: SubItem[]) => void;
+  onClientInfoPatched?: (patch: Record<string, string>) => void;
 }) {
   const [expanded, setExpanded]       = useState(false);
   const [videoOpen, setVideoOpen]     = useState(false);
   const [showImport, setShowImport]   = useState(false);
+  const [showExtract, setShowExtract] = useState(false);
 
   const totalMin = Math.round(meeting.duration / 60);
   const durationStr = totalMin <= 0
@@ -90,6 +100,18 @@ function MeetingCard({
           </div>
 
           <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+            {/* AI: pull meeting details into the client's info fields */}
+            {clientBoardItemId && (
+              <button
+                onClick={() => setShowExtract(true)}
+                title="Analyze this meeting and fill in the client's info fields"
+                className="flex items-center gap-1 text-xs font-medium text-[#015280] bg-[#e6f8ff] border border-[#bfe9ff] hover:bg-[#d5f2ff] hover:border-[#43c7ff] px-2 py-1 rounded-lg transition-colors"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Add to client info</span>
+              </button>
+            )}
+
             {/* Import action items button */}
             {hasActionItems && (
               <button
@@ -167,11 +189,23 @@ function MeetingCard({
           }}
         />
       )}
+
+      {/* AI extract → client info modal */}
+      {clientBoardItemId && (
+        <MeetingExtractModal
+          clientId={clientBoardItemId}
+          transcriptId={meeting.id}
+          meetingTitle={meeting.title}
+          open={showExtract}
+          onClose={() => setShowExtract(false)}
+          onApplied={onClientInfoPatched}
+        />
+      )}
     </>
   );
 }
 
-export function MeetingsTab({ meetings, loading, items, clientItemId, onTasksCreated }: MeetingsTabProps) {
+export function MeetingsTab({ meetings, loading, items, clientItemId, clientBoardItemId, onTasksCreated, onClientInfoPatched }: MeetingsTabProps) {
   if (loading) {
     return (
       <div className="p-4 flex items-center justify-center">
@@ -199,7 +233,9 @@ export function MeetingsTab({ meetings, loading, items, clientItemId, onTasksCre
           meeting={meeting}
           items={items}
           clientItemId={clientItemId}
+          clientBoardItemId={clientBoardItemId}
           onTasksCreated={onTasksCreated}
+          onClientInfoPatched={onClientInfoPatched}
         />
       ))}
     </div>

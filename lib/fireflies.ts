@@ -56,6 +56,40 @@ function mapTranscript(t: {
 }
 
 /**
+ * Fetch the full word-for-word transcript (plus summary) for one meeting by id.
+ * Used to feed Claude the real conversation, not just the overview. Falls back
+ * to the summary text when sentence-level transcript isn't available on the plan.
+ */
+export async function fetchTranscriptText(
+  id: string,
+): Promise<{ title: string; text: string; summary: string } | null> {
+  const query = `query ($id: String!) {
+    transcript(id: $id) {
+      title
+      summary { overview action_items }
+      sentences { speaker_name text }
+    }
+  }`;
+  try {
+    const data = await firefliesQuery(query, { id });
+    const t = data?.transcript;
+    if (!t) return null;
+    const sentences: Array<{ speaker_name?: string; text?: string }> = t.sentences ?? [];
+    const text = sentences
+      .map((s) => `${(s.speaker_name || 'Speaker').trim()}: ${(s.text || '').trim()}`)
+      .filter((l) => l.length > 2)
+      .join('\n');
+    const summary = [t.summary?.overview, t.summary?.action_items ? `Action items:\n${t.summary.action_items}` : '']
+      .filter(Boolean)
+      .join('\n\n');
+    return { title: t.title || '', text, summary };
+  } catch (error) {
+    console.error('Fireflies transcript fetch error:', error);
+    return null;
+  }
+}
+
+/**
  * Search Fireflies transcripts by multiple terms in parallel (client name,
  * legal entity name, contact name, contact emails, etc.) and deduplicate by ID.
  */

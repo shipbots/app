@@ -1228,7 +1228,12 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
           loading={loadingMeetings}
           items={items}
           clientItemId={item.id}
+          clientBoardItemId={item.clientBoardItemId ?? undefined}
           onTasksCreated={onTasksCreatedFromMeeting}
+          onClientInfoPatched={patch => {
+            setClientInfo(prev => (prev ? { ...prev, ...patch } : prev));
+            refetchClientInfo?.();
+          }}
         />
       )}
       {activeTab === 'emails' && (
@@ -1812,7 +1817,12 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
               loading={loadingMeetings}
               items={items}
               clientItemId={item.id}
+              clientBoardItemId={item.clientBoardItemId ?? undefined}
               onTasksCreated={onTasksCreatedFromMeeting}
+              onClientInfoPatched={patch => {
+                setClientInfo(prev => (prev ? { ...prev, ...patch } : prev));
+                refetchClientInfo?.();
+              }}
             />
           )}
           {activeTab === 'emails' && (
