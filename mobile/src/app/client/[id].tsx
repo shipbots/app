@@ -72,6 +72,26 @@ export default function ClientDetailScreen() {
     }
   }, [clientId, c]);
 
+  // Persist one or more contact columns (add / edit / delete a contact slot).
+  // Optimistic; reverts + rethrows on failure so the editor sheet stays open.
+  const saveContactFields = useCallback(async (updates: { key: string; columnId: string; value: string }[]) => {
+    const snapshot = local ?? fetched ?? null;
+    setLocal(l => {
+      if (!l) return l;
+      const next = { ...l };
+      for (const u of updates) next[u.key] = u.value;
+      return next;
+    });
+    try {
+      for (const u of updates) await updateClientField(clientId, u.columnId, u.value, 'text');
+      setLocal(l => { if (l) void writeCache(`client:${clientId}`, l); return l; });
+    } catch (e) {
+      Alert.alert('Couldn’t save', 'Check your connection and try again.');
+      if (snapshot) setLocal({ ...snapshot });
+      throw e;
+    }
+  }, [clientId, local, fetched]);
+
   const saveOnbStep = useCallback(async (step: OnboardingStep, value: string) => {
     try {
       if (step.columnId === 'dropdown_mm47xxjv') {
@@ -115,9 +135,14 @@ export default function ClientDetailScreen() {
   const warehouse = c.warehouseLocation ? `${c.warehouseLocation}${c.subWarehouse ? ` · ${subLetter(c.subWarehouse)}` : ''}` : '';
   const agent = firstName(c.supportAgentEmail);
   const openDoc = (d: ClientDoc) => {
-    const url = d.kind === 'file' && d.assetId
-      ? `${API_BASE_URL}/customer-service?clientId=${clientId}&expanded=1&previewAsset=${d.assetId}`
-      : d.url;
+    // Prefer the direct (signed) asset URL — it opens in the in-app browser
+    // without a web login. The old path opened the cookie-gated
+    // /customer-service preview page, which on the app just hit the Google
+    // login wall, so files looked "un-viewable". Fall back to that page only
+    // if Monday didn't return a public URL for the asset.
+    const url = d.url
+      || (d.assetId ? `${API_BASE_URL}/customer-service?clientId=${clientId}&expanded=1&previewAsset=${d.assetId}` : '');
+    if (!url) { Alert.alert('Can’t open', 'No link is available for this document.'); return; }
     WebBrowser.openBrowserAsync(url).catch(() => {});
   };
 
@@ -150,8 +175,8 @@ export default function ClientDetailScreen() {
 
         <View style={{ height: Spacing.three }} />
 
-        {/* Contacts — swipeable cards above the sticky notes */}
-        <ContactCards client={c} />
+        {/* Contacts — swipeable cards with inline add / edit / delete (3 slots) */}
+        <ContactCards client={c} onSave={saveContactFields} />
 
         {/* Sticky notes */}
         <StickyNotes clientId={clientId} />
@@ -179,9 +204,9 @@ export default function ClientDetailScreen() {
         {SECTIONS.map(section => {
           // Billing/pricing only for users with DocuSign or onboarding access.
           if (section.gated === 'billing' && !canSeeBilling) return null;
-          // Read mode shows contacts as the swipeable cards above; the editable
-          // Contact Info section only appears in edit mode.
-          if (section.id === 'contacts' && !editing) return null;
+          // Contacts are fully managed by the swipeable cards above (inline
+          // add / edit / delete), so the flat Contact Info list is retired.
+          if (section.id === 'contacts') return null;
           const visible = editing
             ? section.fields
             : section.fields.filter(f => (c[f.key] ?? '').trim());

@@ -1,8 +1,11 @@
+import { useState } from 'react';
 import { Dimensions, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { CONTACT_SLOTS, contactHasData, slotFields, type ContactSlot } from '@/api/contacts';
 import type { ClientDetail } from '@/api/types';
 import { Shadow, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { ContactEditor, type ContactUpdate } from './contact-editor';
 import { ThemedText } from './themed-text';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -16,27 +19,35 @@ function initials(name: string): string {
   return s.toUpperCase() || '•';
 }
 
-interface Contact {
-  role: string;
-  name: string;
-  email: string;
-  phone: string;
-  location: string;
-  shipHero: string;
-}
-
-/** Horizontally-swipeable contact cards. One per contact; swipe for more. */
-export function ContactCards({ client }: { client: ClientDetail }) {
+/**
+ * Horizontally-swipeable contact cards — one per filled slot — with inline
+ * add / edit / delete. Tap ✎ on a card to edit or remove that contact; tap the
+ * "＋ Add contact" tile (shown while fewer than 3 slots are filled) to add one.
+ */
+export function ContactCards({
+  client, onSave,
+}: {
+  client: ClientDetail;
+  /** Persist the changed columns (throws on failure so the sheet stays open). */
+  onSave: (updates: ContactUpdate[]) => Promise<void>;
+}) {
   const theme = useTheme();
-  const raw: Contact[] = [
-    { role: 'Primary contact', name: client.contactName ?? '', email: client.contactEmail ?? '', phone: client.contactPhone ?? '', location: client.contactLocation ?? '', shipHero: '' },
-    { role: 'Contact 2', name: client.contact2Name ?? '', email: client.contact2Email ?? '', phone: client.contact2Phone ?? '', location: '', shipHero: client.contact2ShipHeroAccess ?? '' },
-    { role: 'Contact 3', name: client.contact3Name ?? '', email: client.contact3Email ?? '', phone: client.contact3Phone ?? '', location: '', shipHero: client.contact3ShipHeroAccess ?? '' },
-  ];
-  const contacts = raw.filter(c => (c.name || c.email || c.phone).trim());
-  if (contacts.length === 0) return null;
-  const single = contacts.length === 1;
+  const [openSlot, setOpenSlot] = useState<ContactSlot | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const filled = CONTACT_SLOTS.filter(s => contactHasData(client, s));
+  const firstEmpty = CONTACT_SLOTS.find(s => !contactHasData(client, s));
+  const tileCount = filled.length + (firstEmpty ? 1 : 0);
+  const single = tileCount === 1;
   const cardWidth = single ? SCREEN_W - PAGE * 2 : CARD_W;
+
+  const commit = async (updates: ContactUpdate[]) => {
+    if (updates.length === 0) { setOpenSlot(null); return; }
+    setSaving(true);
+    try { await onSave(updates); setOpenSlot(null); }
+    catch { /* parent alerts; keep the sheet open to retry */ }
+    finally { setSaving(false); }
+  };
 
   return (
     <View style={styles.wrap}>
@@ -47,40 +58,73 @@ export function ContactCards({ client }: { client: ClientDetail }) {
         decelerationRate="fast"
         contentContainerStyle={{ gap: Spacing.two, paddingHorizontal: PAGE }}
         style={styles.scroller}>
-        {contacts.map((c, i) => (
-          <View key={i} style={[styles.card, { width: cardWidth, backgroundColor: theme.card }, Shadow.card]}>
-            <View style={styles.top}>
-              <View style={[styles.avatar, { backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length] }]}>
-                <ThemedText style={styles.avatarTxt}>{initials(c.name || c.email)}</ThemedText>
+        {filled.map(slot => {
+          const name = client[slot.name.key] ?? '';
+          const email = client[slot.email.key] ?? '';
+          const phone = client[slot.phone.key] ?? '';
+          const extra = client[slot.extra.key] ?? '';
+          const extraIcon = slot.extra.label === 'Location' ? '📍' : '🔑';
+          return (
+            <View key={slot.idx} style={[styles.card, { width: cardWidth, backgroundColor: theme.card }, Shadow.card]}>
+              <View style={styles.top}>
+                <View style={[styles.avatar, { backgroundColor: AVATAR_COLORS[slot.idx % AVATAR_COLORS.length] }]}>
+                  <ThemedText style={styles.avatarTxt}>{initials(name || email)}</ThemedText>
+                </View>
+                <View style={styles.topText}>
+                  <ThemedText style={[styles.role, { color: theme.tint }]}>{slot.role.toUpperCase()}</ThemedText>
+                  <ThemedText style={styles.name} numberOfLines={1}>{name || '—'}</ThemedText>
+                </View>
+                <Pressable onPress={() => setOpenSlot(slot)} hitSlop={10} style={styles.editBtn}>
+                  <ThemedText style={{ color: theme.tint, fontSize: 13, fontWeight: '700' }}>✎ Edit</ThemedText>
+                </Pressable>
               </View>
-              <View style={styles.topText}>
-                <ThemedText style={[styles.role, { color: theme.tint }]}>{c.role.toUpperCase()}</ThemedText>
-                <ThemedText style={styles.name} numberOfLines={1}>{c.name || '—'}</ThemedText>
+              <View style={[styles.divider, { backgroundColor: theme.border }]} />
+              <View style={styles.rows}>
+                {!!email && (
+                  <Row icon="✉" text={email} color={theme.tint}
+                    onPress={() => Linking.openURL(`mailto:${email.trim()}`).catch(() => {})} />
+                )}
+                {!!phone && (
+                  <Row icon="✆" text={phone} color={theme.tint}
+                    onPress={() => Linking.openURL(`tel:${phone.replace(/[^0-9+]/g, '')}`).catch(() => {})} />
+                )}
+                {!!extra && <Row icon={extraIcon} text={slot.extra.label === 'Location' ? extra : `ShipHero: ${extra}`} color={theme.text} />}
+                {!email && !phone && !extra && (
+                  <ThemedText type="small" themeColor="textSecondary">No details yet — tap Edit.</ThemedText>
+                )}
               </View>
             </View>
-            <View style={[styles.divider, { backgroundColor: theme.border }]} />
-            <View style={styles.rows}>
-              {!!c.email && (
-                <Row icon="✉" text={c.email} color={theme.tint}
-                  onPress={() => Linking.openURL(`mailto:${c.email.trim()}`).catch(() => {})} />
-              )}
-              {!!c.phone && (
-                <Row icon="✆" text={c.phone} color={theme.tint}
-                  onPress={() => Linking.openURL(`tel:${c.phone.replace(/[^0-9+]/g, '')}`).catch(() => {})} />
-              )}
-              {!!c.location && <Row icon="📍" text={c.location} color={theme.text} />}
-              {!!c.shipHero && <Row icon="🔑" text={`ShipHero: ${c.shipHero}`} color={theme.text} />}
-            </View>
-          </View>
-        ))}
+          );
+        })}
+
+        {firstEmpty && (
+          <Pressable
+            onPress={() => setOpenSlot(firstEmpty)}
+            style={[styles.card, styles.addCard, { width: cardWidth, borderColor: theme.accent }]}>
+            <ThemedText style={[styles.addPlus, { color: theme.tint }]}>＋</ThemedText>
+            <ThemedText type="smallBold" style={{ color: theme.tint }}>Add contact</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">{filled.length}/3 added</ThemedText>
+          </Pressable>
+        )}
       </ScrollView>
-      {!single && (
+
+      {tileCount > 1 && (
         <View style={styles.dots}>
-          {contacts.map((_, i) => (
+          {Array.from({ length: tileCount }).map((_, i) => (
             <View key={i} style={[styles.dot, { backgroundColor: i === 0 ? theme.tint : theme.border }]} />
           ))}
         </View>
       )}
+
+      <ContactEditor
+        visible={!!openSlot}
+        slot={openSlot}
+        client={client}
+        saving={saving}
+        onSave={(_, updates) => commit(updates)}
+        onDelete={slot => commit(slotFields(slot).map(f => ({ key: f.key, columnId: f.columnId, value: '' })))}
+        onClose={() => setOpenSlot(null)}
+      />
     </View>
   );
 }
@@ -100,10 +144,13 @@ const styles = StyleSheet.create({
   wrap: { marginHorizontal: -Spacing.three, marginBottom: Spacing.three },
   scroller: {},
   card: { borderRadius: 18, padding: Spacing.three },
+  addCard: { borderWidth: 1.5, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 2, minHeight: 132 },
+  addPlus: { fontSize: 30, fontWeight: '300', lineHeight: 34 },
   top: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   avatarTxt: { color: '#fff', fontSize: 16, fontWeight: '800' },
   topText: { flex: 1, minWidth: 0 },
+  editBtn: { paddingLeft: Spacing.two },
   role: { fontSize: 10, fontWeight: '800', letterSpacing: 0.6 },
   name: { fontSize: 17, fontWeight: '700', marginTop: 1 },
   divider: { height: StyleSheet.hairlineWidth, marginVertical: Spacing.two },
