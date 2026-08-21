@@ -19,11 +19,17 @@ function secretKey(): Uint8Array | null {
   return s ? new TextEncoder().encode(s) : null;
 }
 
-/** Mint a mobile token for a logged-in user. Throws if the secret isn't set. */
-export async function signMobileToken(email: string): Promise<string> {
+/** Mint a mobile token for a logged-in user. Throws if the secret isn't set.
+ *  Optional access claims (isAdmin / canDocusign) let the app gate the billing
+ *  and onboarding sections without an extra round-trip; the app reads them by
+ *  decoding the JWT locally. The proxy only ever trusts the signature + email. */
+export async function signMobileToken(
+  email: string,
+  claims: { isAdmin?: boolean; canDocusign?: boolean } = {},
+): Promise<string> {
   const key = secretKey();
   if (!key) throw new Error('MOBILE_JWT_SECRET not configured');
-  return new SignJWT({ email })
+  return new SignJWT({ email, isAdmin: !!claims.isAdmin, canDocusign: !!claims.canDocusign })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(email)
     .setIssuedAt()

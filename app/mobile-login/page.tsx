@@ -10,6 +10,8 @@
 
 import { auth } from '@/auth';
 import { signMobileToken } from '@/lib/mobile-auth';
+import { isAdminEmail } from '@/lib/admins';
+import { canUseDocusign } from '@/lib/docusign-access';
 import { MobileTokenHandoff } from './handoff';
 
 export const dynamic = 'force-dynamic';
@@ -36,6 +38,9 @@ export default async function MobileLoginPage() {
     );
   }
 
-  const token = await signMobileToken(email);
+  // Bake the same access flags the extension uses into the token so the app can
+  // gate the Billing/Pricing + onboarding sections locally.
+  const [isAdmin, canDocusign] = [isAdminEmail(email), await canUseDocusign(email)];
+  const token = await signMobileToken(email, { isAdmin, canDocusign });
   return <MobileTokenHandoff email={email} token={token} />;
 }

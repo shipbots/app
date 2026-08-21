@@ -6,7 +6,7 @@ import { fetchDeliveries } from '@/api/client';
 import type { DeliveryEvent } from '@/api/types';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Shadow, Spacing } from '@/constants/theme';
 import { useCached } from '@/hooks/use-cached';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -95,7 +95,7 @@ export default function TimelineScreen() {
               disabled={!e.clientId}
               onPress={() => e.clientId && router.push({ pathname: '/client/[id]', params: { id: e.clientId } })}
               style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}>
-              <ThemedView type="card" style={[styles.card, { borderColor: overdue ? '#fca5a5' : theme.border }]}>
+              <ThemedView type="card" style={[styles.card, { borderColor: overdue ? '#fca5a5' : theme.border }, Shadow.card]}>
                 <View style={styles.cardTop}>
                   <View style={[styles.dateChip, { backgroundColor: overdue ? '#fef2f2' : '#eff6ff' }]}>
                     <ThemedText type="small" style={{ color: overdue ? '#dc2626' : '#2563eb', fontWeight: '700' }}>📅 {fmt(e.date)}</ThemedText>

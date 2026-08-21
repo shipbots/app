@@ -19,6 +19,8 @@ export interface FieldSection {
   id: string;
   title: string;
   fields: Field[];
+  /** When set, only render for users with that access (billing = canDocusign). */
+  gated?: 'billing';
 }
 
 export const SECTIONS: FieldSection[] = [
@@ -33,9 +35,11 @@ export const SECTIONS: FieldSection[] = [
       { key: 'contact2Name', label: '2 · Name', columnId: 'text_mktr1evd', type: 'text' },
       { key: 'contact2Email', label: '2 · Email', columnId: 'text_mktr2xmm', type: 'text', link: 'mailto' },
       { key: 'contact2Phone', label: '2 · Phone', columnId: 'text_mktr8kve', type: 'text', link: 'tel' },
+      { key: 'contact2ShipHeroAccess', label: '2 · ShipHero access', columnId: 'text_mktyakva', type: 'text' },
       { key: 'contact3Name', label: '3 · Name', columnId: 'text_mktr4v7q', type: 'text' },
       { key: 'contact3Email', label: '3 · Email', columnId: 'text_mktrt74r', type: 'text', link: 'mailto' },
       { key: 'contact3Phone', label: '3 · Phone', columnId: 'text_mktrw0tb', type: 'text', link: 'tel' },
+      { key: 'contact3ShipHeroAccess', label: '3 · ShipHero access', columnId: 'text_mktyankg', type: 'text' },
     ],
   },
   {
@@ -58,6 +62,8 @@ export const SECTIONS: FieldSection[] = [
       { key: 'umbrellaCompany', label: 'Umbrella co.', columnId: 'dropdown_mkyk2va7', type: 'dropdown' },
       { key: 'businessHQ', label: 'Business HQ', columnId: 'text_mktx63am', type: 'text' },
       { key: 'manufacturingLocation', label: 'Mfg location', columnId: 'text_mktxyg5p', type: 'text' },
+      { key: 'pickAndPack', label: 'Pick & pack', columnId: 'text_mm1zw2vf', type: 'text' },
+      { key: 'interestInAdditionalServices', label: 'Interest in add-on services', columnId: 'text_mkw2y8q9', type: 'text' },
     ],
   },
   {
@@ -95,7 +101,10 @@ export const SECTIONS: FieldSection[] = [
       { key: 'outsideLabels', label: 'Outside labels', columnId: 'dropdown_mm47p3h7', type: 'dropdown' },
       { key: 'wholesaleDetails', label: 'Wholesale', columnId: 'text_mkw5t2ey', type: 'long' },
       { key: 'outboundLTL', label: 'Outbound LTL', columnId: 'text_mkw5bdr2', type: 'text' },
+      { key: 'additionalInsuranceSignature', label: 'Insurance / signature', columnId: 'text_mktrs0xa', type: 'text' },
+      { key: 'estimatedStorage', label: 'Estimated storage', columnId: 'text_mkw4czc2', type: 'text' },
       { key: 'additionalNotes', label: 'Notes', columnId: 'long_text_mktran3x', type: 'long' },
+      { key: 'additionalShippingNotes', label: 'Shipping req. notes', columnId: 'long_text_mkwy13zg', type: 'long' },
       { key: 'notesForPacking', label: 'Packing notes', columnId: 'long_text_mkxfv1hr', type: 'long' },
     ],
   },
@@ -109,6 +118,33 @@ export const SECTIONS: FieldSection[] = [
       { key: 'returnsNewCondition', label: 'New', columnId: 'color_mkxfkdyh', type: 'status' },
       { key: 'returnsUsedCondition', label: 'Used', columnId: 'color_mkxfxdx5', type: 'status' },
       { key: 'notesForReturns', label: 'Notes', columnId: 'long_text_mkxeajq4', type: 'long' },
+    ],
+  },
+  {
+    id: 'billing',
+    title: 'Billing & Pricing',
+    gated: 'billing',
+    fields: [
+      { key: 'billingStreet1', label: 'Billing street 1', columnId: 'text_mkx5vzht', type: 'text' },
+      { key: 'billingStreet2', label: 'Billing street 2', columnId: 'text_mkx5f9p9', type: 'text' },
+      { key: 'billingCity', label: 'Billing city', columnId: 'text_mkx5z70k', type: 'text' },
+      { key: 'billingState', label: 'Billing state', columnId: 'text_mkx5er1a', type: 'text' },
+      { key: 'billingZip', label: 'Billing zip', columnId: 'text_mkx5tjd7', type: 'text' },
+      { key: 'billingCountry', label: 'Billing country', columnId: 'text_mkx5kyv4', type: 'text' },
+      { key: 'billingNameUpdated', label: 'Billing name updated?', columnId: 'color_mkx5yjnk', type: 'status' },
+      { key: 'paymentTerms', label: 'Payment terms', columnId: 'text_mm5hgn1k', type: 'text' },
+      { key: 'receivingPricing', label: 'Receiving pricing', columnId: 'text_mm5hpark', type: 'long' },
+      { key: 'floorLoadedFee', label: 'Floor-loaded fee', columnId: 'text_mm5hxygd', type: 'text' },
+      { key: 'binStorage', label: 'Bin storage', columnId: 'text_mm5hwtkt', type: 'text' },
+      { key: 'palletStorage', label: 'Pallet storage', columnId: 'text_mm5h6606', type: 'text' },
+      { key: 'dtcPickPackPricing', label: 'DTC pick & pack', columnId: 'text_mm5hc2dg', type: 'long' },
+      { key: 'b2bPickPack', label: 'B2B pick & pack', columnId: 'text_mm5h4938', type: 'long' },
+      { key: 'shippingUpcharge', label: 'Shipping upcharge', columnId: 'text_mktqa6sm', type: 'text' },
+      { key: 'intlShippingUpcharge', label: 'Intl shipping upcharge', columnId: 'text_mm5h1w32', type: 'text' },
+      { key: 'returnsFee', label: 'Returns fee', columnId: 'text_mm5hzk9n', type: 'text' },
+      { key: 'accountManagerFee', label: 'Account manager fee', columnId: 'text_mm5hb9', type: 'text' },
+      { key: 'platformFee', label: 'Platform fee', columnId: 'text_mm5hq2xy', type: 'text' },
+      { key: 'otherNotes', label: 'Other pricing notes', columnId: 'long_text_mm5hy744', type: 'long' },
     ],
   },
   {

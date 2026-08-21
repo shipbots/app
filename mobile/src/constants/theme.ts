@@ -97,3 +97,19 @@ export const Spacing = {
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;
+
+/** Soft, iOS-style elevation for cards — subtle ambient shadow on iOS, a light
+ *  elevation on Android. Apply to a card that has a solid background and is NOT
+ *  clipped by `overflow: 'hidden'` (else the shadow is cut off). */
+export const Shadow = {
+  card: Platform.select({
+    ios: { shadowColor: '#0b1524', shadowOpacity: 0.07, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
+    android: { elevation: 2 },
+    default: {},
+  }) as object,
+  raised: Platform.select({
+    ios: { shadowColor: '#0b1524', shadowOpacity: 0.12, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
+    android: { elevation: 5 },
+    default: {},
+  }) as object,
+} as const;

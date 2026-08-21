@@ -16,27 +16,39 @@ WebBrowser.maybeCompleteAuthSession();
 
 const TOKEN_KEY = 'shipbots-cs-token';
 
-/** Read the email claim out of the (unverified) JWT payload — display only. */
-function decodeEmail(token: string | null): string | null {
-  if (!token) return null;
+/** Read the email + access claims out of the (unverified) JWT payload. The
+ *  signature is trusted server-side; here we only read it to greet the user and
+ *  gate the billing / onboarding sections locally. */
+function decodeClaims(token: string | null): { email: string | null; isAdmin: boolean; canDocusign: boolean } {
+  const empty = { email: null, isAdmin: false, canDocusign: false };
+  if (!token) return empty;
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const g = globalThis as any;
     const part = token.split('.')[1];
-    if (!part || typeof g.atob !== 'function') return null;
+    if (!part || typeof g.atob !== 'function') return empty;
     const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
     const json = g.atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, '='));
     const obj = JSON.parse(json);
-    return (obj.email || obj.sub || '') || null;
+    return {
+      email: (obj.email || obj.sub || '') || null,
+      isAdmin: !!obj.isAdmin,
+      canDocusign: !!obj.canDocusign,
+    };
   } catch {
-    return null;
+    return empty;
   }
 }
+const decodeEmail = (token: string | null): string | null => decodeClaims(token).email;
 
 type Result = { ok: boolean; error?: string };
 type AuthState = {
   token: string | null;
   email: string | null;
+  /** Onboarding access (ADMIN_EMAILS) — mirrors the extension's isAdmin. */
+  isAdmin: boolean;
+  /** Billing / pricing / DocuSign access (DOCUSIGN_EMAILS allowlist). */
+  canDocusign: boolean;
   loading: boolean;
   signIn: () => Promise<Result>;
   signInWithCode: (code: string) => Promise<Result>;
@@ -102,9 +114,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setEmail(null);
   }, []);
 
+  const claims = useMemo(() => decodeClaims(token), [token]);
   const value = useMemo<AuthState>(
-    () => ({ token, email, loading, signIn, signInWithCode: commit, signOut }),
-    [token, email, loading, signIn, commit, signOut],
+    () => ({ token, email, isAdmin: claims.isAdmin, canDocusign: claims.canDocusign, loading, signIn, signInWithCode: commit, signOut }),
+    [token, email, claims.isAdmin, claims.canDocusign, loading, signIn, commit, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

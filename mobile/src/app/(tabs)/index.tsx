@@ -6,7 +6,7 @@ import { fetchClientIndex, filterClients } from '@/api/client';
 import { useAuth } from '@/auth';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Shadow, Spacing } from '@/constants/theme';
 import { useCached } from '@/hooks/use-cached';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -101,7 +101,7 @@ export default function ClientsScreen() {
             <Pressable
               onPress={() => router.push({ pathname: '/client/[id]', params: { id: item.id } })}
               style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
-              <ThemedView type="card" style={[styles.card, { borderColor: theme.border }]}>
+              <ThemedView type="card" style={[styles.card, { borderColor: theme.border }, Shadow.card]}>
                 <View style={[styles.avatar, { backgroundColor: theme.tint }]}>
                   <ThemedText style={styles.avatarText}>{initials(item.name)}</ThemedText>
                 </View>

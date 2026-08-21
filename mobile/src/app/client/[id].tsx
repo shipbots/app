@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { writeCache } from '@/api/cache';
-import { AuthError, fetchAgents, fetchClientDocs, fetchColumnOptions, getClient, updateClientField } from '@/api/client';
+import { fetchAgents, fetchClientDocs, fetchColumnOptions, getClient, updateClientField } from '@/api/client';
 import { SECTIONS, valueTypeFor, type Field } from '@/api/fields';
+import { useAuth } from '@/auth';
 import type { ClientDetail, ClientDoc } from '@/api/types';
 import { API_BASE_URL } from '@/config';
 import { CollapsibleSection } from '@/components/collapsible-section';
@@ -30,6 +31,8 @@ export default function ClientDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const clientId = String(id);
   const theme = useTheme();
+  const { isAdmin, canDocusign } = useAuth();
+  const canSeeBilling = canDocusign || isAdmin;
 
   const { data: fetched, loading, refreshing, error, refresh } = useCached(`client:${clientId}`, () => getClient(clientId));
   const [local, setLocal] = useState<ClientDetail | null>(null);
@@ -70,6 +73,17 @@ export default function ClientDetailScreen() {
     return options[picker.columnId] ?? [];
   }, [picker, agents, options]);
 
+  // Lets the header pills open the same picker the body fields use.
+  const fieldByKey = useMemo(() => {
+    const m: Record<string, Field> = {};
+    for (const s of SECTIONS) for (const f of s.fields) m[f.key] = f;
+    return m;
+  }, []);
+  const openPill = useCallback((key: string) => {
+    const f = fieldByKey[key];
+    if (f) setPicker(f);
+  }, [fieldByKey]);
+
   if (loading) {
     return <ThemedView style={styles.center}><ActivityIndicator color={theme.tint} /></ThemedView>;
   }
@@ -107,10 +121,10 @@ export default function ClientDetailScreen() {
         <ThemedText type="subtitle" style={styles.name}>{c.name}</ThemedText>
         {!!c.legalEntity && <ThemedText type="small" themeColor="textSecondary">{c.legalEntity}</ThemedText>}
         <View style={styles.pills}>
-          {!!c.clientStatus && <Pill text={c.clientStatus} bg="#e6f8ff" fg="#015280" />}
-          {!!warehouse && <Pill text={warehouse} bg="#ecfdf5" fg="#047857" />}
-          <Pill text={agent || 'Unassigned'} bg={agent ? '#fef3c7' : '#f3f4f6'} fg={agent ? '#92400e' : '#6b7280'} />
-          {!!c.portalDropdown && <Pill text={c.portalDropdown} bg="#e6f8ff" fg="#015280" />}
+          <Pill text={c.clientStatus || 'Set status'} bg={c.clientStatus ? '#e6f8ff' : '#f3f4f6'} fg={c.clientStatus ? '#015280' : '#9ca3af'} onPress={() => openPill('clientStatus')} />
+          <Pill text={warehouse || 'Set warehouse'} bg={warehouse ? '#ecfdf5' : '#f3f4f6'} fg={warehouse ? '#047857' : '#9ca3af'} onPress={() => openPill('warehouseLocation')} />
+          <Pill text={agent || 'Unassigned'} bg={agent ? '#fef3c7' : '#f3f4f6'} fg={agent ? '#92400e' : '#9ca3af'} onPress={() => openPill('supportAgentEmail')} />
+          <Pill text={c.portalDropdown || 'Set platform'} bg={c.portalDropdown ? '#e6f8ff' : '#f3f4f6'} fg={c.portalDropdown ? '#015280' : '#9ca3af'} onPress={() => openPill('portalDropdown')} />
         </View>
 
         <View style={{ height: Spacing.two }} />
@@ -120,6 +134,8 @@ export default function ClientDetailScreen() {
 
         {/* Sections */}
         {SECTIONS.map(section => {
+          // Billing/pricing only for users with DocuSign or onboarding access.
+          if (section.gated === 'billing' && !canSeeBilling) return null;
           const visible = editing
             ? section.fields
             : section.fields.filter(f => (c[f.key] ?? '').trim());
@@ -169,12 +185,14 @@ export default function ClientDetailScreen() {
   );
 }
 
-function Pill({ text, bg, fg }: { text: string; bg: string; fg: string }) {
-  return (
+function Pill({ text, bg, fg, onPress }: { text: string; bg: string; fg: string; onPress?: () => void }) {
+  const body = (
     <View style={[styles.pill, { backgroundColor: bg }]}>
-      <ThemedText style={{ color: fg, fontSize: 11, fontWeight: '700' }}>{text}</ThemedText>
+      <ThemedText style={{ color: fg, fontSize: 12, fontWeight: '700' }}>{text}</ThemedText>
+      {onPress && <ThemedText style={{ color: fg, fontSize: 11, fontWeight: '700', opacity: 0.5 }}> ▾</ThemedText>}
     </View>
   );
+  return onPress ? <Pressable onPress={onPress} hitSlop={6}>{body}</Pressable> : body;
 }
 
 function FieldRow({
@@ -241,8 +259,8 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.four },
   scroll: { padding: Spacing.three },
   name: { fontSize: 22, lineHeight: 28 },
-  pills: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one, marginTop: Spacing.two },
-  pill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  pills: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginTop: Spacing.two },
+  pill: { flexDirection: 'row', alignItems: 'center', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.three, paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth },
   block: { paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth },
   label: { width: 100, flexShrink: 0, paddingTop: 2 },

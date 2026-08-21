@@ -171,13 +171,34 @@ export async function fetchClientDocs(id: string): Promise<ClientDoc[]> {
 }
 
 // ─── Delivery Timeline (from onboarding items) ───────────────────────────────
-const TERMINAL_STATUS = /(completed|abandoned|n\/a|zap error|never arrived)/i;
+// Mirror the web onboarding "New Client Delivery Timeline" predicate exactly
+// (components/onboarding-home.tsx) so mobile shows the same clients: exclude
+// terminal statuses (exact match) + the "Inventory never arrived" GROUP +
+// anything whose inventoryDelivered text reads received, and require an ISO date.
+const TERMINAL_STATUSES = new Set(['completed', 'abandoned', 'n/a', 'zap error', 'inventory never arrived']);
+const INVENTORY_NEVER_ARRIVED_GROUP = 'group_mks0npxe';
+const RECEIVED_TEXT = /^(yes|received|delivered|arrived|complete)/i;
+function isTerminalDelivery(i: any): boolean {
+  return (
+    TERMINAL_STATUSES.has(String(i.status || '').trim().toLowerCase()) ||
+    i.groupId === INVENTORY_NEVER_ARRIVED_GROUP
+  );
+}
+function inventoryReceived(i: any): boolean {
+  if (i.deliveredDate) return true;
+  return RECEIVED_TEXT.test(String(i.inventoryDelivered || '').trim());
+}
 export async function fetchDeliveries(): Promise<DeliveryEvent[]> {
   if (useMock()) return [];
   // Note: the endpoint returns { items, alerts }, not a bare array.
   const data = await apiGet<{ items: any[] }>('/api/onboarding-items');
   return (data.items ?? [])
-    .filter(i => !i.deliveredDate && String(i.estimatedDeliveryDate || '').length >= 10 && !TERMINAL_STATUS.test(i.status || ''))
+    .filter(
+      i =>
+        !isTerminalDelivery(i) &&
+        !inventoryReceived(i) &&
+        /^\d{4}-\d{2}-\d{2}/.test(String(i.estimatedDeliveryDate || '')),
+    )
     .map(i => ({
       id: String(i.id),
       clientId: i.clientBoardItemId ? String(i.clientBoardItemId) : undefined,
