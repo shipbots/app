@@ -216,13 +216,23 @@ export async function fetchDeliveries(): Promise<DeliveryEvent[]> {
 }
 
 // ─── Onboarding checklist (from the client's onboarding item) ────────────────
-function stepState(value: string, invert?: boolean): OnboardingStep['state'] {
+export function stepState(value: string, invert?: boolean): OnboardingStep['state'] {
   const v = String(value || '').trim().toLowerCase();
   if (!v) return 'pending';
   if (/^(n\/?a|not connecting|no store)/.test(v)) return 'na';
   if (invert) return v === 'no' ? 'done' : 'pending'; // e.g. "Tech Demo Required": No = handled
   if (/^(done|yes|complete|completed|sent|signed|received|delivered)/.test(v)) return 'done';
   return 'pending';
+}
+
+/** Recompute the checklist % the same way the server does — round(done /
+ *  applicable), where "applicable" excludes N/A steps. Kept in sync with
+ *  lib/monday.ts so an optimistic update matches the eventual server value. */
+export function onboardingProgress(steps: OnboardingStep[]): number {
+  const applicable = steps.filter(s => s.state !== 'na');
+  if (applicable.length === 0) return 0;
+  const done = applicable.filter(s => s.state === 'done').length;
+  return Math.round((done / applicable.length) * 100);
 }
 export async function fetchClientOnboarding(clientBoardItemId: string): Promise<OnboardingInfo | null> {
   if (useMock()) return null;

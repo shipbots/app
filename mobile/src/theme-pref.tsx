@@ -20,7 +20,9 @@ const Ctx = createContext<ThemePrefCtx | null>(null);
 
 export function ThemePrefProvider({ children }: { children: ReactNode }) {
   const system = useRNColorScheme();
-  const [pref, setPrefState] = useState<ThemePref>('system');
+  // Default to light. A saved choice (below) wins once the user toggles, so
+  // this only decides the first-ever launch — not "force light forever".
+  const [pref, setPrefState] = useState<ThemePref>('light');
 
   useEffect(() => {
     AsyncStorage.getItem(STORE_KEY)

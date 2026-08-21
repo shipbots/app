@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { writeCache } from '@/api/cache';
-import { fetchAgents, fetchClientDocs, fetchClientOnboarding, fetchColumnOptions, getClient, updateClientField, updateOnboardingField } from '@/api/client';
+import { fetchAgents, fetchClientDocs, fetchClientOnboarding, fetchColumnOptions, getClient, onboardingProgress, stepState, updateClientField, updateOnboardingField } from '@/api/client';
 import { SECTIONS, valueTypeFor, type Field } from '@/api/fields';
 import { useAuth } from '@/auth';
 import type { ClientDetail, ClientDoc, OnboardingInfo, OnboardingStep } from '@/api/types';
@@ -92,21 +92,36 @@ export default function ClientDetailScreen() {
     }
   }, [clientId, local, fetched]);
 
-  const saveOnbStep = useCallback(async (step: OnboardingStep, value: string) => {
-    try {
-      if (step.columnId === 'dropdown_mm47xxjv') {
-        // "Payment on file" lives on the Clients board, not the onboarding item.
-        await updateClientField(clientId, step.columnId, value, 'dropdown');
-        setLocal(l => (l ? { ...l, paymentOnFile: value } : l));
-      } else if (onboarding?.onboardingItemId) {
-        await updateOnboardingField(onboarding.onboardingItemId, step.columnId, value);
+  const saveOnbStep = useCallback((step: OnboardingStep, value: string) => {
+    const snapshot = onboarding;
+    const prevPayment = c?.paymentOnFile ?? '';
+    const isPayment = step.columnId === 'dropdown_mm47xxjv'; // lives on Clients board
+
+    // 1) Optimistic — reflect the new status (and recomputed %) right away so
+    //    the checklist looks like it updated instantly.
+    setOnboarding(prev => {
+      if (!prev) return prev;
+      const steps = prev.steps.map(s =>
+        s.columnId === step.columnId ? { ...s, value, state: stepState(value, s.invertLogic) } : s,
+      );
+      return { ...prev, steps, progress: onboardingProgress(steps) };
+    });
+    if (isPayment) setLocal(l => (l ? { ...l, paymentOnFile: value } : l));
+
+    // 2) Persist to Monday in the background; reconcile on success, revert on failure.
+    (async () => {
+      try {
+        if (isPayment) await updateClientField(clientId, step.columnId, value, 'dropdown');
+        else if (snapshot?.onboardingItemId) await updateOnboardingField(snapshot.onboardingItemId, step.columnId, value);
+        // Best-effort reconcile with the server's authoritative state.
+        fetchClientOnboarding(clientId).then(setOnboarding).catch(() => {});
+      } catch {
+        setOnboarding(snapshot);
+        if (isPayment) setLocal(l => (l ? { ...l, paymentOnFile: prevPayment } : l));
+        Alert.alert('Couldn’t save', 'Please try again.');
       }
-      // Re-pull to recompute progress + step states.
-      fetchClientOnboarding(clientId).then(setOnboarding).catch(() => {});
-    } catch {
-      Alert.alert('Couldn’t save', 'Please try again.');
-    }
-  }, [clientId, onboarding]);
+    })();
+  }, [clientId, onboarding, c]);
 
   const pickerOptions = useMemo(() => {
     if (!picker) return [];
