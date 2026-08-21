@@ -6,7 +6,7 @@
 import { API_BASE_URL, FORCE_MOCK } from '@/config';
 import { readCache } from './cache';
 import { MOCK_CLIENTS, MOCK_INDEX, MOCK_TASKS } from './mock';
-import type { ClientDetail, ClientDoc, ClientIndexEntry, DeliveryEvent, StickyNote, Task, TaskBoardInfo } from './types';
+import type { ClientDetail, ClientDoc, ClientIndexEntry, DeliveryEvent, OnboardingInfo, OnboardingStep, StickyNote, Task, TaskBoardInfo } from './types';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 export class AuthError extends Error {
@@ -213,6 +213,26 @@ export async function fetchDeliveries(): Promise<DeliveryEvent[]> {
     }))
     .filter(e => /^\d{4}-\d{2}-\d{2}$/.test(e.date))
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// ─── Onboarding checklist (from the client's onboarding item) ────────────────
+function stepState(value: string, invert?: boolean): OnboardingStep['state'] {
+  const v = String(value || '').trim().toLowerCase();
+  if (!v) return 'pending';
+  if (/^(n\/?a|not connecting|no store)/.test(v)) return 'na';
+  if (invert) return v === 'no' ? 'done' : 'pending'; // e.g. "Tech Demo Required": No = handled
+  if (/^(done|yes|complete|completed|sent|signed|received|delivered)/.test(v)) return 'done';
+  return 'pending';
+}
+export async function fetchClientOnboarding(clientBoardItemId: string): Promise<OnboardingInfo | null> {
+  if (useMock()) return null;
+  const data = await apiGet<{ items: any[] }>('/api/onboarding-items');
+  const item = (data.items ?? []).find(i => String(i.clientBoardItemId ?? '') === String(clientBoardItemId));
+  if (!item) return null;
+  const steps: OnboardingStep[] = (item.checklist ?? [])
+    .filter((s: any) => s && s.label)
+    .map((s: any) => ({ label: String(s.label), state: stepState(s.value, s.invertLogic) }));
+  return { progress: Math.max(0, Math.min(100, Number(item.progress ?? 0))), steps };
 }
 
 /** Save one client field to Monday (columnId comes from EDITABLE_FIELDS). */

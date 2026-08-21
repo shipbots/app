@@ -4,12 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { writeCache } from '@/api/cache';
-import { fetchAgents, fetchClientDocs, fetchColumnOptions, getClient, updateClientField } from '@/api/client';
+import { fetchAgents, fetchClientDocs, fetchClientOnboarding, fetchColumnOptions, getClient, updateClientField } from '@/api/client';
 import { SECTIONS, valueTypeFor, type Field } from '@/api/fields';
 import { useAuth } from '@/auth';
-import type { ClientDetail, ClientDoc } from '@/api/types';
+import type { ClientDetail, ClientDoc, OnboardingInfo } from '@/api/types';
 import { API_BASE_URL } from '@/config';
 import { CollapsibleSection } from '@/components/collapsible-section';
+import { ContactCards } from '@/components/contact-cards';
+import { OnboardingChecklist } from '@/components/onboarding-checklist';
 import { OptionPicker } from '@/components/option-picker';
 import { StickyNotes } from '@/components/sticky-notes';
 import { ThemedText } from '@/components/themed-text';
@@ -42,13 +44,15 @@ export default function ClientDetailScreen() {
   const [options, setOptions] = useState<Record<string, string[]>>({});
   const [agents, setAgents] = useState<string[]>([]);
   const [docs, setDocs] = useState<ClientDoc[]>([]);
+  const [onboarding, setOnboarding] = useState<OnboardingInfo | null>(null);
 
   useEffect(() => { if (fetched) setLocal(fetched); }, [fetched]);
   useEffect(() => {
     fetchColumnOptions().then(setOptions).catch(() => {});
     fetchAgents().then(setAgents).catch(() => {});
     fetchClientDocs(clientId).then(setDocs).catch(() => {});
-  }, [clientId]);
+    if (isAdmin) fetchClientOnboarding(clientId).then(setOnboarding).catch(() => {});
+  }, [clientId, isAdmin]);
 
   const c = local ?? fetched;
 
@@ -127,15 +131,30 @@ export default function ClientDetailScreen() {
           <Pill text={c.portalDropdown || 'Set platform'} bg={c.portalDropdown ? '#e6f8ff' : '#f3f4f6'} fg={c.portalDropdown ? '#015280' : '#9ca3af'} onPress={() => openPill('portalDropdown')} />
         </View>
 
-        <View style={{ height: Spacing.two }} />
+        <View style={{ height: Spacing.three }} />
+
+        {/* Contacts — swipeable cards above the sticky notes */}
+        <ContactCards client={c} />
 
         {/* Sticky notes */}
         <StickyNotes clientId={clientId} />
+
+        {/* Onboarding checklist — onboarding-access users */}
+        {isAdmin && onboarding && onboarding.steps.length > 0 && (
+          <View style={{ marginTop: Spacing.three }}>
+            <CollapsibleSection title="Onboarding Checklist" defaultOpen>
+              <OnboardingChecklist info={onboarding} />
+            </CollapsibleSection>
+          </View>
+        )}
 
         {/* Sections */}
         {SECTIONS.map(section => {
           // Billing/pricing only for users with DocuSign or onboarding access.
           if (section.gated === 'billing' && !canSeeBilling) return null;
+          // Read mode shows contacts as the swipeable cards above; the editable
+          // Contact Info section only appears in edit mode.
+          if (section.id === 'contacts' && !editing) return null;
           const visible = editing
             ? section.fields
             : section.fields.filter(f => (c[f.key] ?? '').trim());
@@ -258,7 +277,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.four },
   scroll: { padding: Spacing.three },
-  name: { fontSize: 22, lineHeight: 28 },
+  name: { fontSize: 25, lineHeight: 30, fontWeight: '800', letterSpacing: -0.3 },
   pills: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginTop: Spacing.two },
   pill: { flexDirection: 'row', alignItems: 'center', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.three, paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth },

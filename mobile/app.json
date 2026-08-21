@@ -14,7 +14,7 @@
       "package": "com.shipbots.cs",
       "adaptiveIcon": {
         "backgroundColor": "#ffffff",
-        "foregroundImage": "./assets/images/shipbots-logo.png"
+        "foregroundImage": "./assets/images/shipbots-adaptive-fg.png"
       },
       "predictiveBackGestureEnabled": false
     },

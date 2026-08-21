@@ -38,6 +38,17 @@ export interface StickyNote {
   y?: number;
 }
 
+/** One onboarding checklist step (from the onboarding item's checklist). */
+export interface OnboardingStep {
+  label: string;
+  state: 'done' | 'pending' | 'na';
+}
+/** A client's onboarding progress (from /api/onboarding-items). */
+export interface OnboardingInfo {
+  progress: number; // 0–100, server-computed
+  steps: OnboardingStep[];
+}
+
 /** A document/link attached to a client. */
 export interface ClientDoc {
   name: string;

@@ -1,0 +1,53 @@
+import { StyleSheet, View } from 'react-native';
+
+import type { OnboardingInfo } from '@/api/types';
+import { Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { ThemedText } from './themed-text';
+
+/** Progress bar + step list for a client's onboarding checklist. */
+export function OnboardingChecklist({ info }: { info: OnboardingInfo }) {
+  const theme = useTheme();
+  const done = info.steps.filter(s => s.state === 'done').length;
+  const applicable = info.steps.filter(s => s.state !== 'na').length;
+  const barColor = info.progress >= 100 ? theme.success : theme.tint;
+
+  return (
+    <View>
+      <View style={styles.head}>
+        <ThemedText type="small" themeColor="textSecondary">{done} of {applicable} done</ThemedText>
+        <ThemedText type="smallBold" style={{ color: barColor }}>{info.progress}%</ThemedText>
+      </View>
+      <View style={[styles.track, { backgroundColor: theme.backgroundElement }]}>
+        <View style={[styles.fill, { width: `${info.progress}%`, backgroundColor: barColor }]} />
+      </View>
+
+      <View style={styles.steps}>
+        {info.steps.map((s, i) => (
+          <View key={i} style={styles.step}>
+            <ThemedText style={styles.icon}>
+              {s.state === 'done' ? '✅' : s.state === 'na' ? '➖' : '⬜️'}
+            </ThemedText>
+            <ThemedText
+              type="small"
+              style={[styles.label, { color: s.state === 'na' ? theme.muted : theme.text }, s.state === 'na' && styles.na]}
+              numberOfLines={2}>
+              {s.label}
+            </ThemedText>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  track: { height: 8, borderRadius: 4, overflow: 'hidden' },
+  fill: { height: 8, borderRadius: 4 },
+  steps: { marginTop: Spacing.three, gap: 8 },
+  step: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  icon: { fontSize: 15, width: 20, textAlign: 'center' },
+  label: { flex: 1, fontWeight: '600' },
+  na: { textDecorationLine: 'line-through' },
+});
