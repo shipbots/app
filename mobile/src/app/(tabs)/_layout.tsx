@@ -3,6 +3,7 @@ import { Image, Pressable, Text, View } from 'react-native';
 
 import { useAuth } from '@/auth';
 import { ThemedText } from '@/components/themed-text';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { HeaderBg } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -42,6 +43,7 @@ export default function TabsLayout() {
         headerTintColor: '#ffffff',
         headerTitleAlign: 'center',
         headerTitle: () => <LogoTitle />,
+        headerLeft: () => <ThemeToggle />,
       }}>
       <Tabs.Screen
         name="index"

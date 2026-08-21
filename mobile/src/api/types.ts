@@ -41,11 +41,16 @@ export interface StickyNote {
 /** One onboarding checklist step (from the onboarding item's checklist). */
 export interface OnboardingStep {
   label: string;
+  columnId: string;      // Monday column id (for editing the status)
+  value: string;         // current status label
+  options: string[];     // valid status labels
+  invertLogic: boolean;  // "No" = done (e.g. Tech Demo Required)
   state: 'done' | 'pending' | 'na';
 }
 /** A client's onboarding progress (from /api/onboarding-items). */
 export interface OnboardingInfo {
-  progress: number; // 0–100, server-computed
+  onboardingItemId: string; // Onboarding-board item id (for PATCHing steps)
+  progress: number;         // 0–100, server-computed
   steps: OnboardingStep[];
 }
 

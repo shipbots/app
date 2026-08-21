@@ -231,8 +231,26 @@ export async function fetchClientOnboarding(clientBoardItemId: string): Promise<
   if (!item) return null;
   const steps: OnboardingStep[] = (item.checklist ?? [])
     .filter((s: any) => s && s.label)
-    .map((s: any) => ({ label: String(s.label), state: stepState(s.value, s.invertLogic) }));
-  return { progress: Math.max(0, Math.min(100, Number(item.progress ?? 0))), steps };
+    .map((s: any) => ({
+      label: String(s.label),
+      columnId: String(s.id ?? ''),
+      value: String(s.value ?? ''),
+      options: Array.isArray(s.options) ? s.options.map(String) : [],
+      invertLogic: !!s.invertLogic,
+      state: stepState(s.value, s.invertLogic),
+    }));
+  return {
+    onboardingItemId: String(item.id ?? ''),
+    progress: Math.max(0, Math.min(100, Number(item.progress ?? 0))),
+    steps,
+  };
+}
+
+/** Save one onboarding-board checklist status. Payment lives on the Clients
+ *  board, so route that one column to the client PATCH instead. */
+export async function updateOnboardingField(onboardingItemId: string, columnId: string, value: string): Promise<void> {
+  if (useMock()) return;
+  await apiPatch(`/api/onboarding/${onboardingItemId}`, { columnId, value });
 }
 
 /** Save one client field to Monday (columnId comes from EDITABLE_FIELDS). */

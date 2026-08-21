@@ -1,8 +1,9 @@
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 
 import { findClientIdByName, getTasks } from '@/api/client';
+import { scheduleTaskReminders } from '@/lib/notifications';
 import type { Task } from '@/api/types';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -16,6 +17,9 @@ export default function TasksScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { data, loading, refreshing, refresh, error } = useCached('tasks', getTasks);
+
+  // Schedule day-before + day-of (10am) reminders whenever the task list changes.
+  useEffect(() => { if (data) scheduleTaskReminders(data); }, [data]);
 
   // Refetch when returning to the tab (e.g. after completing a task) — skip the
   // very first focus since useCached already loads on mount.

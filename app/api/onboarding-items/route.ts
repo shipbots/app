@@ -28,7 +28,11 @@ export async function GET() {
     const alerts = computeAlerts(items);
     return NextResponse.json({ items, alerts }, {
       headers: {
-        'Cache-Control': 'private, max-age=60, stale-while-revalidate=300',
+        // No HTTP caching: the client SWR caches (web localStorage / mobile
+        // AsyncStorage) already paint instantly, and an aggressive max-age here
+        // made background revalidations return the OLD response for minutes —
+        // so a date edit in Monday wouldn't show until the cache expired.
+        'Cache-Control': 'no-store, must-revalidate',
       },
     });
   } catch (error) {

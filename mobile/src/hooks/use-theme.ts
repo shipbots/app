@@ -4,9 +4,8 @@
  */
 
 import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useThemePref } from '@/theme-pref';
 
 export function useTheme() {
-  const scheme = useColorScheme();
-  return Colors[scheme === 'dark' ? 'dark' : 'light'];
+  return Colors[useThemePref().scheme];
 }

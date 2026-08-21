@@ -4,10 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { writeCache } from '@/api/cache';
-import { fetchAgents, fetchClientDocs, fetchClientOnboarding, fetchColumnOptions, getClient, updateClientField } from '@/api/client';
+import { fetchAgents, fetchClientDocs, fetchClientOnboarding, fetchColumnOptions, getClient, updateClientField, updateOnboardingField } from '@/api/client';
 import { SECTIONS, valueTypeFor, type Field } from '@/api/fields';
 import { useAuth } from '@/auth';
-import type { ClientDetail, ClientDoc, OnboardingInfo } from '@/api/types';
+import type { ClientDetail, ClientDoc, OnboardingInfo, OnboardingStep } from '@/api/types';
 import { API_BASE_URL } from '@/config';
 import { CollapsibleSection } from '@/components/collapsible-section';
 import { ContactCards } from '@/components/contact-cards';
@@ -45,6 +45,7 @@ export default function ClientDetailScreen() {
   const [agents, setAgents] = useState<string[]>([]);
   const [docs, setDocs] = useState<ClientDoc[]>([]);
   const [onboarding, setOnboarding] = useState<OnboardingInfo | null>(null);
+  const [onbStep, setOnbStep] = useState<OnboardingStep | null>(null);
 
   useEffect(() => { if (fetched) setLocal(fetched); }, [fetched]);
   useEffect(() => {
@@ -70,6 +71,22 @@ export default function ClientDetailScreen() {
       setSavingKey(null);
     }
   }, [clientId, c]);
+
+  const saveOnbStep = useCallback(async (step: OnboardingStep, value: string) => {
+    try {
+      if (step.columnId === 'dropdown_mm47xxjv') {
+        // "Payment on file" lives on the Clients board, not the onboarding item.
+        await updateClientField(clientId, step.columnId, value, 'dropdown');
+        setLocal(l => (l ? { ...l, paymentOnFile: value } : l));
+      } else if (onboarding?.onboardingItemId) {
+        await updateOnboardingField(onboarding.onboardingItemId, step.columnId, value);
+      }
+      // Re-pull to recompute progress + step states.
+      fetchClientOnboarding(clientId).then(setOnboarding).catch(() => {});
+    } catch {
+      Alert.alert('Couldn’t save', 'Please try again.');
+    }
+  }, [clientId, onboarding]);
 
   const pickerOptions = useMemo(() => {
     if (!picker) return [];
@@ -139,11 +156,21 @@ export default function ClientDetailScreen() {
         {/* Sticky notes */}
         <StickyNotes clientId={clientId} />
 
-        {/* Onboarding checklist — onboarding-access users */}
+        {/* Onboarding checklist — onboarding-access users; collapsed by default,
+            tap the header to expand, tap a step to change its status. */}
         {isAdmin && onboarding && onboarding.steps.length > 0 && (
           <View style={{ marginTop: Spacing.three }}>
-            <CollapsibleSection title="Onboarding Checklist" defaultOpen>
-              <OnboardingChecklist info={onboarding} />
+            <CollapsibleSection
+              title="Onboarding Checklist"
+              defaultOpen={false}
+              badge={
+                <View style={[styles.obBadge, { backgroundColor: onboarding.progress >= 100 ? '#ecfdf5' : '#e6f8ff' }]}>
+                  <ThemedText style={{ fontSize: 11, fontWeight: '800', color: onboarding.progress >= 100 ? '#047857' : '#015280' }}>
+                    {onboarding.progress >= 100 ? '✓ Complete' : `${onboarding.progress}%`}
+                  </ThemedText>
+                </View>
+              }>
+              <OnboardingChecklist info={onboarding} onEdit={setOnbStep} />
             </CollapsibleSection>
           </View>
         )}
@@ -199,6 +226,15 @@ export default function ClientDetailScreen() {
         current={picker ? c[picker.key] : undefined}
         onSelect={value => { if (picker) saveField(picker, value); setPicker(null); }}
         onClose={() => setPicker(null)}
+      />
+
+      <OptionPicker
+        visible={!!onbStep}
+        title={onbStep?.label ?? ''}
+        options={onbStep?.options ?? []}
+        current={onbStep?.value}
+        onSelect={value => { if (onbStep) saveOnbStep(onbStep, value); setOnbStep(null); }}
+        onClose={() => setOnbStep(null)}
       />
     </ThemedView>
   );
@@ -280,6 +316,7 @@ const styles = StyleSheet.create({
   name: { fontSize: 25, lineHeight: 30, fontWeight: '800', letterSpacing: -0.3 },
   pills: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginTop: Spacing.two },
   pill: { flexDirection: 'row', alignItems: 'center', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
+  obBadge: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999 },
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.three, paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth },
   block: { paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth },
   label: { width: 100, flexShrink: 0, paddingTop: 2 },

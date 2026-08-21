@@ -26,6 +26,7 @@ export function StickyNotes({ clientId }: { clientId: string }) {
   const [busy, setBusy] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
+  const [showComposer, setShowComposer] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -43,6 +44,7 @@ export function StickyNotes({ clientId }: { clientId: string }) {
       const note = await addStickyNote(clientId, text, color);
       setNotes(prev => [note, ...prev]);
       setDraft('');
+      setShowComposer(false);
     } catch {
       Alert.alert('Couldn’t add note', 'Please try again.');
     } finally {
@@ -73,37 +75,50 @@ export function StickyNotes({ clientId }: { clientId: string }) {
 
   return (
     <View style={[styles.wrap, { backgroundColor: theme.notesBg, borderColor: theme.border }]}>
-      <ThemedText style={[styles.header, { color: theme.tint }]}>
-        📌 Sticky notes{notes.length ? ` · ${notes.length}` : ''}
-      </ThemedText>
-
-      <View style={[styles.composer, { borderColor: theme.inputBorder, backgroundColor: theme.card }]}>
-        <TextInput
-          value={draft}
-          onChangeText={setDraft}
-          placeholder="Add a note…"
-          placeholderTextColor={theme.textSecondary}
-          multiline
-          style={[styles.input, { color: theme.text }]}
-        />
-        <View style={styles.composerBar}>
-          <View style={styles.dots}>
-            {NOTE_COLOR_KEYS.map(k => (
-              <Pressable
-                key={k}
-                onPress={() => setColor(k)}
-                style={[styles.dot, { backgroundColor: NoteColors[k].border, borderWidth: color === k ? 2 : 0, borderColor: theme.text }]}
-              />
-            ))}
-          </View>
-          <Pressable
-            onPress={add}
-            disabled={busy || !draft.trim()}
-            style={[styles.addBtn, { backgroundColor: theme.tint, opacity: busy || !draft.trim() ? 0.5 : 1 }]}>
-            <ThemedText style={styles.addTxt}>Add</ThemedText>
-          </Pressable>
-        </View>
+      <View style={styles.headerRow}>
+        <ThemedText style={[styles.header, { color: theme.tint }]}>
+          📌 Sticky notes{notes.length ? ` · ${notes.length}` : ''}
+        </ThemedText>
+        <Pressable
+          onPress={() => setShowComposer(s => !s)}
+          hitSlop={8}
+          style={[styles.addToggle, { backgroundColor: showComposer ? theme.backgroundElement : theme.tint }]}>
+          <ThemedText style={[styles.addToggleTxt, { color: showComposer ? theme.textSecondary : '#fff' }]}>
+            {showComposer ? '✕ Close' : '+ Add'}
+          </ThemedText>
+        </Pressable>
       </View>
+
+      {showComposer && (
+        <View style={[styles.composer, { borderColor: theme.inputBorder, backgroundColor: theme.card }]}>
+          <TextInput
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="Add a note…"
+            placeholderTextColor={theme.textSecondary}
+            autoFocus
+            multiline
+            style={[styles.input, { color: theme.text }]}
+          />
+          <View style={styles.composerBar}>
+            <View style={styles.dots}>
+              {NOTE_COLOR_KEYS.map(k => (
+                <Pressable
+                  key={k}
+                  onPress={() => setColor(k)}
+                  style={[styles.dot, { backgroundColor: NoteColors[k].border, borderWidth: color === k ? 2 : 0, borderColor: theme.text }]}
+                />
+              ))}
+            </View>
+            <Pressable
+              onPress={add}
+              disabled={busy || !draft.trim()}
+              style={[styles.addBtn, { backgroundColor: theme.tint, opacity: busy || !draft.trim() ? 0.5 : 1 }]}>
+              <ThemedText style={styles.addTxt}>Add</ThemedText>
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       {loading ? (
         <ActivityIndicator color={theme.tint} style={{ marginTop: 10 }} />
@@ -152,8 +167,11 @@ export function StickyNotes({ clientId }: { clientId: string }) {
 
 const styles = StyleSheet.create({
   wrap: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, padding: Spacing.three, marginBottom: Spacing.two },
-  header: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: Spacing.two },
-  composer: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 8, padding: Spacing.two },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.two },
+  header: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
+  addToggle: { paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999 },
+  addToggleTxt: { fontSize: 12, fontWeight: '700' },
+  composer: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 8, padding: Spacing.two, marginBottom: Spacing.one },
   input: { minHeight: 40, fontSize: 14, textAlignVertical: 'top' },
   composerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.two },
   dots: { flexDirection: 'row', gap: 8 },

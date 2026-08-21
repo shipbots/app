@@ -2,16 +2,18 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
 
 import { AuthProvider, useAuth } from '@/auth';
+import { useTaskReminderTaps } from '@/lib/notifications';
+import { prefetchAllData } from '@/lib/prefetch';
 import { Colors, HeaderBg } from '@/constants/theme';
+import { ThemePrefProvider, useThemePref } from '@/theme-pref';
 
 SplashScreen.preventAutoHideAsync();
 
 function RootNavigator() {
-  const scheme = useColorScheme();
-  const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
+  const scheme = useThemePref().scheme;
+  const colors = Colors[scheme];
   const { token, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
@@ -28,6 +30,15 @@ function RootNavigator() {
     else if (token && inSignIn) router.replace('/');
   }, [token, loading, segments, router]);
 
+  // Open the task when a due-date reminder notification is tapped.
+  useTaskReminderTaps();
+
+  // On open (once signed in): pull all Monday data into the on-device cache for
+  // fast + offline access; refreshes only what changed.
+  useEffect(() => {
+    if (token) prefetchAllData();
+  }, [token]);
+
   return (
     <Stack
       screenOptions={{
@@ -40,17 +51,26 @@ function RootNavigator() {
       <Stack.Screen name="client/[id]" options={{ title: 'Client' }} />
       <Stack.Screen name="task/[id]" options={{ title: 'Task' }} />
       <Stack.Screen name="sign-in" options={{ headerShown: false }} />
+      <Stack.Screen name="auth" options={{ headerShown: false }} />
     </Stack>
   );
 }
 
-export default function RootLayout() {
-  const scheme = useColorScheme();
+function ThemedRoot() {
+  const scheme = useThemePref().scheme;
   return (
-    <AuthProvider>
-      <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <RootNavigator />
-      </ThemeProvider>
-    </AuthProvider>
+    <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <RootNavigator />
+    </ThemeProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <ThemePrefProvider>
+      <AuthProvider>
+        <ThemedRoot />
+      </AuthProvider>
+    </ThemePrefProvider>
   );
 }

@@ -1,5 +1,5 @@
-import { useRouter } from 'expo-router';
-import { useMemo } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useMemo, useRef } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 
 import { fetchDeliveries } from '@/api/client';
@@ -44,6 +44,16 @@ export default function TimelineScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { data, loading, refreshing, refresh } = useCached('deliveries', fetchDeliveries);
+
+  // Re-pull when the tab regains focus (skip the initial mount) so a date change
+  // in Monday shows up without a manual pull-to-refresh.
+  const first = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (first.current) { first.current = false; return; }
+      refresh();
+    }, [refresh]),
+  );
   const today = todayStr();
 
   const { rows, pastDue, upcoming } = useMemo(() => {
