@@ -40,7 +40,15 @@ function parseYMD(s: string | null | undefined): Date | null {
 }
 function formatDate(s: string | null): string {
   const d = parseYMD(s);
-  return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+  if (!d) return '';
+  // Show the year only when it isn't the current one — so an off-by-a-year
+  // data-entry slip (e.g. a Monday date picker landing on 2025) renders as
+  // "Sep 1, 2025" instead of a deceptively fine-looking "Sep 1".
+  const opts: Intl.DateTimeFormatOptions =
+    d.getFullYear() === new Date().getFullYear()
+      ? { month: 'short', day: 'numeric' }
+      : { month: 'short', day: 'numeric', year: 'numeric' };
+  return d.toLocaleDateString('en-US', opts);
 }
 // The date `n` business days (Mon–Fri) after `start`, at local midnight. Used to
 // flag deliveries landing within the next few business days.

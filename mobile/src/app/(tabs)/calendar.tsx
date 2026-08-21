@@ -21,7 +21,15 @@ function firstName(email?: string) {
 function fmt(date: string) {
   const [y, m, d] = date.split('-').map(Number);
   const dt = new Date(y, m - 1, d);
-  return isNaN(+dt) ? date : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (isNaN(+dt)) return date;
+  // Show the year only when it isn't the current one, so a wrong-year date
+  // (e.g. a "Sep 1" that's really 2025) is immediately visible instead of
+  // looking like a fine near-future date.
+  const opts: Intl.DateTimeFormatOptions =
+    y === new Date().getFullYear()
+      ? { month: 'short', day: 'numeric' }
+      : { month: 'short', day: 'numeric', year: 'numeric' };
+  return dt.toLocaleDateString('en-US', opts);
 }
 function todayStr() {
   const d = new Date();
