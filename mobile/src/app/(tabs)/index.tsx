@@ -4,7 +4,7 @@ import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Tex
 
 import { fetchClientIndex, filterClients } from '@/api/client';
 import { useAuth } from '@/auth';
-import { ClientFilterSheet, EMPTY_FILTERS, type FilterDim, type FilterKey, type Selected } from '@/components/client-filter-sheet';
+import { ClientFilterSheet, EMPTY_FILTERS, NONE_VALUE, type FilterDim, type FilterKey, type Selected } from '@/components/client-filter-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Shadow, Spacing } from '@/constants/theme';
@@ -30,10 +30,10 @@ function initials(name: string) {
 // The dimensions the client list can be filtered by. Options for each come from
 // the distinct values in the loaded index, so nothing is hardcoded.
 const FILTER_DIMS: FilterDim[] = [
-  { key: 'warehouse', label: 'Warehouse', display: v => v },
-  { key: 'subWarehouse', label: 'Sub-warehouse', display: v => v },
-  { key: 'agentEmail', label: 'Agent', display: v => firstName(v) || v },
-  { key: 'portal', label: 'Platform (AppDot / Portal)', display: v => v },
+  { key: 'warehouse', label: 'Warehouse', noneLabel: 'No warehouse', display: v => v },
+  { key: 'subWarehouse', label: 'Sub-warehouse', noneLabel: 'No sub-warehouse', display: v => v },
+  { key: 'agentEmail', label: 'Agent', noneLabel: 'No agent', display: v => firstName(v) || v },
+  { key: 'portal', label: 'Platform (AppDot / Portal)', noneLabel: 'No platform', display: v => v },
 ];
 
 export default function ClientsScreen() {
@@ -54,22 +54,27 @@ export default function ClientsScreen() {
     return list;
   }, [index, filter, me]);
 
-  // Distinct options per filter dimension (from the segment-scoped list).
+  // Distinct options per filter dimension (from the segment-scoped list). If any
+  // client is missing the field, a "None" sentinel is offered so you can filter
+  // for who's unset (e.g. no warehouse / no agent).
   const facetOptions = useMemo(() => {
     const opts: Record<FilterKey, string[]> = { warehouse: [], subWarehouse: [], agentEmail: [], portal: [] };
     for (const dim of FILTER_DIMS) {
       const set = new Set<string>();
-      for (const c of scoped) { const v = (c[dim.key] ?? '').trim(); if (v) set.add(v); }
-      opts[dim.key] = [...set].sort((a, b) => a.localeCompare(b));
+      let hasEmpty = false;
+      for (const c of scoped) { const v = (c[dim.key] ?? '').trim(); if (v) set.add(v); else hasEmpty = true; }
+      const sorted = [...set].sort((a, b) => a.localeCompare(b));
+      opts[dim.key] = hasEmpty ? [NONE_VALUE, ...sorted] : sorted;
     }
     return opts;
   }, [scoped]);
 
-  // Apply the selected filters: OR within a dimension, AND across dimensions.
+  // Apply the selected filters: OR within a dimension, AND across dimensions. A
+  // client's empty field is treated as NONE_VALUE so the "None" chip matches it.
   const faceted = useMemo(() => {
     const active = FILTER_DIMS.map(d => d.key).filter(k => filters[k].length > 0);
     if (active.length === 0) return scoped;
-    return scoped.filter(c => active.every(k => filters[k].includes((c[k] ?? '').trim())));
+    return scoped.filter(c => active.every(k => filters[k].includes((c[k] ?? '').trim() || NONE_VALUE)));
   }, [scoped, filters]);
 
   const rows = useMemo(() => filterClients(faceted, query), [faceted, query]);
