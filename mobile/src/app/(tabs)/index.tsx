@@ -125,6 +125,12 @@ export default function ClientsScreen() {
             </ThemedText>
           </Pressable>
         </View>
+
+        {activeFilterCount > 0 && (
+          <ThemedText type="small" style={[styles.filterCount, { color: theme.tint }]}>
+            {rows.length} {rows.length === 1 ? 'client matches' : 'clients match'} your filters
+          </ThemedText>
+        )}
       </View>
 
       {loading ? (
@@ -194,6 +200,7 @@ const styles = StyleSheet.create({
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   searchBox: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, height: 42, borderRadius: 12, paddingHorizontal: Spacing.three },
   filterBtn: { height: 42, borderRadius: 12, paddingHorizontal: Spacing.three, alignItems: 'center', justifyContent: 'center' },
+  filterCount: { fontWeight: '700', paddingHorizontal: 2 },
   input: { flex: 1, fontSize: 16, height: '100%' },
   list: { padding: Spacing.three, gap: Spacing.two },
   empty: { textAlign: 'center', marginTop: Spacing.five },
