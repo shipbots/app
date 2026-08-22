@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth';
@@ -28,6 +28,11 @@ export function SignInScreen() {
     <ThemedView style={styles.flex}>
       <SafeAreaView style={styles.safe}>
         <View style={styles.hero}>
+          <Image
+            source={require('@/assets/images/shipbots-logo.png')}
+            style={styles.logoImg}
+            resizeMode="contain"
+          />
           <ThemedText style={[styles.logo, { color: theme.tint }]}>ShipBots CS</ThemedText>
           <ThemedText type="small" themeColor="textSecondary" style={styles.tagline}>
             Sign in with your ShipBots Google account to view live client data.
@@ -82,7 +87,9 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   safe: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing.four, gap: Spacing.three },
   hero: { alignItems: 'center', gap: Spacing.two, marginBottom: Spacing.three },
-  logo: { fontSize: 34, fontWeight: '800' },
+  logoImg: { width: 88, height: 88, borderRadius: 22, marginBottom: Spacing.two },
+  // Explicit lineHeight + padding stop the tall/bold title from clipping on Android.
+  logo: { fontSize: 34, lineHeight: 42, fontWeight: '800', textAlign: 'center', paddingVertical: 2 },
   tagline: { textAlign: 'center', paddingHorizontal: Spacing.three },
   primaryBtn: { height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   primaryLabel: { color: '#fff', fontSize: 16, fontWeight: '700' },
