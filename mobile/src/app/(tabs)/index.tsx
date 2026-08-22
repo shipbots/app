@@ -30,11 +30,22 @@ function initials(name: string) {
 // The dimensions the client list can be filtered by. Options for each come from
 // the distinct values in the loaded index, so nothing is hardcoded.
 const FILTER_DIMS: FilterDim[] = [
-  { key: 'warehouse', label: 'Warehouse', noneLabel: 'No warehouse', display: v => v },
-  { key: 'subWarehouse', label: 'Sub-warehouse', noneLabel: 'No sub-warehouse', display: v => v },
+  { key: 'warehouse', label: 'Warehouse', noneLabel: 'No warehouse', display: v => v, multi: true },
+  { key: 'subWarehouse', label: 'Sub-warehouse', noneLabel: 'No sub-warehouse', display: v => v, multi: true },
   { key: 'agentEmail', label: 'Agent', noneLabel: 'No agent', display: v => firstName(v) || v },
-  { key: 'portal', label: 'Platform (AppDot / Portal)', noneLabel: 'No platform', display: v => v },
+  { key: 'portal', label: 'Platform (AppDot / Portal)', noneLabel: 'No platform', display: v => v, multi: true },
 ];
+
+// A client's value(s) for a dimension as a token list. Multi-value fields are
+// comma-separated in Monday ("Gardena, Atlanta"); an empty field becomes the
+// NONE sentinel so the "No <field>" chip can match it.
+function tokensFor(raw: string, multi?: boolean): string[] {
+  const v = (raw ?? '').trim();
+  if (!v) return [NONE_VALUE];
+  if (!multi) return [v];
+  const toks = v.split(',').map(s => s.trim()).filter(Boolean);
+  return toks.length ? toks : [NONE_VALUE];
+}
 
 export default function ClientsScreen() {
   const theme = useTheme();
@@ -62,19 +73,32 @@ export default function ClientsScreen() {
     for (const dim of FILTER_DIMS) {
       const set = new Set<string>();
       let hasEmpty = false;
-      for (const c of scoped) { const v = (c[dim.key] ?? '').trim(); if (v) set.add(v); else hasEmpty = true; }
+      for (const c of scoped) {
+        const raw = (c[dim.key] ?? '').trim();
+        if (!raw) { hasEmpty = true; continue; }
+        // Multi-value fields split into individual chips (no combined option).
+        if (dim.multi) for (const t of raw.split(',').map(s => s.trim()).filter(Boolean)) set.add(t);
+        else set.add(raw);
+      }
       const sorted = [...set].sort((a, b) => a.localeCompare(b));
       opts[dim.key] = hasEmpty ? [NONE_VALUE, ...sorted] : sorted;
     }
     return opts;
   }, [scoped]);
 
-  // Apply the selected filters: OR within a dimension, AND across dimensions. A
-  // client's empty field is treated as NONE_VALUE so the "None" chip matches it.
+  // Apply the selected filters (AND across dimensions). Within a dimension:
+  // multi-value fields require the client to have ALL selected values (so
+  // Gardena + Atlanta = in both warehouses); single-value fields match ANY.
   const faceted = useMemo(() => {
-    const active = FILTER_DIMS.map(d => d.key).filter(k => filters[k].length > 0);
-    if (active.length === 0) return scoped;
-    return scoped.filter(c => active.every(k => filters[k].includes((c[k] ?? '').trim() || NONE_VALUE)));
+    const activeDims = FILTER_DIMS.filter(d => filters[d.key].length > 0);
+    if (activeDims.length === 0) return scoped;
+    return scoped.filter(c =>
+      activeDims.every(dim => {
+        const sel = filters[dim.key];
+        const toks = tokensFor(c[dim.key] ?? '', dim.multi);
+        return dim.multi ? sel.every(s => toks.includes(s)) : sel.some(s => toks.includes(s));
+      }),
+    );
   }, [scoped, filters]);
 
   const rows = useMemo(() => filterClients(faceted, query), [faceted, query]);
