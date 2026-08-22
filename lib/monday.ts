@@ -206,6 +206,10 @@ export async function fetchOnboardingItems(): Promise<OnboardingItem[]> {
         item.deliveryQty = j.deliveryQty;
         item.warehouse = j.warehouse;
         item.subWarehouse = j.subWarehouse;
+        // Support agent lives on the Clients board; fill it so the timeline (and
+        // the mobile app, which reads item.supportAgentEmail) shows the assignee
+        // instead of "Unassigned".
+        item.supportAgentEmail = j.supportAgentEmail || item.supportAgentEmail;
 
         // Patch in checklist steps whose value lives on the Clients board.
         // Each such step matches by id; we mutate it in place so the rest of
@@ -268,6 +272,8 @@ type ClientBoardJoin = {
   deliveryQty: string;
   warehouse: string;
   subWarehouse: string;
+  /** Support agent email (Clients-board "Assigned" dropdown). */
+  supportAgentEmail: string;
   /** Raw text value (e.g. "Yes", "No", "") for every client-board checklist
    *  step, keyed by column id. */
   clientBoardColumns: Record<string, string>;
@@ -290,6 +296,7 @@ function clientBoardJoinColumnIds(): string[] {
     'text_mktravgn',    // Initial Inventory Qty
     'dropdown_mktxaege', // Warehouse Location
     'dropdown_mm5ftdxb', // Sub Warehouse Location
+    'dropdown_mkxx7xv',  // Support agent (email) — so item.supportAgentEmail fills
   ]);
   for (const step of CHECKLIST_STEPS) {
     if ((step.board ?? 'onboarding') === 'clients') set.add(step.id);
@@ -361,6 +368,7 @@ async function fetchClientBoardJoins(itemIds: string[]): Promise<Record<string, 
           deliveryQty: cvById['text_mktravgn']?.text ?? '',
           warehouse: cvById['dropdown_mktxaege']?.text ?? '',
           subWarehouse: cvById['dropdown_mm5ftdxb']?.text ?? '',
+          supportAgentEmail: cvById['dropdown_mkxx7xv']?.text ?? '',
           clientBoardColumns,
           settings,
         };
