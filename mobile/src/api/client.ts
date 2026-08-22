@@ -337,6 +337,17 @@ export async function updateTask(id: string, patch: TaskPatch): Promise<void> {
   await apiPatch(`/api/subitems/${id}`, patch);
 }
 
+/** Mark a task complete by setting its status to the board's "done"-like option.
+ *  Returns the label applied (so the UI can reflect it), or null in mock mode. */
+export async function completeTask(id: string): Promise<string | null> {
+  if (useMock()) return 'Done';
+  const info = await fetchTaskBoardInfo();
+  if (!info.boardId || !info.statusColumnId) throw new Error('Task board not configured');
+  const done = (info.statusOptions ?? []).find(o => /(done|complete|finished)/i.test(o)) ?? 'Done';
+  await updateTask(id, { boardId: info.boardId, statusColumnId: info.statusColumnId, status: done });
+  return done;
+}
+
 /** Resolve a client's Clients-board id from its name (for task → client link). */
 export async function findClientIdByName(name: string): Promise<string | null> {
   const target = name.trim().toLowerCase();

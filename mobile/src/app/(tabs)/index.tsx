@@ -4,6 +4,7 @@ import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Tex
 
 import { fetchClientIndex, filterClients } from '@/api/client';
 import { useAuth } from '@/auth';
+import { ClientFilterSheet, EMPTY_FILTERS, type FilterDim, type FilterKey, type Selected } from '@/components/client-filter-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Shadow, Spacing } from '@/constants/theme';
@@ -26,12 +27,23 @@ function initials(name: string) {
   return parts.map(p => p[0]?.toUpperCase() ?? '').join('') || '?';
 }
 
+// The dimensions the client list can be filtered by. Options for each come from
+// the distinct values in the loaded index, so nothing is hardcoded.
+const FILTER_DIMS: FilterDim[] = [
+  { key: 'warehouse', label: 'Warehouse', display: v => v },
+  { key: 'subWarehouse', label: 'Sub-warehouse', display: v => v },
+  { key: 'agentEmail', label: 'Agent', display: v => firstName(v) || v },
+  { key: 'portal', label: 'Platform (AppDot / Portal)', display: v => v },
+];
+
 export default function ClientsScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { email } = useAuth();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('active');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filters, setFilters] = useState<Selected>(EMPTY_FILTERS);
   const { data: index, loading, refreshing, error, refresh } = useCached('client-index', fetchClientIndex);
 
   const me = (email || '').toLowerCase();
@@ -41,7 +53,32 @@ export default function ClientsScreen() {
     if (filter === 'active') return list.filter(c => c.groupId !== EXITED_GROUP);
     return list;
   }, [index, filter, me]);
-  const rows = useMemo(() => filterClients(scoped, query), [scoped, query]);
+
+  // Distinct options per filter dimension (from the segment-scoped list).
+  const facetOptions = useMemo(() => {
+    const opts: Record<FilterKey, string[]> = { warehouse: [], subWarehouse: [], agentEmail: [], portal: [] };
+    for (const dim of FILTER_DIMS) {
+      const set = new Set<string>();
+      for (const c of scoped) { const v = (c[dim.key] ?? '').trim(); if (v) set.add(v); }
+      opts[dim.key] = [...set].sort((a, b) => a.localeCompare(b));
+    }
+    return opts;
+  }, [scoped]);
+
+  // Apply the selected filters: OR within a dimension, AND across dimensions.
+  const faceted = useMemo(() => {
+    const active = FILTER_DIMS.map(d => d.key).filter(k => filters[k].length > 0);
+    if (active.length === 0) return scoped;
+    return scoped.filter(c => active.every(k => filters[k].includes((c[k] ?? '').trim())));
+  }, [scoped, filters]);
+
+  const rows = useMemo(() => filterClients(faceted, query), [faceted, query]);
+  const activeFilterCount = (Object.values(filters) as string[][]).reduce((n, v) => n + v.length, 0);
+  const toggleFilter = (key: FilterKey, value: string) =>
+    setFilters(prev => ({
+      ...prev,
+      [key]: prev[key].includes(value) ? prev[key].filter(v => v !== value) : [...prev[key], value],
+    }));
   const welcome = firstName(email || '');
 
   const SEGMENTS: { key: Filter; label: string }[] = [
@@ -66,18 +103,27 @@ export default function ClientsScreen() {
           })}
         </View>
 
-        <View style={[styles.searchBox, { backgroundColor: theme.backgroundElement }]}>
-          <ThemedText style={{ color: theme.textSecondary }}>🔍</ThemedText>
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search clients, contacts, legal entity…"
-            placeholderTextColor={theme.textSecondary}
-            style={[styles.input, { color: theme.text }]}
-            autoCorrect={false}
-            autoCapitalize="none"
-            clearButtonMode="while-editing"
-          />
+        <View style={styles.searchRow}>
+          <View style={[styles.searchBox, { backgroundColor: theme.backgroundElement, flex: 1 }]}>
+            <ThemedText style={{ color: theme.textSecondary }}>🔍</ThemedText>
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search clients, contacts, legal entity…"
+              placeholderTextColor={theme.textSecondary}
+              style={[styles.input, { color: theme.text }]}
+              autoCorrect={false}
+              autoCapitalize="none"
+              clearButtonMode="while-editing"
+            />
+          </View>
+          <Pressable
+            onPress={() => setFilterOpen(true)}
+            style={[styles.filterBtn, { backgroundColor: activeFilterCount ? theme.tint : theme.backgroundElement }]}>
+            <ThemedText style={{ color: activeFilterCount ? '#fff' : theme.text, fontWeight: '700' }}>
+              ⚙︎ Filter{activeFilterCount ? ` · ${activeFilterCount}` : ''}
+            </ThemedText>
+          </Pressable>
         </View>
       </View>
 
@@ -94,7 +140,8 @@ export default function ClientsScreen() {
             <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
               {error ? 'Couldn’t load clients — pull to retry.'
                 : filter === 'my' ? 'No clients are assigned to you.'
-                : query ? `No clients match “${query}”.` : 'No clients.'}
+                : query ? `No clients match “${query}”.`
+                : activeFilterCount ? 'No clients match the selected filters.' : 'No clients.'}
             </ThemedText>
           }
           renderItem={({ item }) => (
@@ -124,6 +171,16 @@ export default function ClientsScreen() {
           )}
         />
       )}
+
+      <ClientFilterSheet
+        visible={filterOpen}
+        dims={FILTER_DIMS}
+        options={facetOptions}
+        selected={filters}
+        onToggle={toggleFilter}
+        onClear={() => setFilters(EMPTY_FILTERS)}
+        onClose={() => setFilterOpen(false)}
+      />
     </ThemedView>
   );
 }
@@ -134,7 +191,9 @@ const styles = StyleSheet.create({
   welcome: { fontSize: 15 },
   segments: { flexDirection: 'row', borderRadius: 10, padding: 3 },
   segment: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 8 },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   searchBox: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, height: 42, borderRadius: 12, paddingHorizontal: Spacing.three },
+  filterBtn: { height: 42, borderRadius: 12, paddingHorizontal: Spacing.three, alignItems: 'center', justifyContent: 'center' },
   input: { flex: 1, fontSize: 16, height: '100%' },
   list: { padding: Spacing.three, gap: Spacing.two },
   empty: { textAlign: 'center', marginTop: Spacing.five },
