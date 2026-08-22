@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Linking, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { API_BASE_URL } from '@/config';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+
+const MOBILE_LOGIN_URL = `${API_BASE_URL}/mobile-login`;
 
 export function SignInScreen() {
   const theme = useTheme();
@@ -14,6 +17,7 @@ export function SignInScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showPaste, setShowPaste] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
   const [code, setCode] = useState('');
 
   const run = async (fn: () => Promise<{ ok: boolean; error?: string }>) => {
@@ -52,11 +56,38 @@ export function SignInScreen() {
           </ThemedText>
         )}
 
-        <Pressable onPress={() => setShowPaste(v => !v)} style={styles.linkBtn}>
-          <ThemedText type="small" themeColor="tint">
-            {showPaste ? 'Hide' : 'Paste a sign-in code instead'}
-          </ThemedText>
-        </Pressable>
+        <View style={styles.linkRow}>
+          <Pressable onPress={() => setShowPaste(v => !v)} hitSlop={8} style={styles.linkBtn}>
+            <ThemedText type="small" themeColor="tint">
+              {showPaste ? 'Hide code sign-in' : 'Paste a sign-in code instead'}
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            onPress={() => setShowInfo(v => !v)}
+            hitSlop={12}
+            accessibilityLabel="How to sign in with a code"
+            style={[styles.infoBtn, { borderColor: theme.tint }]}>
+            <ThemedText style={{ color: theme.tint, fontWeight: '800', fontSize: 12 }}>i</ThemedText>
+          </Pressable>
+        </View>
+
+        {showInfo && (
+          <View style={[styles.infoCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+            <ThemedText type="smallBold" style={{ marginBottom: 4 }}>Signing in with a code</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.infoStep}>1.  Open the sign-in page in your browser:</ThemedText>
+            <Pressable onPress={() => Linking.openURL(MOBILE_LOGIN_URL).catch(() => {})} hitSlop={6}>
+              <ThemedText type="small" style={{ color: theme.tint, textDecorationLine: 'underline', marginLeft: 18, marginBottom: 4 }}>
+                {MOBILE_LOGIN_URL}
+              </ThemedText>
+            </Pressable>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.infoStep}>2.  Sign in with your ShipBots Google account.</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.infoStep}>3.  Tap “Copy” on the code it shows.</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.infoStep}>4.  Come back here, tap “Paste a sign-in code instead”, paste it, and tap “Use code”.</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.infoNote}>
+              Usually “Sign in with Google” above is enough — use a code only if it doesn’t bring you back to the app. Keep the code private.
+            </ThemedText>
+          </View>
+        )}
 
         {showPaste && (
           <View style={styles.pasteWrap}>
@@ -94,7 +125,12 @@ const styles = StyleSheet.create({
   primaryBtn: { height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   primaryLabel: { color: '#fff', fontSize: 16, fontWeight: '700' },
   error: { textAlign: 'center' },
-  linkBtn: { alignItems: 'center', paddingVertical: Spacing.two },
+  linkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.two, paddingVertical: Spacing.two },
+  linkBtn: { alignItems: 'center' },
+  infoBtn: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  infoCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: Spacing.three, gap: 2 },
+  infoStep: { lineHeight: 19 },
+  infoNote: { marginTop: 8, fontStyle: 'italic', lineHeight: 17 },
   pasteWrap: { gap: Spacing.two },
   input: { minHeight: 80, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, padding: Spacing.three, fontSize: 13, fontFamily: 'monospace' },
   secondaryBtn: { height: 46, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
