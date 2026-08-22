@@ -215,6 +215,34 @@ export async function fetchDeliveries(): Promise<DeliveryEvent[]> {
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/** Inventory that HAS arrived — the inverse of the upcoming timeline. Keyed and
+ *  sorted by the actual delivered date (newest first) so the calendar's
+ *  "Recently delivered" view can show the last N. Excludes the "never arrived"
+ *  group and anything without a real delivered date. */
+export async function fetchRecentlyDelivered(): Promise<DeliveryEvent[]> {
+  if (useMock()) return [];
+  const data = await apiGet<{ items: any[] }>('/api/onboarding-items');
+  return (data.items ?? [])
+    .filter(
+      i =>
+        i.groupId !== INVENTORY_NEVER_ARRIVED_GROUP &&
+        /^\d{4}-\d{2}-\d{2}/.test(String(i.deliveredDate || '')),
+    )
+    .map(i => ({
+      id: String(i.id),
+      clientId: i.clientBoardItemId ? String(i.clientBoardItemId) : undefined,
+      name: i.name ?? i.clientBoardItemName ?? '',
+      date: String(i.deliveredDate).slice(0, 10),
+      delivered: true,
+      method: i.deliveryMethod || '',
+      qty: i.deliveryQty || '',
+      warehouse: i.warehouse || '',
+      subWarehouse: i.subWarehouse || '',
+      agentEmail: i.supportAgentEmail || '',
+    }))
+    .sort((a, b) => b.date.localeCompare(a.date)); // most recently delivered first
+}
+
 // ─── Onboarding checklist (from the client's onboarding item) ────────────────
 export function stepState(value: string, invert?: boolean): OnboardingStep['state'] {
   const v = String(value || '').trim().toLowerCase();

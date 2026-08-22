@@ -2,8 +2,10 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { View } from 'react-native';
 
 import { AuthProvider, useAuth } from '@/auth';
+import { UpdateBanner } from '@/components/update-banner';
 import { useTaskReminderTaps } from '@/lib/notifications';
 import { prefetchAllData } from '@/lib/prefetch';
 import { Colors, HeaderBg } from '@/constants/theme';
@@ -40,19 +42,23 @@ function RootNavigator() {
   }, [token]);
 
   return (
-    <Stack
-      screenOptions={{
-        headerStyle: { backgroundColor: HeaderBg },
-        headerTintColor: '#ffffff',
-        headerTitleStyle: { fontWeight: '700' },
-        contentStyle: { backgroundColor: colors.background },
-      }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="client/[id]" options={{ title: 'Client' }} />
-      <Stack.Screen name="task/[id]" options={{ title: 'Task' }} />
-      <Stack.Screen name="sign-in" options={{ headerShown: false }} />
-      <Stack.Screen name="auth" options={{ headerShown: false }} />
-    </Stack>
+    <View style={{ flex: 1 }}>
+      <Stack
+        screenOptions={{
+          headerStyle: { backgroundColor: HeaderBg },
+          headerTintColor: '#ffffff',
+          headerTitleStyle: { fontWeight: '700' },
+          contentStyle: { backgroundColor: colors.background },
+        }}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="client/[id]" options={{ title: 'Client' }} />
+        <Stack.Screen name="task/[id]" options={{ title: 'Task' }} />
+        <Stack.Screen name="sign-in" options={{ headerShown: false }} />
+        <Stack.Screen name="auth" options={{ headerShown: false }} />
+      </Stack>
+      {/* OTA "update ready" toast — only appears once a new bundle is downloaded. */}
+      <UpdateBanner />
+    </View>
   );
 }
 

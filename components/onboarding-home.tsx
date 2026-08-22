@@ -102,20 +102,23 @@ function agentNameFromEmail(email: string): string {
 const isDoneStatus = (s: string) => /(done|complete|finished)/i.test(s || '');
 
 const CARD = 'rounded-2xl bg-white border border-gray-200/70 shadow-[0_1px_2px_rgba(20,24,40,.04),0_6px_16px_rgba(20,24,40,.04)] overflow-hidden flex flex-col';
+const DELIVERED_PAGE = 5; // "Recently delivered" reveals 5 at a time
 
 // ─── Upcoming Deliveries: a horizontal kanban of inbound initial inventory ────
 // Active (non-terminal) clients whose initial inventory hasn't been received
 // yet, ordered by estimated delivery date — soonest on the left. Once a client
 // has a delivered date (or reads as received) it drops off the board. Each card
 // opens the client in the side panel.
-function DeliveryCard({ item, agent, today, onSelectItem }: {
+function DeliveryCard({ item, agent, today, onSelectItem, variant = 'upcoming' }: {
   item: OnboardingItem;
   agent: string;
   today: Date;
   onSelectItem: (item: OnboardingItem) => void;
+  variant?: 'upcoming' | 'delivered';
 }) {
+  const delivered = variant === 'delivered';
   const d = parseYMD(item.estimatedDeliveryDate);
-  const overdue = !!d && d < today;
+  const overdue = !delivered && !!d && d < today;
   const wh = item.warehouse || '';
   const sub = item.subWarehouse ? subLetter(item.subWarehouse) : '';
   return (
@@ -123,17 +126,21 @@ function DeliveryCard({ item, agent, today, onSelectItem }: {
       onClick={() => onSelectItem(item)}
       className="group flex-shrink-0 w-56 text-left rounded-xl border border-gray-200 bg-white hover:border-gray-300 hover:shadow-md transition p-3 flex flex-col gap-2"
     >
-      {/* Estimated delivery date — the sort key, up top and prominent. */}
+      {/* Date chip — estimated delivery for upcoming, actual delivered date (green) once received. */}
       <div className="flex items-center justify-between">
         <span
           className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${
-            overdue ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'
+            delivered ? 'bg-emerald-50 text-emerald-600' : overdue ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'
           }`}
         >
-          <CalendarClock className="w-3 h-3" />
-          {formatDate(item.estimatedDeliveryDate) || 'No date'}
+          {delivered ? <Check className="w-3 h-3" /> : <CalendarClock className="w-3 h-3" />}
+          {delivered
+            ? (formatDate(item.deliveredDate) || 'Delivered')
+            : (formatDate(item.estimatedDeliveryDate) || 'No date')}
         </span>
-        {overdue && <span className="text-[10px] font-medium uppercase tracking-wide text-red-500">Overdue</span>}
+        {delivered
+          ? <span className="text-[10px] font-medium uppercase tracking-wide text-emerald-500">Delivered</span>
+          : overdue && <span className="text-[10px] font-medium uppercase tracking-wide text-red-500">Overdue</span>}
       </div>
 
       {/* Client name */}
@@ -215,6 +222,16 @@ function DeliveryTimeline({
 
   const total = pastDue.length + upcoming.length;
 
+  // "Recently delivered": inventory that has actually arrived (carries a real
+  // delivered date), newest first. Shown on demand behind a button, 5 at a time.
+  const [showDelivered, setShowDelivered] = useState(false);
+  const [deliveredLimit, setDeliveredLimit] = useState(DELIVERED_PAGE);
+  const delivered = useMemo(() =>
+    items
+      .filter(i => i.groupId !== INVENTORY_NEVER_ARRIVED_GROUP_ID && !!parseYMD(i.deliveredDate))
+      .sort((a, b) => parseYMD(b.deliveredDate)!.getTime() - parseYMD(a.deliveredDate)!.getTime()),
+    [items]);
+
   // Bring the Today marker into view on first paint — past-due scrolled off left,
   // upcoming to the right. Adjusts only this row's scroll, never the page.
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -246,6 +263,13 @@ function DeliveryTimeline({
             {upcoming.length > 0 && <span className="text-blue-500">{upcoming.length} upcoming</span>}
           </span>
         )}
+        <button
+          onClick={() => setShowDelivered(v => !v)}
+          className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-[#0071BC] hover:underline"
+        >
+          <Check className="w-3.5 h-3.5" />
+          {showDelivered ? 'Hide recently delivered' : 'Show recently delivered'}
+        </button>
       </header>
       {total === 0 ? (
         <p className="px-4 py-6 text-sm text-gray-400">No inbound inventory deliveries scheduled.</p>
@@ -273,6 +297,42 @@ function DeliveryTimeline({
             <div className="flex-shrink-0 self-stretch w-40 flex flex-col items-center justify-center text-center gap-1 rounded-xl border border-dashed border-gray-200 text-gray-400">
               <CalendarClock className="w-4 h-4 text-gray-300" />
               <span className="text-xs font-medium">Nothing upcoming</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Recently delivered — revealed by the header button; last N, newest first. */}
+      {showDelivered && (
+        <div className="border-t border-gray-100">
+          <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+            <Check className="w-4 h-4 text-emerald-500" />
+            <h3 className="text-xs font-semibold text-gray-700">Recently Delivered</h3>
+            {delivered.length > 0 && <span className="text-[11px] text-gray-400">{delivered.length}</span>}
+          </div>
+          {delivered.length === 0 ? (
+            <p className="px-4 py-4 text-sm text-gray-400">No deliveries recorded yet.</p>
+          ) : (
+            <div className="flex items-stretch gap-3 overflow-x-auto p-4 pt-2">
+              {delivered.slice(0, deliveredLimit).map(i => (
+                <DeliveryCard
+                  key={i.id}
+                  item={i}
+                  agent={agentNameFromEmail(agentFor(i))}
+                  today={today}
+                  onSelectItem={onSelectItem}
+                  variant="delivered"
+                />
+              ))}
+              {delivered.length > deliveredLimit && (
+                <button
+                  onClick={() => setDeliveredLimit(n => n + DELIVERED_PAGE)}
+                  className="flex-shrink-0 self-stretch w-32 flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-gray-300 text-[#0071BC] hover:border-[#0071BC] transition text-xs font-semibold"
+                >
+                  Show more
+                  <span className="text-[10px] font-normal text-gray-400">{delivered.length - deliveredLimit} more</span>
+                </button>
+              )}
             </div>
           )}
         </div>

@@ -161,6 +161,12 @@ export default function ClientDetailScreen() {
     WebBrowser.openBrowserAsync(url).catch(() => {});
   };
 
+  // Documents grouped by category so each shows under its matching section
+  // (Receiving / Packing / Returns), with a 📄 badge on that section's header.
+  // Everything else falls into a general "Documents" section at the bottom.
+  const SECTION_DOC_CATS = new Set(['receiving', 'packing', 'returns']);
+  const generalDocs = docs.filter(d => !SECTION_DOC_CATS.has(d.category));
+
   return (
     <ThemedView style={styles.flex}>
       <Stack.Screen
@@ -222,12 +228,20 @@ export default function ClientDetailScreen() {
           // Contacts are fully managed by the swipeable cards above (inline
           // add / edit / delete), so the flat Contact Info list is retired.
           if (section.id === 'contacts') return null;
+          // Docs whose category matches this section show inline beneath its
+          // fields (with a badge), so Receiving docs live under Receiving, etc.
+          const sectionDocs = SECTION_DOC_CATS.has(section.id) ? docs.filter(d => d.category === section.id) : [];
           const visible = editing
             ? section.fields
             : section.fields.filter(f => (c[f.key] ?? '').trim());
-          if (!editing && visible.length === 0) return null;
+          // Show the section if it has visible fields OR documents to surface.
+          if (!editing && visible.length === 0 && sectionDocs.length === 0) return null;
           return (
-            <CollapsibleSection key={section.id} title={section.title} defaultOpen={section.id === 'general' || section.id === 'contacts'}>
+            <CollapsibleSection
+              key={section.id}
+              title={section.title}
+              defaultOpen={false}
+              badge={sectionDocs.length > 0 ? <DocBadge n={sectionDocs.length} /> : undefined}>
               {visible.map(f => (
                 <FieldRow
                   key={f.key}
@@ -239,20 +253,22 @@ export default function ClientDetailScreen() {
                   onOpenPicker={setPicker}
                 />
               ))}
+              {sectionDocs.length > 0 && (
+                <View style={{ marginTop: visible.length ? Spacing.two : 0 }}>
+                  {visible.length > 0 && (
+                    <ThemedText type="small" themeColor="textSecondary" style={styles.docsHeading}>📎 Documents</ThemedText>
+                  )}
+                  {sectionDocs.map((d, i) => <DocLink key={d.url + i} d={d} onOpen={openDoc} />)}
+                </View>
+              )}
             </CollapsibleSection>
           );
         })}
 
-        {/* Documents */}
-        {docs.length > 0 && (
-          <CollapsibleSection title={`Documents · ${docs.length}`} defaultOpen={false}>
-            {docs.map((d, i) => (
-              <Pressable key={d.url + i} onPress={() => openDoc(d)} style={[styles.docRow, { borderBottomColor: theme.border }]}>
-                <ThemedText style={{ fontSize: 15 }}>{d.kind === 'file' ? '📄' : '🔗'}</ThemedText>
-                <ThemedText type="small" style={{ flex: 1 }} numberOfLines={1}>{d.name}</ThemedText>
-                <ThemedText type="small" style={{ color: theme.tint }}>Open ↗</ThemedText>
-              </Pressable>
-            ))}
+        {/* General documents (not tied to a specific section) */}
+        {generalDocs.length > 0 && (
+          <CollapsibleSection title="Documents" defaultOpen={false} badge={<DocBadge n={generalDocs.length} />}>
+            {generalDocs.map((d, i) => <DocLink key={d.url + i} d={d} onOpen={openDoc} />)}
           </CollapsibleSection>
         )}
 
@@ -277,6 +293,26 @@ export default function ClientDetailScreen() {
         onClose={() => setOnbStep(null)}
       />
     </ThemedView>
+  );
+}
+
+function DocBadge({ n }: { n: number }) {
+  const theme = useTheme();
+  return (
+    <View style={[styles.docBadge, { backgroundColor: theme.backgroundElement }]}>
+      <ThemedText style={{ fontSize: 11, fontWeight: '800', color: theme.tint }}>📄 {n}</ThemedText>
+    </View>
+  );
+}
+
+function DocLink({ d, onOpen }: { d: ClientDoc; onOpen: (d: ClientDoc) => void }) {
+  const theme = useTheme();
+  return (
+    <Pressable onPress={() => onOpen(d)} style={[styles.docRow, { borderBottomColor: theme.border }]}>
+      <ThemedText style={{ fontSize: 15 }}>{d.kind === 'file' ? '📄' : '🔗'}</ThemedText>
+      <ThemedText type="small" style={{ flex: 1 }} numberOfLines={1}>{d.name}</ThemedText>
+      <ThemedText type="small" style={{ color: theme.tint }}>Open ↗</ThemedText>
+    </Pressable>
   );
 }
 
@@ -365,4 +401,6 @@ const styles = StyleSheet.create({
   input: { flex: 1, borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6, fontSize: 14 },
   pickChip: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 7 },
   docRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  docBadge: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999 },
+  docsHeading: { fontWeight: '700', marginBottom: 4 },
 });

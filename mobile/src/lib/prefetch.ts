@@ -6,7 +6,7 @@
  * previously-cached data simply stays in place.
  */
 import { readCache, writeCache } from '@/api/cache';
-import { fetchClientIndex, fetchDeliveries, getClient, getTasks } from '@/api/client';
+import { fetchClientIndex, fetchDeliveries, fetchRecentlyDelivered, getClient, getTasks } from '@/api/client';
 import type { ClientIndexEntry } from '@/api/types';
 
 const DETAIL_TTL = 15 * 60 * 1000; // skip a detail refreshed < 15 min ago
@@ -26,6 +26,7 @@ export async function prefetchAllData(): Promise<void> {
     }
     await Promise.all([
       fetchDeliveries().then(d => writeCache('deliveries', d)).catch(() => {}),
+      fetchRecentlyDelivered().then(d => writeCache('deliveries-recent', d)).catch(() => {}),
       getTasks().then(t => writeCache('tasks', t)).catch(() => {}),
     ]);
 

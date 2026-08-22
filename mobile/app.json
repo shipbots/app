@@ -7,6 +7,13 @@
     "icon": "./assets/images/shipbots-logo.png",
     "scheme": "shipbotscs",
     "userInterfaceStyle": "automatic",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/fd594b87-8510-4e31-b2da-a33240cad9d9",
+      "fallbackToCacheTimeout": 0
+    },
     "ios": {
       "icon": "./assets/images/shipbots-logo.png"
     },
