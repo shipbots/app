@@ -62,6 +62,10 @@ export const SUMMARY_CSS = `
 .os-notes{ font-size:9.5px; color:#374151; margin-top:5px; line-height:1.4;
   background:#e6f8ff; border-radius:6px; padding:5px 7px; }
 .os-notes b{ color:#015280; }
+.os-notes-h{ display:block; margin-bottom:2px; }
+.os-notes-lead{ margin:0 0 3px; }
+.os-notes-list{ margin:0; padding-left:13px; list-style:disc; }
+.os-notes-list li{ margin:0 0 2px; padding-left:1px; }
 
 /* Review callout under "What We Discussed" */
 .os-review-note{ font-size:9.7px; color:#013f63; background:#e6f8ff; border-left:3px solid #43c7ff;

@@ -152,7 +152,73 @@ function buildChecklist(
   // Agent-added items — rendered with a neutral marker (no done/pending state).
   for (const label of customItems) list.push({ label, done: false, neutral: true });
 
-  return list;
+  // Order by status so the client sees what's still outstanding first: pending
+  // (action needed) → neutral (info / in progress) → completed last. Stable
+  // within each group so the intentional order above is otherwise preserved.
+  const rank = (c: Check) => (c.done ? 2 : c.neutral ? 1 : 0);
+  return list
+    .map((c, i) => ({ c, i }))
+    .sort((a, b) => rank(a.c) - rank(b.c) || a.i - b.i)
+    .map((x) => x.c);
+}
+
+// ── Notes formatting ────────────────────────────────────────────────────────
+// Notes often arrive as messy HTML — a lead paragraph followed by a <ul> of
+// <li> bullets (e.g. a pasted meeting recap). Rendered raw they show literal
+// tags in one long run-on, so we parse them into a lead paragraph + real
+// bullets, keeping a bold lead-in when a bullet starts with one.
+function cleanText(s: string): string {
+  return (s || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#0?39;|&apos;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function formatNotes(raw: string) {
+  const html = raw || '';
+  const items = [...html.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/gi)]
+    .map((m) => {
+      const inner = m[1];
+      const strong = inner.match(/<(?:strong|b)\b[^>]*>([\s\S]*?)<\/(?:strong|b)>/i);
+      const bold = strong ? cleanText(strong[1]) : '';
+      const full = cleanText(inner);
+      const leadIn = !!bold && full.startsWith(bold);
+      return {
+        bold: leadIn ? bold : '',
+        text: leadIn ? full.slice(bold.length).replace(/^[\s:—-]+/, '').trim() : full,
+      };
+    })
+    .filter((it) => it.bold || it.text);
+
+  const firstList = html.search(/<ul\b|<ol\b|<li\b/i);
+  const lead = cleanText(firstList >= 0 ? html.slice(0, firstList) : html);
+
+  if (items.length === 0) return lead ? <span>{lead}</span> : null;
+  return (
+    <>
+      {lead && <p className="os-notes-lead">{lead}</p>}
+      <ul className="os-notes-list">
+        {items.map((it, i) => (
+          <li key={i}>
+            {it.bold ? (
+              <>
+                <b>{it.bold}</b>
+                {it.text ? ` ${it.text}` : ''}
+              </>
+            ) : (
+              it.text
+            )}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
 }
 
 // ── Page ────────────────────────────────────────────────────────────────────
@@ -316,7 +382,8 @@ export default async function ClientSummaryPage({
         )}
         {has(notes) && (
           <div className="os-notes">
-            <b>Notes:</b> {notes}
+            <b className="os-notes-h">Notes</b>
+            {formatNotes(notes!)}
           </div>
         )}
       </div>
