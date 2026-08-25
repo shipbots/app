@@ -922,6 +922,112 @@ export async function moveClientToGroup(itemId: string, groupId: string): Promis
   console.log(`[moveClientToGroup] moved OK`);
 }
 
+// ─── Delete a Monday item (moves it to the account Recycle Bin) ─────────────
+// Monday's delete_item is a soft delete — the item can be restored from the
+// Recycle Bin for ~30 days — which is exactly what we want for a merge.
+export async function deleteItem(itemId: string): Promise<void> {
+  await mondayQuery(`mutation { delete_item(item_id: ${itemId}) { id } }`);
+}
+
+// ─── Merge two Clients-board items (dedupe) ─────────────────────────────────
+// The "keep" item survives; the "drop" item is merged into it and deleted.
+// Merge rule: the survivor keeps every value it already has; any field it is
+// MISSING is backfilled from the dropped client. Because both items live on the
+// same board, we can copy each column's raw `value` verbatim (label indices,
+// dropdown ids, ISO dates all match) rather than re-deriving from display text.
+//
+// Column types we never copy — read-only/computed, relational, or attachment
+// columns whose value can't be safely re-set on another item (notably
+// board_relation, so the surviving client's connected onboarding item is left
+// untouched instead of being repointed).
+const MERGE_SKIP_TYPES = new Set<string>([
+  'mirror', 'formula', 'auto_number', 'item_id', 'board_relation', 'subtasks',
+  'dependency', 'progress', 'time_tracking', 'button', 'doc', 'file',
+  'creation_log', 'last_updated', 'vote', 'name',
+]);
+
+export interface ClientMergePlanField { columnId: string; title: string; value: string }
+export interface ClientMergePlan {
+  keepId: string;
+  keepName: string;
+  dropId: string;
+  dropName: string;
+  /** Survivor fields that would be backfilled from the dropped client. */
+  changes: ClientMergePlanField[];
+}
+export interface ClientMergeResult extends ClientMergePlan { merged: number; deleted: boolean }
+
+type MergeCV = Record<string, { text: string | null; value: string | null }>;
+interface MergeSide { id: string; name: string; cv: MergeCV }
+
+async function loadMergePair(keepId: string, dropId: string): Promise<{
+  columns: Array<{ id: string; title: string; type: string }>;
+  keep: MergeSide;
+  drop: MergeSide;
+}> {
+  const data = await mondayQuery(`query {
+    boards(ids: [${CLIENTS_BOARD_ID}]) { columns { id title type } }
+    items(ids: [${keepId}, ${dropId}]) { id name column_values { id text value } }
+  }`);
+  const columns = (data.boards?.[0]?.columns ?? []) as Array<{ id: string; title: string; type: string }>;
+  const items = (data.items ?? []) as Array<{ id: string; name: string; column_values: Array<{ id: string; text: string | null; value: string | null }> }>;
+  const side = (id: string): MergeSide => {
+    const it = items.find(i => String(i.id) === String(id));
+    if (!it) throw new Error(`Client ${id} not found`);
+    const cv: MergeCV = {};
+    for (const c of it.column_values ?? []) cv[c.id] = { text: c.text, value: c.value };
+    return { id: String(it.id), name: it.name, cv };
+  };
+  return { columns, keep: side(keepId), drop: side(dropId) };
+}
+
+function computeMergeChanges(
+  columns: Array<{ id: string; title: string; type: string }>,
+  keep: MergeSide,
+  drop: MergeSide,
+): { changes: ClientMergePlanField[]; raw: Record<string, unknown> } {
+  const changes: ClientMergePlanField[] = [];
+  const raw: Record<string, unknown> = {};
+  for (const col of columns) {
+    if (MERGE_SKIP_TYPES.has(col.type)) continue;
+    const k = keep.cv[col.id];
+    const d = drop.cv[col.id];
+    const keepEmpty = !k || !k.text || k.text.trim() === '';
+    const dropText = (d?.text ?? '').trim();
+    if (!keepEmpty || !dropText || !d?.value) continue; // only backfill blanks
+    let parsed: unknown;
+    try { parsed = JSON.parse(d.value); } catch { continue; }
+    changes.push({ columnId: col.id, title: col.title, value: dropText });
+    raw[col.id] = parsed;
+  }
+  return { changes, raw };
+}
+
+/** Dry-run: what the survivor would gain, without writing anything. */
+export async function planClientMerge(keepId: string, dropId: string): Promise<ClientMergePlan> {
+  const { columns, keep, drop } = await loadMergePair(keepId, dropId);
+  const { changes } = computeMergeChanges(columns, keep, drop);
+  return { keepId: keep.id, keepName: keep.name, dropId: drop.id, dropName: drop.name, changes };
+}
+
+/** Backfill the survivor's blank fields from the dropped client, then delete
+ *  the dropped client (soft delete → Recycle Bin). */
+export async function mergeClients(keepId: string, dropId: string): Promise<ClientMergeResult> {
+  const { columns, keep, drop } = await loadMergePair(keepId, dropId);
+  const { changes, raw } = computeMergeChanges(columns, keep, drop);
+  if (Object.keys(raw).length > 0) {
+    await mondayQuery(
+      `mutation ($cv: JSON!) {
+        change_multiple_column_values(board_id: ${CLIENTS_BOARD_ID}, item_id: ${keep.id}, column_values: $cv, create_labels_if_missing: false) { id }
+      }`,
+      { cv: JSON.stringify(raw) },
+    );
+  }
+  await deleteItem(drop.id);
+  console.log(`[mergeClients] kept=${keep.id} "${keep.name}" ← dropped=${drop.id} "${drop.name}" (${changes.length} fields backfilled)`);
+  return { keepId: keep.id, keepName: keep.name, dropId: drop.id, dropName: drop.name, changes, merged: changes.length, deleted: true };
+}
+
 // ─── Update a field on the Onboarding board ──────────────────────────────────
 // Type is auto-detected from Monday metadata — see updateClientField for the
 // design rationale.

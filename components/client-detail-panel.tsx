@@ -26,8 +26,9 @@ import type { Project } from '@/lib/projects';
 import {
   X, FileText, ClipboardList, Video, Mail, ExternalLink,
   Maximize2, Minimize2, UserPlus, ChevronDown, MailWarning, Phone, Package, CheckSquare, RefreshCw, FolderOpen,
-  Search, ChevronRight, Loader2, BarChart3, Truck, Receipt,
+  Search, ChevronRight, Loader2, BarChart3, Truck, Receipt, GitMerge,
 } from 'lucide-react';
+import { MergeClientDialog } from './merge-client-dialog';
 
 // ─── Agent badge helpers ─────────────────────────────────────────────────────
 const AGENT_PALETTE = [
@@ -690,6 +691,8 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
   // people who already see EIN + the contract on the Client Info tab.
   const { data: session } = useSession();
   const canViewBilling = Boolean(session?.user?.canDocusign);
+  const isAdmin = Boolean((session?.user as { isAdmin?: boolean } | undefined)?.isAdmin);
+  const [showMerge, setShowMerge] = useState(false);
   // CS expanded view layout sizes — drag the handles to resize, prefs
   // persist in localStorage so they stick across sessions.
   const [leftColPct, setLeftColPct] = useState<number>(() =>
@@ -1010,8 +1013,25 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Panel-level overlay modals, rendered in every return path below.
   const deepLinkPreviewModal = (
-    <FilePreviewModal file={deepLinkPreview} onClose={() => setDeepLinkPreview(null)} />
+    <>
+      <FilePreviewModal file={deepLinkPreview} onClose={() => setDeepLinkPreview(null)} />
+      {showMerge && item.clientBoardItemId && (
+        <MergeClientDialog
+          currentId={item.clientBoardItemId}
+          currentName={item.name}
+          onClose={() => setShowMerge(false)}
+          onMerged={(survivingId) => {
+            setShowMerge(false);
+            // If the client we're viewing was the one merged away, close the
+            // panel (it no longer exists); otherwise refresh to show the merge.
+            if (survivingId === item.clientBoardItemId) handleRefresh();
+            else onClose();
+          }}
+        />
+      )}
+    </>
   );
 
   // Escape key closes the panel — unless the deep-linked preview modal
@@ -1665,6 +1685,15 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
                   <RefreshCw className="w-2.5 h-2.5 animate-spin" />
                   Updating
                 </span>
+              )}
+              {isAdmin && item.clientBoardItemId && (
+                <button
+                  onClick={() => setShowMerge(true)}
+                  className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                  title="Merge with another client"
+                >
+                  <GitMerge className="w-4 h-4 text-gray-500" />
+                </button>
               )}
               <button
                 onClick={handleRefresh}
