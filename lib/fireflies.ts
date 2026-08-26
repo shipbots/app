@@ -89,24 +89,50 @@ export async function fetchTranscriptText(
   }
 }
 
+// Drop common business-name suffix words to get the distinctive brand token, so
+// a meeting titled "Shipbots x Solbari …" matches a client named "Solbari Shop".
+function coreBrand(name: string): string {
+  return (name || '')
+    .replace(/[.,]/g, ' ')
+    .replace(/\b(the|inc|llc|ltd|limited|pty|co|corp|corporation|company|group|holdings|store|shop|shopify|brand|brands|apparel|clothing|studio|studios|collective|goods|supply|supplies|official)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
- * Search Fireflies transcripts by multiple terms in parallel (client name,
- * legal entity name, contact name, contact emails, etc.) and deduplicate by ID.
+ * Find a client's Fireflies meetings by (a) title terms — client name, legal
+ * entity, contact name, plus a "core brand" variant with business suffixes
+ * stripped — and (b) participant emails (the most reliable signal: a meeting
+ * where the client's contact actually attended, whatever its title). Runs all
+ * lookups in parallel and dedupes by transcript id.
  */
 export async function searchMeetingsByClient(
   searchTerms: string[],
+  emails: string[] = [],
 ): Promise<FirefliesMeeting[]> {
-  const gqlQuery = `query ($title: String) {
+  const titleQuery = `query ($title: String) {
     transcripts(title: $title, limit: 20) { ${TRANSCRIPT_FIELDS} }
   }`;
+  const emailQuery = `query ($email: String) {
+    transcripts(participant_email: $email, limit: 20) { ${TRANSCRIPT_FIELDS} }
+  }`;
 
-  const unique = [...new Set(searchTerms.filter(Boolean).map(s => s.trim()).filter(s => s.length > 2))];
-  if (unique.length === 0) return [];
+  const titleTerms = new Set<string>();
+  for (const raw of searchTerms) {
+    const s = (raw || '').trim();
+    if (s.length > 2) titleTerms.add(s);
+    const core = coreBrand(s);
+    if (core.length > 2 && core.toLowerCase() !== s.toLowerCase()) titleTerms.add(core);
+  }
+  const emailTerms = [...new Set(emails.map(e => (e || '').trim().toLowerCase()).filter(e => e.includes('@')))];
+
+  if (titleTerms.size === 0 && emailTerms.length === 0) return [];
 
   try {
-    const results = await Promise.allSettled(
-      unique.map(term => firefliesQuery(gqlQuery, { title: term }))
-    );
+    const results = await Promise.allSettled([
+      ...[...titleTerms].map(term => firefliesQuery(titleQuery, { title: term })),
+      ...emailTerms.map(email => firefliesQuery(emailQuery, { email })),
+    ]);
 
     const seen = new Set<string>();
     const merged: FirefliesMeeting[] = [];

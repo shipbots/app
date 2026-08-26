@@ -854,6 +854,11 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
         const params = new URLSearchParams({ client: item.name });
         if (clientInfo?.legalEntity) params.append('legalName',   clientInfo.legalEntity);
         if (clientInfo?.contactName) params.append('contactName', clientInfo.contactName);
+        // Contact emails — lets the search match meetings the contact attended
+        // even when the title doesn't contain the client/contact name.
+        const emails = [clientInfo?.contactEmail, clientInfo?.contact2Email, clientInfo?.contact3Email]
+          .filter(Boolean).join(',');
+        if (emails) params.append('emails', emails);
         return `/api/meetings?${params.toString()}`;
       })()
     : null;
