@@ -1246,6 +1246,8 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
         <MeetingsTab
           meetings={meetings}
           loading={loadingMeetings}
+          onRefresh={refetchMeetings}
+          refreshing={meetingsFetching}
           items={items}
           clientItemId={item.id}
           clientBoardItemId={item.clientBoardItemId ?? undefined}
@@ -1844,6 +1846,8 @@ export function ClientDetailPanel({ item, items = [], initialAgentEmail = '', on
             <MeetingsTab
               meetings={meetings}
               loading={loadingMeetings}
+              onRefresh={refetchMeetings}
+              refreshing={meetingsFetching}
               items={items}
               clientItemId={item.id}
               clientBoardItemId={item.clientBoardItemId ?? undefined}

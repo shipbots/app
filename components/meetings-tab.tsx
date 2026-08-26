@@ -3,12 +3,15 @@
 import { FirefliesMeeting, OnboardingItem, SubItem } from '@/lib/types';
 import { ActionItemsModal } from './action-items-modal';
 import { MeetingExtractModal } from './meeting-extract-modal';
-import { Video, Clock, Users, ChevronDown, ChevronUp, ExternalLink, Play, ListChecks, Sparkles } from 'lucide-react';
+import { Video, Clock, Users, ChevronDown, ChevronUp, ExternalLink, Play, ListChecks, Sparkles, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 
 interface MeetingsTabProps {
   meetings: FirefliesMeeting[];
   loading: boolean;
+  /** Re-query Fireflies for new meetings; `refreshing` while in flight. */
+  onRefresh?: () => void;
+  refreshing?: boolean;
   items: OnboardingItem[];
   clientItemId: string;
   /** Clients-board item id — enables the "add info to client info" AI action. */
@@ -205,7 +208,19 @@ function MeetingCard({
   );
 }
 
-export function MeetingsTab({ meetings, loading, items, clientItemId, clientBoardItemId, onTasksCreated, onClientInfoPatched }: MeetingsTabProps) {
+export function MeetingsTab({ meetings, loading, onRefresh, refreshing, items, clientItemId, clientBoardItemId, onTasksCreated, onClientInfoPatched }: MeetingsTabProps) {
+  const refreshBtn = onRefresh && (
+    <button
+      onClick={onRefresh}
+      disabled={refreshing}
+      title="Check Fireflies for new meetings"
+      className="flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-[#015280] hover:bg-gray-100 px-2 py-1 rounded-lg transition-colors disabled:opacity-50"
+    >
+      <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+      <span>{refreshing ? 'Checking…' : 'Refresh'}</span>
+    </button>
+  );
+
   if (loading) {
     return (
       <div className="p-4 flex items-center justify-center">
@@ -220,13 +235,26 @@ export function MeetingsTab({ meetings, loading, items, clientItemId, clientBoar
       <div className="p-8 text-center text-gray-500">
         <Video className="w-8 h-8 mx-auto mb-2 text-gray-300" />
         <p className="text-sm">No meetings found for this client</p>
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={refreshing}
+            className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[#015280] bg-[#e6f8ff] border border-[#bfe9ff] hover:bg-[#d5f2ff] hover:border-[#43c7ff] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Checking Fireflies…' : 'Check for new meetings'}
+          </button>
+        )}
       </div>
     );
   }
 
   return (
     <div className="p-4 space-y-2 overflow-y-auto max-h-[calc(100vh-200px)]">
-      <p className="text-xs text-gray-500 mb-3">{meetings.length} meeting{meetings.length !== 1 ? 's' : ''} found</p>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs text-gray-500">{meetings.length} meeting{meetings.length !== 1 ? 's' : ''} found</p>
+        {refreshBtn}
+      </div>
       {meetings.map(meeting => (
         <MeetingCard
           key={meeting.id}
