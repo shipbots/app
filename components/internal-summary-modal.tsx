@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Copy, Check, Loader2, Mail, ExternalLink, Users } from 'lucide-react';
 
-const TEAM_TO = 'support@shipbots.com, allen@shipbots.com, payam@shipbots.com, carmen@shipbots.com, karina@shipbots.com, alex@shipbots.com, nancy@shipbots.com, robert@shipbots.com, charmy@shipbots.com';
+const TEAM_TO = 'support@shipbots.com, allen@shipbots.com, payam@shipbots.com, carmen@shipbots.com, karina@shipbots.com, alex@shipbots.com, nancy@shipbots.com, robert@shipbots.com, charmy@shipbots.com, isa@shipbots.com';
 // The sender keeps a copy via BCC.
 const TEAM_BCC = 'andres@shipbots.com';
 
