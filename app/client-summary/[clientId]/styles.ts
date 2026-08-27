@@ -66,6 +66,8 @@ export const SUMMARY_CSS = `
 .os-notes-lead{ margin:0 0 3px; }
 .os-notes-list{ margin:0; padding-left:13px; list-style:disc; }
 .os-notes-list li{ margin:0 0 2px; padding-left:1px; }
+.os-notes-ol{ margin:2px 0 3px; padding-left:16px; list-style:decimal; }
+.os-notes-ol li{ margin:0 0 1px; padding-left:1px; }
 
 /* Review callout under "What We Discussed" */
 .os-review-note{ font-size:9.7px; color:#013f63; background:#e6f8ff; border-left:3px solid #43c7ff;

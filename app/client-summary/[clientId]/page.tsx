@@ -180,6 +180,53 @@ function cleanText(s: string): string {
     .trim();
 }
 
+// Split a paragraph into sentences. The (?<![A-Z]) guard avoids breaking after
+// abbreviations like "U.S."; enumerated items ("(1) a, (2) b") stay together
+// since they're comma-separated with no sentence break between them.
+function splitSentences(text: string): string[] {
+  return text
+    .replace(/(?<![A-Z])([.!?])\s+(?=[A-Z(])/g, '$1')
+    .split('')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// Detect an inline enumeration ("lead: (1) a, (2) b, (3) c" or "1) a 2) b").
+// Only treated as a list when the markers run 1,2,3,… so stray numbers in prose
+// aren't mistaken for a list.
+function parseEnumeration(text: string): { lead: string; items: string[] } | null {
+  const markers = [...text.matchAll(/\((\d+)\)\s*|(?:^|\s)(\d+)[).]\s+/g)];
+  if (markers.length < 2) return null;
+  const nums = markers.map((m) => Number(m[1] ?? m[2]));
+  if (!nums.every((n, i) => n === i + 1)) return null;
+  const lead = text.slice(0, markers[0].index).replace(/[\s:—-]+$/, '').trim();
+  const parts: string[] = [];
+  for (let i = 0; i < markers.length; i++) {
+    const start = (markers[i].index ?? 0) + markers[i][0].length;
+    const end = i + 1 < markers.length ? (markers[i + 1].index ?? text.length) : text.length;
+    const item = text.slice(start, end).trim().replace(/[,;.\s]+$/, '');
+    if (item) parts.push(item);
+  }
+  return parts.length >= 2 ? { lead, items: parts } : null;
+}
+
+// One bullet's content: plain text, or a lead + nested numbered list when the
+// sentence contains an inline "(1) … (2) …" enumeration.
+function noteBulletContent(text: string) {
+  const en = parseEnumeration(text);
+  if (!en) return text;
+  return (
+    <>
+      {en.lead ? `${en.lead}:` : null}
+      <ol className="os-notes-ol">
+        {en.items.map((it, i) => (
+          <li key={i}>{it}</li>
+        ))}
+      </ol>
+    </>
+  );
+}
+
 function formatNotes(raw: string) {
   const html = raw || '';
   const items = [...html.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/gi)]
@@ -199,7 +246,34 @@ function formatNotes(raw: string) {
   const firstList = html.search(/<ul\b|<ol\b|<li\b/i);
   const lead = cleanText(firstList >= 0 ? html.slice(0, firstList) : html);
 
-  if (items.length === 0) return lead ? <span>{lead}</span> : null;
+  // No HTML list — treat the note as prose. Break it into one bullet per
+  // sentence (much easier to scan than a wall of text), and turn any inline
+  // "(1) … (2) …" enumeration into a real numbered sub-list.
+  if (items.length === 0) {
+    if (!lead) return null;
+    const sentences = splitSentences(lead);
+    if (sentences.length <= 1) {
+      const en = parseEnumeration(lead);
+      if (en) {
+        return (
+          <>
+            {en.lead && <p className="os-notes-lead">{en.lead}:</p>}
+            <ol className="os-notes-ol">
+              {en.items.map((it, i) => <li key={i}>{it}</li>)}
+            </ol>
+          </>
+        );
+      }
+      return <span>{lead}</span>;
+    }
+    return (
+      <ul className="os-notes-list">
+        {sentences.map((s, i) => (
+          <li key={i}>{noteBulletContent(s)}</li>
+        ))}
+      </ul>
+    );
+  }
   return (
     <>
       {lead && <p className="os-notes-lead">{lead}</p>}
