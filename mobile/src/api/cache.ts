@@ -5,7 +5,9 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const PREFIX = 'cache:v1:';
+// v2: abandons any v1 cache that may have been poisoned with mock data by a
+// pre-auth fetch on cold start. Bump this whenever cached shapes change.
+const PREFIX = 'cache:v2:';
 
 export interface CacheEntry<T> {
   value: T;
@@ -33,6 +35,18 @@ export async function clearCache(): Promise<void> {
   try {
     const keys = await AsyncStorage.getAllKeys();
     await AsyncStorage.multiRemove(keys.filter(k => k.startsWith(PREFIX)));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Remove cache entries from older schema versions (e.g. the poisoned v1), so
+ *  they don't linger and eat the on-device storage budget. */
+export async function purgeOldCaches(): Promise<void> {
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const stale = keys.filter(k => k.startsWith('cache:') && !k.startsWith(PREFIX));
+    if (stale.length) await AsyncStorage.multiRemove(stale);
   } catch {
     /* ignore */
   }

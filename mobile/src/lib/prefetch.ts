@@ -5,7 +5,7 @@
  * fetched recently are skipped; when offline the network fetches throw and the
  * previously-cached data simply stays in place.
  */
-import { readCache, writeCache } from '@/api/cache';
+import { purgeOldCaches, readCache, writeCache } from '@/api/cache';
 import { fetchClientIndex, fetchDeliveries, fetchRecentlyDelivered, getClient, getTasks } from '@/api/client';
 import type { ClientIndexEntry } from '@/api/types';
 
@@ -17,6 +17,7 @@ export async function prefetchAllData(): Promise<void> {
   if (running) return;
   running = true;
   try {
+    await purgeOldCaches(); // drop stale/poisoned older-version cache entries
     let index: ClientIndexEntry[] | null = null;
     try {
       index = await fetchClientIndex();

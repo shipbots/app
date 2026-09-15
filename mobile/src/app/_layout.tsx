@@ -2,7 +2,7 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 
 import { AuthProvider, useAuth } from '@/auth';
 import { UpdateBanner } from '@/components/update-banner';
@@ -40,6 +40,19 @@ function RootNavigator() {
   useEffect(() => {
     if (token) prefetchAllData();
   }, [token]);
+
+  // Don't mount the data screens until auth has resolved. Otherwise the Clients
+  // tab mounts under the splash and fetches BEFORE the token is wired up, which
+  // returns mock data and poisons the on-device cache (the "only a few clients"
+  // bug). apply()/setAuthToken runs before loading flips false, so by the time
+  // we render the Stack the real token is always in place.
+  if (loading) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
+        <ActivityIndicator color={colors.tint} />
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1 }}>

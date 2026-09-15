@@ -28,7 +28,12 @@ export function getCurrentUser() {
   return currentUser;
 }
 function useMock() {
-  return FORCE_MOCK || !authToken;
+  // Mock ONLY when explicitly forced (dev). Previously this also returned true
+  // whenever authToken was null — but on cold start a screen can fetch before
+  // the token loads, so that returned mock data and cached it (the "few
+  // clients" bug). Without a token a real fetch just 401s → AuthError, which
+  // leaves the existing cache untouched.
+  return FORCE_MOCK;
 }
 
 async function apiGet<T>(path: string): Promise<T> {
