@@ -13,7 +13,12 @@
       "fallbackToCacheTimeout": 0
     },
     "ios": {
-      "icon": "./assets/images/shipbots-logo.png"
+      "icon": "./assets/images/shipbots-ios-icon.png",
+      "bundleIdentifier": "com.shipbots.cs",
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.shipbots.cs",

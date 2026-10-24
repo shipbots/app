@@ -14,8 +14,18 @@
       "channel": "preview",
       "android": { "buildType": "apk" }
     },
+    "ios-simulator": {
+      "channel": "preview",
+      "ios": { "simulator": true }
+    },
+    "ios-testflight": {
+      "channel": "preview",
+      "autoIncrement": true,
+      "ios": {}
+    },
     "production": {
       "autoIncrement": true,
+      "channel": "preview",
       "android": { "buildType": "app-bundle" }
     }
   },
