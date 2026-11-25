@@ -33,7 +33,7 @@ rm -f "$OUT_FILE"
 
 (
   cd "$ROOT/chrome-extension"
-  zip -qr "$OUT_FILE" . -x '*.DS_Store'
+  zip -qr "$OUT_FILE" . -x '*.DS_Store' '_*'  # '_*': Chrome reserves paths starting with _ (and dev mockups live there)
 )
 
 echo "Packed v${VERSION} → ${OUT_FILE#$ROOT/}"

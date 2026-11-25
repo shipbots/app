@@ -95,3 +95,48 @@ export interface TaskBoardInfo {
   dateColumnId: string | null;
   notesColumnId: string | null;
 }
+
+/** A claim on the Monday "✳️ Claims" board (see the dashboard's lib/claims.ts). */
+export interface ClaimFile {
+  assetId: string;
+  name: string;
+  isImage: boolean;
+  /** Short-lived signed download link from Monday (may be empty). */
+  url?: string;
+}
+
+export interface Claim {
+  id: string;
+  name: string;
+  groupId: string;
+  groupTitle: string;
+  createdAt: string;
+  status: string;
+  claimNumber: string;
+  resultNotes: string;
+  dateSubmitted: string;   // YYYY-MM-DD
+  orderNumber: string;
+  trackingNumber: string;
+  reason: string;
+  additionalInfo: string;
+  dateResolved: string;    // YYYY-MM-DD
+  whoRequested: string;
+  value: string;
+  files: ClaimFile[];
+}
+
+export interface ClaimOptions {
+  statuses: string[];
+  reasons: string[];
+  groups: { id: string; title: string }[];
+}
+
+export interface ClaimsPayload {
+  claims: Claim[];
+  options: ClaimOptions;
+}
+
+/** Editable claim fields (everything but stage, which is `groupId`). */
+export type ClaimFields = Partial<Pick<Claim,
+  'status' | 'claimNumber' | 'resultNotes' | 'dateSubmitted' | 'orderNumber' | 'trackingNumber'
+  | 'reason' | 'additionalInfo' | 'dateResolved' | 'whoRequested' | 'value'>>;

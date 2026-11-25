@@ -20,6 +20,10 @@ let authToken: string | null = null;
 export function setAuthToken(token: string | null) {
   authToken = token;
 }
+/** The current Bearer token (for requests outside this module, e.g. uploads). */
+export function getAuthToken() {
+  return authToken;
+}
 let currentUser: string | null = null;
 export function setCurrentUser(email: string | null) {
   currentUser = email ? email.toLowerCase() : null;
