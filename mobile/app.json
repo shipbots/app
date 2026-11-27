@@ -44,6 +44,14 @@
       ],
       "expo-secure-store",
       "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "ShipBots CS needs your photos to attach them to shipping claims.",
+          "cameraPermission": "ShipBots CS uses the camera to take photos for shipping claims.",
+          "microphonePermission": false
+        }
+      ],
       "./plugins/with-foldable-config.js"
     ],
     "experiments": {

@@ -40,6 +40,9 @@
       <button id="detail-billing-btn" class="detail-onb-btn detail-bill-btn" type="button" title="Billing info (restricted to authorized users)" hidden>
         💳 Billing info
       </button>
+      <button id="detail-claims-btn" class="detail-onb-btn" type="button" title="Shipping claims for this client">
+        📦 Claims <span id="detail-claims-count" class="detail-claims-count" hidden></span>
+      </button>
       <button id="detail-open" class="detail-open" type="button" title="Open in the full dashboard">
         Edit ↗
       </button>
@@ -85,6 +88,10 @@
            full billing picture in-popup: general info, payment method / ACH,
            and pricing. -->
       <div id="detail-billing" class="detail-onboarding detail-billing" aria-label="Billing info" hidden></div>
+      <!-- Claims view (Monday "✳️ Claims" board) — full-page like Billing.
+           Lists this client's claims, edits them in place, attaches photos,
+           and files new claims through the composer dialog below. -->
+      <div id="detail-claims" class="detail-onboarding detail-billing detail-claims" aria-label="Claims" hidden></div>
     </div>
   </section>
 
@@ -185,11 +192,13 @@
           <span class="action-desc">Open work across all clients</span>
         </span>
       </button>
-      <button id="open-projects" class="action-btn">
-        <span class="action-icon" aria-hidden="true">🗂️</span>
+      <!-- Special Project Request Desk: for now just opens the warehouse
+           portal's request desk in a new tab. -->
+      <button id="open-request-desk" class="action-btn">
+        <span class="action-icon" aria-hidden="true">🛎️</span>
         <span>
-          <span class="action-label">Projects</span>
-          <span class="action-desc">Active projects across all clients</span>
+          <span class="action-label">Special Project Request Desk</span>
+          <span class="action-desc">Submit and track special project requests ↗</span>
         </span>
       </button>
     </div>
@@ -262,6 +271,23 @@
       <div class="pc-actions">
         <button id="pc-cancel" class="pc-btn pc-btn-ghost" type="button">Cancel</button>
         <button id="pc-create" class="pc-btn pc-btn-primary" type="button">Create project</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New-claim questionnaire. The form body is built in popup.js
+       (openClaimComposer) from the Claims board's live status / reason labels. -->
+  <div id="claim-composer" class="pc-overlay" tabindex="-1" hidden>
+    <div class="pc-modal claim-modal" role="dialog" aria-modal="true" aria-labelledby="cc-title">
+      <div class="pc-head">
+        <span id="cc-title" class="pc-title">New claim</span>
+        <button id="cc-close" class="pc-close" type="button" aria-label="Close">×</button>
+      </div>
+      <div id="cc-body" class="pc-body claim-modal-body"></div>
+      <div id="cc-status" class="pc-status claim-modal-status" hidden></div>
+      <div class="pc-actions">
+        <button id="cc-cancel" class="pc-btn pc-btn-ghost" type="button">Cancel</button>
+        <button id="cc-submit" class="pc-btn pc-btn-primary" type="button">Submit claim</button>
       </div>
     </div>
   </div>

@@ -9,6 +9,9 @@
 
 const DEFAULT_BASE_URL = 'https://app-snowy-eight-64.vercel.app';
 
+// Special Project Request Desk (main menu tile) — external warehouse portal page.
+const REQUEST_DESK_URL = 'https://warehouse-portal-ship-bots.vercel.app/clients/request-desk';
+
 // Duplicate of lib/agent-name.ts. The extension can't import from the
 // dashboard's src/, so we keep a small parallel copy. If the algorithm
 // changes upstream, update both places.
@@ -3197,6 +3200,660 @@ function renderBillingPanel(client) {
   wrap.appendChild(billSection('Pricing Info',         body => appendPricingBody(body, client)));
 }
 
+// ── Claims panel (Monday "✳️ Claims" board) ─────────────────────────────────
+// Full-page view (like Billing) listing every claim linked to the open client.
+// Each claim is a collapsible card: a summary row (order, status, reason,
+// value, date) that expands into every field plus its attached photos. "Edit"
+// turns the card into a form that PATCHes /api/claims/[id]; "+ New claim" opens
+// a questionnaire dialog that POSTs /api/claims and then uploads attachments
+// one by one to /api/claims/[id]/files.
+
+// The claim fields, in display/form order. `opt` names the option list
+// (from the API) a select draws from; `wide` spans the full form width.
+const CLAIM_FIELD_DEFS = [
+  { key: 'orderNumber',    label: 'Order number',           type: 'text', placeholder: 'e.g. 160269' },
+  { key: 'trackingNumber', label: 'Tracking number',        type: 'text', placeholder: 'Carrier tracking #' },
+  { key: 'reason',         label: 'Reason for claim',       type: 'select', opt: 'reasons' },
+  { key: 'value',          label: 'Value of the package',   type: 'text', placeholder: 'e.g. 44.99', inputmode: 'decimal' },
+  { key: 'status',         label: 'Claim status',           type: 'select', opt: 'statuses' },
+  { key: 'groupId',        label: 'Stage',                  type: 'select', opt: 'groups' },
+  { key: 'whoRequested',   label: 'Who requested',          type: 'text', placeholder: 'Name (and who at the client asked)' },
+  { key: 'dateSubmitted',  label: 'Date claim submitted',   type: 'date' },
+  { key: 'claimNumber',    label: 'Claim number',           type: 'text', placeholder: 'Carrier claim #' },
+  { key: 'dateResolved',   label: 'Date claim resolved',    type: 'date' },
+  { key: 'resultNotes',    label: 'Claim result notes',     type: 'text', wide: true },
+  { key: 'additionalInfo', label: 'Additional information', type: 'textarea', wide: true,
+    placeholder: 'Carrier, what happened, what the client reported…' },
+];
+
+const CLAIM_STATUS_COLORS = {
+  'new': '#579bfc',
+  'filed with carrier': '#fdab3d',
+  'approved': '#00c875',
+  'denied': '#e2445c',
+  'canceled': '#9ca3af',
+  'not stated': '#c4c4c4',
+};
+function claimStatusColor(status) {
+  return CLAIM_STATUS_COLORS[String(status || '').toLowerCase()] || '#c4c4c4';
+}
+
+// Per-popup state for the panel. `clientId` guards against a fast client switch
+// painting the previous client's claims.
+const claimsState = {
+  clientId: null,
+  clientName: '',
+  claims: null,          // Claim[] once loaded
+  options: { statuses: [], reasons: [], groups: [] },
+  filter: 'all',         // 'all' | group id
+  expanded: new Set(),   // claim ids whose card is open
+  editing: new Set(),    // claim ids in edit mode
+  loading: false,
+  error: '',
+};
+
+// Photos are uploaded one per request (Vercel caps request bodies ~4.5 MB), so
+// big phone photos are downsized to a JPEG first. Non-images pass through.
+const CLAIM_UPLOAD_MAX_BYTES = 4.4 * 1024 * 1024;
+async function shrinkImageForUpload(file) {
+  if (!/^image\/(jpeg|png|webp)$/i.test(file.type) || file.size <= 3.5 * 1024 * 1024) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 2560 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.85));
+    if (!blob) return file;
+    const name = file.name.replace(/\.[^.]+$/, '') + '.jpg';
+    return new File([blob], name, { type: 'image/jpeg' });
+  } catch {
+    return file;
+  }
+}
+
+async function uploadClaimFile(claimId, file) {
+  const ready = await shrinkImageForUpload(file);
+  if (ready.size > CLAIM_UPLOAD_MAX_BYTES) throw new Error(`${file.name} is too large (max 4.4 MB)`);
+  const base = await getBaseUrl();
+  const form = new FormData();
+  form.append('file', ready, ready.name);
+  const res = await fetch(`${base}/api/claims/${encodeURIComponent(claimId)}/files`, {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
+  return data.file;
+}
+
+// Upload several files sequentially, reporting progress through onProgress.
+// Returns the names of files that failed (empty when all succeeded).
+async function uploadClaimFiles(claimId, files, onProgress) {
+  const failed = [];
+  for (let i = 0; i < files.length; i++) {
+    if (onProgress) onProgress(i, files.length, files[i]);
+    try { await uploadClaimFile(claimId, files[i]); }
+    catch (err) { console.error('[claims] upload failed', err); failed.push(files[i].name); }
+  }
+  return failed;
+}
+
+async function fetchClientClaims(clientId) {
+  const base = await getBaseUrl();
+  const res = await fetch(`${base}/api/claims?clientId=${encodeURIComponent(clientId)}`, {
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+  });
+  if (res.status === 401) { const e = new Error('Not signed in'); e.code = 'unauthorized'; throw e; }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Couldn't load claims (${res.status})`);
+  return data;
+}
+
+function updateClaimsCountBadge() {
+  const badge = document.getElementById('detail-claims-count');
+  if (!badge) return;
+  const open = (claimsState.claims || []).filter(c => !/closed/i.test(c.groupTitle)).length;
+  badge.hidden = !open;
+  badge.textContent = open ? String(open) : '';
+  badge.title = open ? `${open} active claim${open === 1 ? '' : 's'} (not closed)` : '';
+}
+
+// Load (or reload) the open client's claims and repaint the panel if visible.
+async function loadClaims(clientId, clientName, { quiet } = {}) {
+  if (!clientId) return;
+  if (claimsState.clientId !== clientId) {
+    claimsState.clientId = clientId;
+    claimsState.claims = null;
+    claimsState.filter = 'all';
+    claimsState.expanded = new Set();
+    claimsState.editing = new Set();
+  }
+  claimsState.clientName = clientName || claimsState.clientName;
+  claimsState.loading = true;
+  claimsState.error = '';
+  if (!quiet) renderClaimsPanelIfOpen();
+  try {
+    const data = await fetchClientClaims(clientId);
+    if (claimsState.clientId !== clientId) return;
+    claimsState.claims = Array.isArray(data.claims) ? data.claims : [];
+    if (data.options) claimsState.options = data.options;
+  } catch (err) {
+    if (claimsState.clientId !== clientId) return;
+    claimsState.error = err.code === 'unauthorized'
+      ? 'Sign in at the dashboard first, then reopen this popup.'
+      : (err.message || 'Network error');
+  } finally {
+    if (claimsState.clientId === clientId) {
+      claimsState.loading = false;
+      updateClaimsCountBadge();
+      renderClaimsPanelIfOpen();
+    }
+  }
+}
+
+function renderClaimsPanelIfOpen() {
+  const wrap = document.getElementById('detail-claims');
+  if (wrap && !wrap.hidden) renderClaimsPanel();
+}
+
+function claimEl(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+function formatClaimDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso.length === 10 ? iso + 'T12:00:00' : iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatClaimValue(v) {
+  const s = String(v || '').trim();
+  if (!s) return '';
+  const n = Number(s.replace(/[$,\s]/g, ''));
+  return isFinite(n) && /\d/.test(s) ? n.toLocaleString(undefined, { style: 'currency', currency: 'USD' }) : s;
+}
+
+function renderClaimsPanel() {
+  const wrap = document.getElementById('detail-claims');
+  if (!wrap) return;
+  const scroll = wrap.scrollTop;
+  wrap.innerHTML = '';
+
+  const head = claimEl('div', 'bill-head');
+  head.appendChild(claimEl('span', 'bill-head-title', 'Claims'));
+  if (claimsState.loading && claimsState.claims) head.appendChild(claimEl('span', 'view-updating', 'Updating…'));
+  const newBtn = claimEl('button', 'claims-new-btn', '+ New claim');
+  newBtn.type = 'button';
+  newBtn.addEventListener('click', () => openClaimComposer());
+  head.appendChild(newBtn);
+  wrap.appendChild(head);
+
+  if (claimsState.error && !claimsState.claims) {
+    wrap.appendChild(claimEl('p', 'onb-empty claims-error', `Couldn't load claims — ${claimsState.error}`));
+    return;
+  }
+  if (!claimsState.claims) {
+    wrap.appendChild(claimEl('p', 'onb-empty', 'Loading claims…'));
+    return;
+  }
+
+  const claims = claimsState.claims;
+  // Stage filter chips (All + each board group, with counts).
+  const chips = claimEl('div', 'claims-filters');
+  const addChip = (id, label, count) => {
+    const chip = claimEl('button', 'claims-chip' + (claimsState.filter === id ? ' is-active' : ''), `${label} · ${count}`);
+    chip.type = 'button';
+    chip.addEventListener('click', () => { claimsState.filter = id; renderClaimsPanel(); });
+    chips.appendChild(chip);
+  };
+  addChip('all', 'All', claims.length);
+  for (const g of claimsState.options.groups || []) {
+    addChip(g.id, g.title, claims.filter(c => c.groupId === g.id).length);
+  }
+  wrap.appendChild(chips);
+
+  const shown = claimsState.filter === 'all' ? claims : claims.filter(c => c.groupId === claimsState.filter);
+  if (!shown.length) {
+    wrap.appendChild(claimEl('p', 'onb-empty', claims.length
+      ? 'No claims in this stage.'
+      : 'No claims for this client yet. Use “+ New claim” to file one.'));
+  }
+  for (const claim of shown) wrap.appendChild(renderClaimCard(claim));
+  wrap.scrollTop = scroll;
+}
+
+function renderClaimCard(claim) {
+  const open = claimsState.expanded.has(claim.id);
+  const editing = claimsState.editing.has(claim.id);
+  const card = claimEl('section', 'bill-sec claim-card' + (open ? '' : ' collapsed'));
+
+  const head = claimEl('button', 'bill-sec-head claim-head');
+  head.type = 'button';
+  const title = claimEl('span', 'claim-title');
+  title.appendChild(claimEl('span', 'bill-sec-title', claim.orderNumber ? `#${claim.orderNumber.replace(/^#/, '')}` : claim.name));
+  const sub = [claim.reason, formatClaimValue(claim.value), claim.dateSubmitted ? `Submitted ${formatClaimDate(claim.dateSubmitted)}` : '']
+    .filter(Boolean).join(' · ');
+  if (sub) title.appendChild(claimEl('span', 'claim-sub', sub));
+  head.appendChild(title);
+  if (claim.files && claim.files.length) head.appendChild(claimEl('span', 'claim-files-count', `📎 ${claim.files.length}`));
+  const pill = claimEl('span', 'claim-status', claim.status || 'No status');
+  pill.style.background = claimStatusColor(claim.status);
+  head.appendChild(pill);
+  head.appendChild(claimEl('span', 'claim-stage', claim.groupTitle));
+  const chev = claimEl('span', 'bill-sec-chev', '▾');
+  chev.setAttribute('aria-hidden', 'true');
+  head.appendChild(chev);
+  head.addEventListener('click', () => {
+    if (claimsState.expanded.has(claim.id)) claimsState.expanded.delete(claim.id);
+    else claimsState.expanded.add(claim.id);
+    renderClaimsPanel();
+  });
+  card.appendChild(head);
+
+  const body = claimEl('div', 'bill-sec-body');
+  if (open) {
+    if (editing) body.appendChild(renderClaimEditForm(claim));
+    else body.appendChild(renderClaimReadView(claim));
+    body.appendChild(renderClaimFiles(claim));
+  }
+  card.appendChild(body);
+  return card;
+}
+
+function renderClaimReadView(claim) {
+  const box = claimEl('div', 'claim-read');
+  const dl = claimEl('dl', 'bill-list bill-grid');
+  for (const f of CLAIM_FIELD_DEFS) {
+    const raw = f.key === 'groupId' ? claim.groupTitle : claim[f.key];
+    let shown = raw || '';
+    if (f.type === 'date') shown = formatClaimDate(raw);
+    if (f.key === 'value') shown = formatClaimValue(raw);
+    const row = billRow(f.label, shown || '—', { muted: !shown, multiline: f.type === 'textarea' });
+    if (f.wide) row.classList.add('claim-wide');
+    dl.appendChild(row);
+  }
+  box.appendChild(dl);
+  const actions = claimEl('div', 'claim-actions');
+  actions.appendChild(claimEl('span', 'claim-meta', `Monday item ${claim.id}${claim.createdAt ? ' · created ' + formatClaimDate(claim.createdAt) : ''}`));
+  const editBtn = claimEl('button', 'onb-open-app', '✎ Edit claim');
+  editBtn.type = 'button';
+  editBtn.addEventListener('click', () => { claimsState.editing.add(claim.id); renderClaimsPanel(); });
+  actions.appendChild(editBtn);
+  box.appendChild(actions);
+  return box;
+}
+
+// Build the claim form controls (shared by the edit card and the composer).
+// Returns { node, read } where read() → { fields, groupId }.
+function buildClaimForm(values, { idPrefix }) {
+  const grid = claimEl('div', 'claim-form');
+  const inputs = {};
+  for (const f of CLAIM_FIELD_DEFS) {
+    const wrap = claimEl('div', 'claim-field' + (f.wide ? ' claim-wide' : ''));
+    const id = `${idPrefix}-${f.key}`;
+    const label = claimEl('label', 'pc-label', f.label);
+    label.htmlFor = id;
+    wrap.appendChild(label);
+    let input;
+    if (f.type === 'select') {
+      input = claimEl('select', 'pc-input');
+      const opts = claimsState.options[f.opt] || [];
+      const blank = claimEl('option', null, f.key === 'groupId' ? '' : '— Select —');
+      blank.value = '';
+      if (f.key !== 'groupId') input.appendChild(blank);
+      const current = values[f.key] || '';
+      const list = f.key === 'groupId'
+        ? opts.map(g => ({ value: g.id, label: g.title }))
+        : opts.map(o => ({ value: o, label: o }));
+      // Keep a value the board no longer lists so editing doesn't silently drop it.
+      if (current && !list.some(o => o.value === current)) list.push({ value: current, label: current });
+      for (const o of list) {
+        const opt = claimEl('option', null, o.label);
+        opt.value = o.value;
+        input.appendChild(opt);
+      }
+      input.value = current;
+    } else if (f.type === 'textarea') {
+      input = claimEl('textarea', 'pc-input pc-textarea');
+      input.rows = 3;
+      input.value = values[f.key] || '';
+    } else {
+      input = claimEl('input', 'pc-input');
+      input.type = f.type;
+      input.value = values[f.key] || '';
+      if (f.inputmode) input.inputMode = f.inputmode;
+    }
+    if (f.placeholder) input.placeholder = f.placeholder;
+    input.id = id;
+    inputs[f.key] = input;
+    wrap.appendChild(input);
+    grid.appendChild(wrap);
+  }
+  return {
+    node: grid,
+    inputs,
+    read() {
+      const fields = {};
+      let groupId = '';
+      for (const f of CLAIM_FIELD_DEFS) {
+        const v = String(inputs[f.key].value || '').trim();
+        if (f.key === 'groupId') groupId = v;
+        else fields[f.key] = f.key === 'orderNumber' ? v.replace(/^#/, '') : v;
+      }
+      return { fields, groupId };
+    },
+  };
+}
+
+function renderClaimEditForm(claim) {
+  const box = claimEl('div', 'claim-edit');
+  const form = buildClaimForm(claim, { idPrefix: `ce-${claim.id}` });
+  box.appendChild(form.node);
+  const status = claimEl('div', 'pc-status');
+  status.hidden = true;
+  const actions = claimEl('div', 'claim-actions');
+  const cancel = claimEl('button', 'pc-btn pc-btn-ghost', 'Cancel');
+  cancel.type = 'button';
+  cancel.addEventListener('click', () => { claimsState.editing.delete(claim.id); renderClaimsPanel(); });
+  const save = claimEl('button', 'pc-btn pc-btn-primary', 'Save changes');
+  save.type = 'button';
+  save.addEventListener('click', async () => {
+    const { fields, groupId } = form.read();
+    // Only send what changed.
+    const changed = {};
+    for (const [k, v] of Object.entries(fields)) if ((claim[k] || '') !== v) changed[k] = v;
+    const body = {};
+    if (Object.keys(changed).length) body.fields = changed;
+    if (groupId && groupId !== claim.groupId) body.groupId = groupId;
+    if (!body.fields && !body.groupId) { claimsState.editing.delete(claim.id); renderClaimsPanel(); return; }
+    save.disabled = true; cancel.disabled = true;
+    save.textContent = 'Saving…';
+    status.hidden = true;
+    try {
+      const base = await getBaseUrl();
+      const res = await fetch(`${base}/api/claims/${encodeURIComponent(claim.id)}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Save failed (${res.status})`);
+      const list = claimsState.claims || [];
+      const i = list.findIndex(c => c.id === claim.id);
+      if (i >= 0 && data.claim) list[i] = data.claim;
+      claimsState.editing.delete(claim.id);
+      updateClaimsCountBadge();
+      renderClaimsPanel();
+    } catch (err) {
+      save.disabled = false; cancel.disabled = false;
+      save.textContent = 'Save changes';
+      status.hidden = false;
+      status.classList.add('error');
+      status.textContent = err.message || 'Save failed';
+    }
+  });
+  actions.appendChild(status);
+  actions.appendChild(cancel);
+  actions.appendChild(save);
+  box.appendChild(actions);
+  return box;
+}
+
+// Thumbnails are fetched with the session cookie and shown as blob URLs (a
+// plain <img src> to the dashboard wouldn't carry the cookie from the popup).
+const claimThumbCache = new Map(); // assetId → object URL
+async function loadClaimThumb(img, assetId) {
+  if (claimThumbCache.has(assetId)) { img.src = claimThumbCache.get(assetId); return; }
+  try {
+    const base = await getBaseUrl();
+    const res = await fetch(`${base}/api/assets/${encodeURIComponent(assetId)}`, { credentials: 'include' });
+    if (!res.ok) throw new Error(String(res.status));
+    const url = URL.createObjectURL(await res.blob());
+    claimThumbCache.set(assetId, url);
+    img.src = url;
+  } catch {
+    img.replaceWith(claimEl('span', 'claim-thumb-fallback', '🖼️'));
+  }
+}
+
+function renderClaimFiles(claim) {
+  const box = claimEl('div', 'claim-files');
+  box.appendChild(claimEl('div', 'bill-subhead', `Attachments${claim.files && claim.files.length ? ` (${claim.files.length})` : ''}`));
+  const grid = claimEl('div', 'claim-thumbs');
+  for (const f of claim.files || []) {
+    const a = claimEl('a', 'claim-thumb');
+    a.href = '#';
+    a.title = `Open ${f.name}`;
+    a.addEventListener('click', async e => {
+      e.preventDefault();
+      const base = await getBaseUrl();
+      chrome.tabs.create({ url: `${base}/api/assets/${encodeURIComponent(f.assetId)}` });
+    });
+    if (f.isImage) {
+      const img = claimEl('img');
+      img.alt = f.name;
+      img.loading = 'lazy';
+      a.appendChild(img);
+      void loadClaimThumb(img, f.assetId);
+    } else {
+      a.appendChild(claimEl('span', 'claim-thumb-fallback', '📄'));
+    }
+    a.appendChild(claimEl('span', 'claim-thumb-name', f.name));
+    grid.appendChild(a);
+  }
+  // "Add photos" tile.
+  const add = claimEl('label', 'claim-thumb claim-thumb-add');
+  add.title = 'Attach photos or files to this claim';
+  add.appendChild(claimEl('span', 'claim-thumb-plus', '+'));
+  const addLabel = claimEl('span', 'claim-thumb-name', 'Add photos');
+  add.appendChild(addLabel);
+  const input = claimEl('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.accept = 'image/*,application/pdf,video/*';
+  input.hidden = true;
+  input.addEventListener('change', async () => {
+    const files = Array.from(input.files || []);
+    if (!files.length) return;
+    add.classList.add('is-busy');
+    const failed = await uploadClaimFiles(claim.id, files, (i, n) => { addLabel.textContent = `Uploading ${i + 1}/${n}…`; });
+    add.classList.remove('is-busy');
+    if (failed.length) alert(`Couldn't upload: ${failed.join(', ')}`);
+    claimsState.expanded.add(claim.id);
+    await loadClaims(claimsState.clientId, claimsState.clientName, { quiet: true });
+  });
+  add.appendChild(input);
+  grid.appendChild(add);
+  box.appendChild(grid);
+  return box;
+}
+
+// ── New-claim questionnaire (dialog) ────────────────────────────────────────
+let claimComposerFiles = [];
+let claimComposerForm = null;
+let claimComposerDone = false; // true once a claim was created but some files failed
+
+function renderComposerFileList() {
+  const list = document.getElementById('cc-file-list');
+  if (!list) return;
+  list.innerHTML = '';
+  claimComposerFiles.forEach((file, i) => {
+    const item = claimEl('div', 'claim-thumb claim-thumb-pending');
+    if (/^image\//.test(file.type)) {
+      const img = claimEl('img');
+      img.alt = file.name;
+      img.src = URL.createObjectURL(file);
+      img.addEventListener('load', () => URL.revokeObjectURL(img.src), { once: true });
+      item.appendChild(img);
+    } else {
+      item.appendChild(claimEl('span', 'claim-thumb-fallback', '📄'));
+    }
+    item.appendChild(claimEl('span', 'claim-thumb-name', file.name));
+    const rm = claimEl('button', 'claim-thumb-remove', '×');
+    rm.type = 'button';
+    rm.title = 'Remove';
+    rm.addEventListener('click', () => { claimComposerFiles.splice(i, 1); renderComposerFileList(); });
+    item.appendChild(rm);
+    list.appendChild(item);
+  });
+}
+
+function setComposerStatus(msg, isError) {
+  const s = document.getElementById('cc-status');
+  if (!s) return;
+  s.hidden = !msg;
+  s.classList.toggle('error', !!isError);
+  s.textContent = msg || '';
+}
+
+async function openClaimComposer() {
+  const overlay = document.getElementById('claim-composer');
+  const body = document.getElementById('cc-body');
+  if (!overlay || !body || !claimsState.clientId) return;
+  claimComposerFiles = [];
+  claimComposerDone = false;
+  body.innerHTML = '';
+  setComposerStatus('');
+  const submit = document.getElementById('cc-submit');
+  submit.disabled = false;
+  submit.textContent = 'Submit claim';
+  document.getElementById('cc-title').textContent = `New claim — ${claimsState.clientName || 'client'}`;
+
+  // Prefill: today's date, "New" status, the first stage (Open), and the rep.
+  const email = await fetchCurrentUserEmail().catch(() => null);
+  const firstGroup = (claimsState.options.groups || [])[0];
+  claimComposerForm = buildClaimForm({
+    status: (claimsState.options.statuses || []).includes('New') ? 'New' : '',
+    groupId: firstGroup ? firstGroup.id : '',
+    dateSubmitted: new Date().toLocaleDateString('en-CA'), // YYYY-MM-DD, local
+    whoRequested: firstNameFromEmail(email || ''),
+  }, { idPrefix: 'ccf' }); // not 'cc': 'cc-status' is the dialog's message line
+  body.appendChild(claimComposerForm.node);
+
+  // Attachments: file picker + drag-and-drop + paste.
+  const files = claimEl('div', 'claim-field claim-wide');
+  files.appendChild(claimEl('div', 'pc-label', 'Photos & files'));
+  const drop = claimEl('label', 'claim-drop');
+  drop.appendChild(claimEl('span', null, '📷 Add photos or files — click, drag & drop, or paste'));
+  const input = claimEl('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.accept = 'image/*,application/pdf,video/*';
+  input.hidden = true;
+  input.addEventListener('change', () => {
+    claimComposerFiles.push(...Array.from(input.files || []));
+    input.value = '';
+    renderComposerFileList();
+  });
+  drop.appendChild(input);
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('is-over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('is-over'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.classList.remove('is-over');
+    claimComposerFiles.push(...Array.from((e.dataTransfer && e.dataTransfer.files) || []));
+    renderComposerFileList();
+  });
+  files.appendChild(drop);
+  const list = claimEl('div', 'claim-thumbs');
+  list.id = 'cc-file-list';
+  files.appendChild(list);
+  body.appendChild(files);
+
+  overlay.hidden = false;
+  claimComposerForm.inputs.orderNumber.focus();
+}
+
+function closeClaimComposer() {
+  const overlay = document.getElementById('claim-composer');
+  if (overlay) overlay.hidden = true;
+  claimComposerFiles = [];
+  claimComposerForm = null;
+}
+
+async function submitClaimComposer() {
+  if (!claimComposerForm || !claimsState.clientId) return;
+  const { fields, groupId } = claimComposerForm.read();
+  if (!fields.orderNumber && !fields.trackingNumber) {
+    setComposerStatus('Add an order number or a tracking number.', true);
+    claimComposerForm.inputs.orderNumber.focus();
+    return;
+  }
+  if (!fields.reason) {
+    setComposerStatus('Pick a reason for the claim.', true);
+    claimComposerForm.inputs.reason.focus();
+    return;
+  }
+  const submit = document.getElementById('cc-submit');
+  const cancel = document.getElementById('cc-cancel');
+  submit.disabled = true; cancel.disabled = true;
+  submit.textContent = 'Submitting…';
+  setComposerStatus('Creating the claim on Monday…');
+  const clientId = claimsState.clientId;
+  try {
+    const base = await getBaseUrl();
+    const res = await fetch(`${base}/api/claims`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ clientId, clientName: claimsState.clientName, fields, groupId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.claim) throw new Error(data.error || `Couldn't create the claim (${res.status})`);
+    const files = claimComposerFiles.slice();
+    let failed = [];
+    if (files.length) {
+      failed = await uploadClaimFiles(data.claim.id, files, (i, n) => setComposerStatus(`Claim created. Uploading file ${i + 1} of ${n}…`));
+    }
+    claimsState.expanded.add(data.claim.id);
+    if (failed.length) {
+      // Keep the dialog open so the rep sees which files didn't make it.
+      setComposerStatus(`Claim created, but these files didn't upload: ${failed.join(', ')}. Add them from the claim card.`, true);
+      claimComposerDone = true;
+      submit.textContent = 'Done';
+      submit.disabled = false;
+      cancel.disabled = false;
+    } else {
+      closeClaimComposer();
+    }
+    await loadClaims(clientId, claimsState.clientName, { quiet: true });
+  } catch (err) {
+    submit.disabled = false; cancel.disabled = false;
+    submit.textContent = 'Submit claim';
+    setComposerStatus(err.message || 'Something went wrong.', true);
+  }
+}
+
+function initClaimComposer() {
+  const overlay = document.getElementById('claim-composer');
+  if (!overlay) return;
+  document.getElementById('cc-close').addEventListener('click', closeClaimComposer);
+  document.getElementById('cc-cancel').addEventListener('click', closeClaimComposer);
+  document.getElementById('cc-submit').addEventListener('click', () => {
+    // After a partial-upload failure the button becomes "Done" and just closes.
+    if (claimComposerDone) closeClaimComposer();
+    else void submitClaimComposer();
+  });
+  overlay.addEventListener('keydown', e => { if (e.key === 'Escape') closeClaimComposer(); });
+  // Paste screenshots/photos straight into the dialog.
+  overlay.addEventListener('paste', e => {
+    const items = Array.from((e.clipboardData && e.clipboardData.files) || []);
+    if (!items.length) return;
+    e.preventDefault();
+    claimComposerFiles.push(...items);
+    renderComposerFileList();
+  });
+}
+
 function renderOnboardingChecklist(item) {
   const wrap = document.getElementById('detail-onboarding');
   if (!wrap) return;
@@ -3302,20 +3959,30 @@ function setDetailPanel(which) {
   const sections = document.getElementById('detail-sections');
   const onb = document.getElementById('detail-onboarding');
   const bill = document.getElementById('detail-billing');
+  const claims = document.getElementById('detail-claims');
   const onbBtn = document.getElementById('detail-onboarding-btn');
   const billBtn = document.getElementById('detail-billing-btn');
+  const claimsBtn = document.getElementById('detail-claims-btn');
   const showOnb = which === 'onboarding';
   const showBill = which === 'billing';
-  if (aside) aside.hidden = showOnb || showBill;
+  const showClaims = which === 'claims';
+  if (aside) aside.hidden = showOnb || showBill || showClaims;
   if (onb) onb.hidden = !showOnb;
   if (bill) bill.hidden = !showBill;
-  // Billing takes over the whole page — hide the left client-info column so it
-  // spans full width. (Onboarding keeps the left column and sits beside it.)
-  if (sections) sections.hidden = showBill;
+  if (claims) claims.hidden = !showClaims;
+  // Billing and Claims take over the whole page — hide the left client-info
+  // column so they span full width. (Onboarding keeps the left column.)
+  if (sections) sections.hidden = showBill || showClaims;
   if (onbBtn) onbBtn.classList.toggle('is-active', showOnb);
   if (billBtn) billBtn.classList.toggle('is-active', showBill);
+  if (claimsBtn) claimsBtn.classList.toggle('is-active', showClaims);
   if (showOnb && activeClientId) void loadOnboardingChecklist(activeClientId);
   if (showBill) renderBillingPanel(activeClientData);
+  if (showClaims) {
+    renderClaimsPanel();
+    // Refresh on every open so edits made on Monday show up.
+    if (activeClientId && !claimsState.loading) void loadClaims(activeClientId, claimsState.clientName, { quiet: !!claimsState.claims });
+  }
 }
 
 async function showClientDetail(clientStub, origin) {
@@ -3411,6 +4078,10 @@ async function showClientDetail(clientStub, origin) {
   // info fetch so the right column populates as soon as each source returns.
   void loadStickyNotesPane(clientStub.id);
   void loadClientProjects(clientStub.id, clientStub.name);
+  // Claims load in the background too, so the header button can show the
+  // open-claims count before the panel is opened.
+  { const badge = document.getElementById('detail-claims-count'); if (badge) badge.hidden = true; }
+  void loadClaims(clientStub.id, clientStub.name, { quiet: true });
 
   // Paint instantly from the cached payload if we have one, so restoring the
   // remembered client (or reopening one) shows content immediately instead of
@@ -3694,6 +4365,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     setDetailPanel(bill && bill.hidden ? 'billing' : 'notes');
   });
 
+  // Claims toggle (everyone): full-page list of this client's claims with
+  // inline editing, attachments, and the "+ New claim" questionnaire.
+  const claimsBtn = document.getElementById('detail-claims-btn');
+  if (claimsBtn) claimsBtn.addEventListener('click', () => {
+    const claims = document.getElementById('detail-claims');
+    setDetailPanel(claims && claims.hidden ? 'claims' : 'notes');
+  });
+  initClaimComposer();
+
   // ── Sticky-note composer: add a note without leaving the popup ─────────
   const notesAddBtn  = document.getElementById('detail-notes-add');
   const notesComposer = document.getElementById('detail-notes-composer');
@@ -3745,12 +4425,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // ── Quick-launch buttons. Calendar, Tasks, and Projects all open in-popup
-  // views (no new tab) — a compact agenda, the signed-in user's assigned
-  // subtasks, and every active project respectively.
+  // ── Quick-launch buttons. Calendar and Tasks open in-popup views (no new
+  // tab) — a compact agenda and the signed-in user's assigned subtasks. The
+  // Special Project Request Desk (which replaced the Projects tile) opens the
+  // warehouse portal's request desk in a new tab.
   document.getElementById('open-calendar').addEventListener('click', () => { void showCalendarView(); });
   document.getElementById('open-tasks').addEventListener('click', () => { void showTasksView(); });
-  document.getElementById('open-projects').addEventListener('click', () => { void showProjectsView(); });
+  document.getElementById('open-request-desk').addEventListener('click', () => openExternal(REQUEST_DESK_URL));
   document.getElementById('projects-back').addEventListener('click', backFromProjects);
   document.getElementById('tasks-back').addEventListener('click', backFromTasks);
   document.getElementById('calendar-back').addEventListener('click', backFromCalendar);

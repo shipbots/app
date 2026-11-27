@@ -66,6 +66,8 @@ function RootNavigator() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="client/[id]" options={{ title: 'Client' }} />
         <Stack.Screen name="task/[id]" options={{ title: 'Task' }} />
+        <Stack.Screen name="claim/[id]" options={{ title: 'Claim' }} />
+        <Stack.Screen name="claim/new" options={{ title: 'New claim', presentation: 'modal' }} />
         <Stack.Screen name="sign-in" options={{ headerShown: false }} />
         <Stack.Screen name="auth" options={{ headerShown: false }} />
       </Stack>

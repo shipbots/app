@@ -9,6 +9,7 @@ import { SECTIONS, valueTypeFor, type Field } from '@/api/fields';
 import { useAuth } from '@/auth';
 import type { ClientDetail, ClientDoc, OnboardingInfo, OnboardingStep } from '@/api/types';
 import { API_BASE_URL } from '@/config';
+import { ClaimsSection } from '@/components/claims-section';
 import { CollapsibleSection } from '@/components/collapsible-section';
 import { ContactCards } from '@/components/contact-cards';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
@@ -201,6 +202,9 @@ export default function ClientDetailScreen() {
 
         {/* Sticky notes */}
         <StickyNotes clientId={clientId} />
+
+        {/* Claims (Monday "✳️ Claims" board) — list, open/edit, + New claim */}
+        <ClaimsSection clientId={clientId} clientName={c.name} />
 
         {/* Onboarding checklist — onboarding-access users; collapsed by default,
             tap the header to expand, tap a step to change its status. */}

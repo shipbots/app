@@ -1,8 +1,8 @@
 # ShipBots Customer Service — extension changelog
 
 Release notes for the Chrome extension. The current store build is
-**v0.52.0**. Upload the matching zip from
-`docs/store-listing/zips/shipbots-cs-v0.52.0.zip` (manifest sits at the zip
+**v0.53.0**. Upload the matching zip from
+`docs/store-listing/zips/shipbots-cs-v0.53.0.zip` (manifest sits at the zip
 root, as the Web Store requires). Teammates auto-update within ~5 hours
 of a new upload — no action on their end.
 
@@ -46,10 +46,11 @@ admin panel — without ever leaving the popup.
 
 ---
 
-## Version history (v0.24.0 → v0.52.0)
+## Version history (v0.24.0 → v0.53.0)
 
 | Version | Date | What changed |
 |--------:|------|--------------|
+| **0.53.0** | 2026-11-24 | New **📦 Claims** button in the client header (everyone) — a full-page view of that client's claims from the Monday **✳️ Claims** board, with an active-claims count badge. Filter by stage (Open / Filed with Carrier / Closed), expand a claim to see every field and its photos, **edit claims in place** (status, stage, claim #, result notes, dates, …), and **attach photos/files** to existing claims. **+ New claim** opens a questionnaire (order/tracking #, reason, value, who requested, notes, …) with drag-and-drop / paste photo uploads; large photos are downsized automatically. Main menu: **Projects** replaced by **Special Project Request Desk** (opens the warehouse portal's request desk). Needs the dashboard deploy that adds `/api/claims`. |
 | **0.52.0** | 2026-07-30 | Billing → Pricing Info gains an **"Extract from agreement on file"** button that runs the SOW pricing extraction and fills the fields in place (hidden when no agreement is on file). Detail header now shows the **sub-warehouse letter** (A/B/C) next to the warehouse. Portal "Open & sign in" is **hidden for AppDot** clients (it only applies to the ShipHero Portal). |
 | **0.51.0** | 2026-07-30 | Portal Login section now shows only the portal **Username** (`support+…@shipbots.com`) + Password — dropped the "Login email / username" field (that's the client's own login, not the portal's). Auto-sign-in uses the portal username. |
 | **0.50.0** | 2026-07-30 | Portal "Open & sign in" now **auto-submits** after filling — true one-click sign-in. Only submits once the password field is present (never a half-filled/email-first page). |
